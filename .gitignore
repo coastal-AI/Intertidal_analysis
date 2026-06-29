@@ -1,0 +1,64 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ==========================
+# Entornos virtuales
+# ==========================
+.venv/
+venv/
+env/
+
+# ==========================
+# Jupyter
+# ==========================
+.ipynb_checkpoints/
+
+# ==========================
+# Resultados y datos generados
+# ==========================
+outputs/
+tifs/
+tifs_rgb/
+tifs_scl/
+scl/
+
+# ==========================
+# Datos específicos del proyecto
+# ==========================
+4.2.0/
+tide_models/
+community-notebook-competition/
+
+ria_de_foz_water_occurrence*
+intertidal_mask*
+reference*
+mareografo_santander*
+ARQUITECTURE.md*
+
+# ==========================
+# Archivos temporales
+# ==========================
+*.log
+*.tmp
+*.cache
+
+# ==========================
+# IDE
+# ==========================
+.vscode/
+.idea/
+
+# ==========================
+# Sistema operativo
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Variables de entorno
+# ==========================
+.env
