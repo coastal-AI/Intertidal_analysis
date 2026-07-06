@@ -329,72 +329,179 @@ class Visualizer:
     @staticmethod
     def plot_water_frequency(
         water_freq: np.ndarray,
-        transform,
+        transform=None,
         crs: str = "EPSG:4326",
+        title: str = None,
+        polygon=None,
+        intertidal_threshold: float = 0.5,
+        despeckle_min_pixels: int = 6,
+        min_water_patch_pixels: int = 20,
+        water_presence_threshold: float = 0.15,
+        zoom_to_aoi: bool = True,
         figsize: tuple = (10, 8),
-        add_basemap: bool = True
     ):
         """
-        Visualiza mapa de water frequency.
-        
+        Visualiza mapa de water frequency con el mismo estilo que utils
+        (plot_scl_map / plot_rgb_grid): recorte al polígono del AOI, fondo
+        blanco fuera de la ría, zoom al AOI y limpieza de píxeles aislados.
+
+        Rampa Blues: blanco (#ffffff) = frecuencia 0 (tierra) →
+        azul oscuro (#08306b) = frecuencia 1 (agua permanente).
+
         Parameters
         ----------
         water_freq : ndarray
-            Array float (H, W) con valores [0, 1]
-        transform : Affine
-            Transformada afín del raster
+            Array float (H, W) con valores [0, 1] (o NaN)
+        transform : Affine, optional
+            Transformada afín del raster (para el extent y la máscara del AOI)
         crs : str, optional
-            Sistema de referencia (default: "EPSG:4326")
+            Sistema de referencia del raster (para reproyectar el polígono)
+        title : str, optional
+            Título del gráfico
+        polygon : shapely Polygon, optional
+            Polígono del AOI en EPSG:4326. Si se pasa, todo lo que quede fuera
+            se pinta en blanco y se hace zoom a su extensión (como en utils).
+        intertidal_threshold : float, optional
+            Frecuencia del contorno amarillo (default: 0.5)
+        despeckle_min_pixels : int, optional
+            Elimina islas de datos aisladas menores que este nº de píxeles
+            (huecos de datos por nubes residuales). 0 = desactivado.
+        min_water_patch_pixels : int, optional
+            Elimina parches de AGUA aislados menores que este nº de píxeles
+            (falsos positivos: sombras, píxeles sueltos dentro del estuario).
+            Equivalente a remove_isolated_water de Fitton. 0 = desactivado.
+        water_presence_threshold : float, optional
+            Frecuencia por encima de la cual un píxel se considera "agua" al
+            evaluar el tamaño de los parches (default: 0.15).
+        zoom_to_aoi : bool, optional
+            Ajustar los límites del eje al polígono del AOI (default: True)
         figsize : tuple, optional
             Tamaño de figura (default: (10, 8))
-        add_basemap : bool, optional
-            Añadir mapa base de OpenStreetMap (default: True)
-            
-        Examples
-        --------
-        >>> Visualizer.plot_water_frequency(
-        ...     water_freq,
-        ...     transform,
-        ...     add_basemap=True
-        ... )
         """
+        wf = np.array(water_freq, dtype=np.float32, copy=True)
+
+        # ── Limpieza de ruido: quitar islas de datos aisladas ─────────────────
+        if despeckle_min_pixels and despeckle_min_pixels > 0:
+            try:
+                from scipy import ndimage
+
+                finite = np.isfinite(wf)
+                labels, n = ndimage.label(finite)
+                if n > 0:
+                    sizes = ndimage.sum(
+                        np.ones_like(labels, dtype=np.int32),
+                        labels,
+                        index=np.arange(1, n + 1),
+                    )
+                    small_ids = np.where(sizes < despeckle_min_pixels)[0] + 1
+                    if small_ids.size:
+                        wf[np.isin(labels, small_ids)] = np.nan
+            except Exception:
+                pass
+
+        # ── Quitar parches de agua aislados (falsos positivos) ────────────────
+        # Etiqueta las regiones donde hay "agua" (freq > umbral) y descarta las
+        # que tengan menos de min_water_patch_pixels píxeles, poniéndolas a 0
+        # (tierra). El canal principal, al ser grande y conexo, se conserva.
+        if min_water_patch_pixels and min_water_patch_pixels > 0:
+            try:
+                from scipy import ndimage
+
+                water_bin = np.nan_to_num(wf, nan=0.0) > water_presence_threshold
+                wlabels, wn = ndimage.label(water_bin)
+                if wn > 0:
+                    wsizes = ndimage.sum(
+                        np.ones_like(wlabels, dtype=np.int32),
+                        wlabels,
+                        index=np.arange(1, wn + 1),
+                    )
+                    small_water = np.where(wsizes < min_water_patch_pixels)[0] + 1
+                    if small_water.size:
+                        wf[np.isin(wlabels, small_water)] = 0.0
+            except Exception:
+                pass
+
+        # ── Máscara del AOI (recorte al polígono, como en utils) ──────────────
+        if polygon is not None and transform is not None and crs is not None:
+            try:
+                poly_proj = (
+                    gpd.GeoSeries([polygon], crs="EPSG:4326")
+                    .to_crs(crs)
+                    .iloc[0]
+                )
+                aoi_mask = geometry_mask(
+                    [poly_proj],
+                    transform=transform,
+                    invert=True,
+                    out_shape=wf.shape,
+                )
+                wf[~aoi_mask] = np.nan
+            except Exception:
+                poly_proj = None
+        else:
+            poly_proj = None
+
+        # Rampa Blues con NaN/tierra en blanco
+        cmap = plt.get_cmap("Blues").copy()
+        cmap.set_bad("white")
+
+        # Extent georreferenciado si hay transform, si no en píxeles
+        extent = None
+        if transform is not None:
+            extent = [
+                transform[2],
+                transform[2] + transform[0] * wf.shape[1],
+                transform[5] + transform[4] * wf.shape[0],
+                transform[5],
+            ]
+
         fig, ax = plt.subplots(figsize=figsize)
-        
-        # Visualizar water frequency
+        ax.set_facecolor("white")
+
         im = ax.imshow(
-            water_freq,
-            cmap="RdYlBu",
+            wf,
+            cmap=cmap,
             vmin=0,
             vmax=1,
-            extent=[
-                transform[2],
-                transform[2] + transform[0] * water_freq.shape[1],
-                transform[5] + transform[4] * water_freq.shape[0],
-                transform[5],
-            ],
+            extent=extent,
+            origin="upper",
             interpolation="nearest",
         )
-        
-        # Barra de color
+
+        # Contorno amarillo en el umbral intertidal
+        try:
+            ax.contour(
+                wf,
+                levels=[intertidal_threshold],
+                colors="yellow",
+                linewidths=1.0,
+                extent=extent,
+                origin="upper",
+            )
+        except Exception:
+            pass
+
+        # Zoom al AOI para que la ría llene el encuadre (como plot_scl_map)
+        if zoom_to_aoi and poly_proj is not None and extent is not None:
+            minx, miny, maxx, maxy = poly_proj.bounds
+            pad_x = (maxx - minx) * 0.05
+            pad_y = (maxy - miny) * 0.05
+            ax.set_xlim(minx - pad_x, maxx + pad_x)
+            ax.set_ylim(miny - pad_y, maxy + pad_y)
+
+        # Barra de color con etiquetas de porcentaje
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("Water Frequency [0-1]", rotation=270, labelpad=20)
-        
-        # Basemap
-        if add_basemap:
-            try:
-                ctx.add_basemap(
-                    ax,
-                    crs=crs,
-                    source=ctx.providers.OpenStreetMap.Mapnik,
-                    alpha=0.5,
-                )
-            except Exception as e:
-                print(f"No se pudo añadir basemap: {e}")
-        
-        ax.set_title("Water Frequency Map", fontsize=12, fontweight="bold")
-        ax.set_xlabel("Longitud")
-        ax.set_ylabel("Latitud")
-        
+        cbar.set_label("Frecuencia de agua", rotation=270, labelpad=20)
+        cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+        cbar.set_ticklabels(["0 %", "25 %", "50 %", "75 %", "100 %"])
+
+        ax.set_title(
+            title or "Water Frequency Map",
+            fontsize=12,
+            fontweight="bold",
+        )
+        ax.set_axis_off()
+
         plt.tight_layout()
         plt.show()
     
@@ -403,7 +510,8 @@ class Visualizer:
         dates: list[str],
         rgb_dir: str,
         ncols: int = 4,
-        figsize: tuple = (16, 12)
+        figsize: tuple = (16, 12),
+        polygon=None
     ):
         """
         Visualiza grid de imágenes RGB.
@@ -438,6 +546,20 @@ class Visualizer:
             
             if os.path.exists(rgb_path):
                 rgb = RasterProcessor.read_rgb(rgb_path)
+                if polygon is not None:
+                    with rasterio.open(rgb_path) as src:
+                        poly_proj = (
+                            gpd.GeoSeries([polygon], crs="EPSG:4326")
+                            .to_crs(src.crs)
+                            .iloc[0]
+                        )
+                        mask = geometry_mask(
+                            [poly_proj],
+                            transform=src.transform,
+                            invert=True,
+                            out_shape=(src.height, src.width),
+                        )
+                        rgb[~mask] = 1
                 axes[idx].imshow(rgb)
                 axes[idx].set_title(date, fontsize=9)
             else:

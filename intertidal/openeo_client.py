@@ -7,6 +7,7 @@ Gestiona conexión, autenticación y descargas de datos Sentinel-2.
 """
 
 import os
+import requests
 import openeo
 import numpy as np
 import xarray
@@ -108,23 +109,75 @@ class OpenEOClient:
         ... )
         >>> print(f"Fechas disponibles: {len(dates)}")
         """
-        if self.connection is None:
-            raise RuntimeError("No conectado. Ejecuta connect() primero.")
+        # Consulta el catálogo STAC de Copernicus directamente.
+        # Esto es instantáneo: no lanza ningún job Spark en el backend.
+        STAC_SEARCH = "https://catalogue.dataspace.copernicus.eu/stac/search"
+
+        dates: set[str] = set()
+        body: dict = {
+            "collections": ["SENTINEL-2"],
+            "bbox": [bbox["west"], bbox["south"], bbox["east"], bbox["north"]],
+            "datetime": f"{time_extent[0]}T00:00:00Z/{time_extent[1]}T23:59:59Z",
+            "filter": (
+                f"s2:product_type='S2MSI2A' AND eo:cloud_cover<={max_cloud_cover}"
+            ),
+            "filter-lang": "cql2-text",
+            "limit": 200,
+        }
+
+        url: str | None = STAC_SEARCH
+        filter_failed = False
         
-        # Definir cubo lazy (sin ejecutar)
-        cube = self.connection.load_collection(
-            "SENTINEL2_L2A",
-            spatial_extent=bbox,
-            temporal_extent=time_extent,
-            bands=["B04"],  # Una sola banda para ahorrar tiempo
-            max_cloud_cover=max_cloud_cover,
-        )
-        
-        # Extraer etiquetas de la dimensión temporal
-        dates = cube.execute().dimension_labels("t")
-        
-        # Convertir timestamps a strings YYYY-MM-DD
-        return [str(d).split("T")[0] for d in dates]
+        while url:
+            try:
+                resp = requests.post(url, json=body, timeout=30)
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                # Si falla con filtro CQL2, intentar sin filtro
+                if not filter_failed:
+                    print(f"Warning: STAC query failed with filter, retrying without filter...")
+                    print(f"  Error: {e}")
+                    body = {k: v for k, v in body.items() if k not in ["filter", "filter-lang"]}
+                    filter_failed = True
+                    resp = requests.post(url, json=body, timeout=30)
+                    resp.raise_for_status()
+                else:
+                    raise
+            
+            data = resp.json()
+            features_count = len(data.get("features", []))
+            
+            if features_count == 0 and not filter_failed:
+                print(f"  ⚠ Warning: 0 features found in STAC response")
+                print(f"  Query body: {body}")
+
+            for feature in data.get("features", []):
+                # Filtrado manual si el filtro CQL2 falló
+                props = feature.get("properties", {})
+                if filter_failed:
+                    # Solo aceptar S2MSI2A y aplicar filtro de nubes manualmente
+                    product_type = props.get("s2:product_type", "")
+                    cloud_cover = props.get("eo:cloud_cover", 100)
+                    if product_type != "S2MSI2A" or cloud_cover > max_cloud_cover:
+                        continue
+                
+                dt = props.get("datetime", "")
+                if dt:
+                    dates.add(dt[:10])  # YYYY-MM-DD
+
+            # Paginación: buscar enlace "next"
+            next_link = next(
+                (lk for lk in data.get("links", []) if lk.get("rel") == "next"),
+                None,
+            )
+            if next_link:
+                url = next_link["href"]
+                body = {}  # El enlace "next" ya lleva todos los parámetros
+            else:
+                url = None
+
+        print(f"  → Total fechas encontradas: {len(dates)}")
+        return sorted(dates)
     
     def download_rgb(
         self,

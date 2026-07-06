@@ -40,6 +40,29 @@ from .scl_processor import SCLProcessor
 from .mapper import IntertidalMapper
 from .tide_analyzer import TideAnalyzer
 from .visualization import Visualizer
+from .notebook_compat import (
+    CoordinateUtils,
+    OpenEOManager,
+    download_date_rgb,
+    download_date_scl,
+    tif_to_rgb,
+    tif_to_scl,
+    compute_scl_stats,
+    load_scl_stack,
+    build_reference_map,
+    compute_transition_cloud_stats,
+    plot_scl_map,
+    plot_reference_map,
+    plot_rgb_grid,
+    plot_water_frequency,
+    download_reference_map_openeo,
+    load_reference_map_tif,
+    evaluate_transition_cloud_coverage_openeo,
+    quantify_reference_gain,
+    compute_water_frequency_openeo,
+    get_water_centroid,
+)
+from .overpass import get_overpass_times, overpass_hour_utc
 
 __all__ = [
     "GeometryProcessor",
@@ -49,6 +72,28 @@ __all__ = [
     "IntertidalMapper",
     "TideAnalyzer",
     "Visualizer",
+    "CoordinateUtils",
+    "OpenEOManager",
+    "download_date_rgb",
+    "download_date_scl",
+    "tif_to_rgb",
+    "tif_to_scl",
+    "compute_scl_stats",
+    "load_scl_stack",
+    "build_reference_map",
+    "compute_transition_cloud_stats",
+    "plot_scl_map",
+    "plot_reference_map",
+    "plot_rgb_grid",
+    "plot_water_frequency",
+    "download_reference_map_openeo",
+    "load_reference_map_tif",
+    "evaluate_transition_cloud_coverage_openeo",
+    "quantify_reference_gain",
+    "compute_water_frequency_openeo",
+    "get_water_centroid",
+    "get_overpass_times",
+    "overpass_hour_utc",
 ]
 
 __version__ = "1.0.0"
