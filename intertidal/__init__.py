@@ -12,6 +12,8 @@ Módulos:
 - scl_processor: SCLProcessor - Análisis de calidad SCL y filtrado
 - mapper: IntertidalMapper - Mapeo de zona intermareal (water frequency)
 - tide_analyzer: TideAnalyzer - Análisis de datos mareales
+- tidemodel: PyTMDTideModel, CopernicusTideModel - Modelos de marea
+- tide_metrics: Métricas de calidad para distribuciones de mareas (waterline method)
 - visualization: Visualizer - Generación de gráficos y mapas
 
 Ejemplo de uso:
@@ -31,6 +33,11 @@ Ejemplo de uso:
 >>> # Analizar calidad
 >>> processor = SCLProcessor()
 >>> stats = processor.compute_stats(scl_array)
+>>> 
+>>> # Evaluar distribución de mareas para modelado batimétrico
+>>> from intertidal import calcular_metricas_completas, evaluar_calidad_distribucion
+>>> metricas = calcular_metricas_completas(valores_validos, valores_totales)
+>>> evaluacion = evaluar_calidad_distribucion(valores_validos, valores_totales)
 """
 
 from .geometry import GeometryProcessor
@@ -40,6 +47,18 @@ from .scl_processor import SCLProcessor
 from .mapper import IntertidalMapper
 from .tide_analyzer import TideAnalyzer
 from .visualization import Visualizer
+from .tide_metrics import (
+    calcular_cobertura_rango_mareal,
+    calcular_uniformidad_ks,
+    calcular_entropia_shannon,
+    calcular_indice_dispersion,
+    calcular_estadisticos_gaps,
+    calcular_vsr_waterline,
+    calcular_representatividad,
+    calcular_metricas_completas,
+    imprimir_metricas_completas,
+    evaluar_calidad_distribucion,
+)
 from .notebook_compat import (
     CoordinateUtils,
     OpenEOManager,
@@ -72,6 +91,18 @@ __all__ = [
     "IntertidalMapper",
     "TideAnalyzer",
     "Visualizer",
+    # Métricas de calidad de distribuciones mareales
+    "calcular_cobertura_rango_mareal",
+    "calcular_uniformidad_ks",
+    "calcular_entropia_shannon",
+    "calcular_indice_dispersion",
+    "calcular_estadisticos_gaps",
+    "calcular_vsr_waterline",
+    "calcular_representatividad",
+    "calcular_metricas_completas",
+    "imprimir_metricas_completas",
+    "evaluar_calidad_distribucion",
+    # Compatibilidad con notebooks
     "CoordinateUtils",
     "OpenEOManager",
     "download_date_rgb",

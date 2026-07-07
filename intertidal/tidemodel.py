@@ -8,17 +8,42 @@ import pandas as pd
 
 
 class PyTMDTideModel:
+    """
+    Interfaz unificada para modelos de marea de PyTMD.
+    
+    Modelos soportados:
+    - GOT4.10: Global Ocean Tide 4.10 (GSFC)
+    - FES2022: Finite Element Solution 2022 (AVISO/CNES) - requiere credenciales
+    - FES2014: Finite Element Solution 2014 (AVISO/CNES) - requiere credenciales
+    
+    Para modelos FES, configurar variables de entorno:
+        PYTMD_FES_USER=tu_usuario
+        PYTMD_FES_PASSWORD=tu_contraseña
+    
+    Registrarse en: https://www.aviso.altimetry.fr/en/data/data-access.html
+    """
+    
+    SUPPORTED_MODELS = {
+        'GOT4.10': {'provider': 'GSFC', 'requires_auth': False},
+        'FES2022': {'provider': 'AVISO', 'requires_auth': True},
+        'FES2014': {'provider': 'AVISO', 'requires_auth': True},
+    }
+    
     def __init__(self, model_name="GOT4.10", directory="./tide_models",
                  box_size=0.4, resolution=0.05):
         """
         Args:
-            model_name: Name of the tide model to use.
+            model_name: Name of the tide model to use (ver SUPPORTED_MODELS)
             directory: Directory where tide model data is stored.
             box_size: Half-width of the bounding box in degrees
                       (box spans [lon-box_size, lat-box_size] to
                                [lon+box_size, lat+box_size]).
             resolution: Grid resolution in degrees for sampling.
         """
+        if model_name not in self.SUPPORTED_MODELS:
+            available = ', '.join(self.SUPPORTED_MODELS.keys())
+            raise ValueError(f"Modelo '{model_name}' no soportado. Disponibles: {available}")
+        
         self.model_name = model_name
         self.directory = directory
         self.box_size = box_size
@@ -27,29 +52,45 @@ class PyTMDTideModel:
         self._download_model()
 
     def _download_model(self):
+        """Descarga el modelo de marea si no existe en caché."""
         matches = False
         # check if any directory in the cache starts with the model name
         if os.path.isdir(self.directory):
             subdirs = os.listdir(self.directory)
-            if (self.model_name == 'FES2022' and 'fes2022b' in subdirs) or (self.model_name == 'GOT4.10' and 'GOT4.10c' in subdirs):
+            # Verificar existencia según modelo específico
+            model_dirs = {
+                'GOT4.10': 'GOT4.10c',
+                'FES2022': 'fes2022b',
+                'FES2014': 'fes2014',
+            }
+            expected_dir = model_dirs.get(self.model_name)
+            if expected_dir and expected_dir in subdirs:
                 matches = True
 
         if not matches:
-            if self.model_name.startswith('FES') and not os.environ.get('PYTMD_FES_USER'):
-                raise EnvironmentError(
-                    "Environment variables PYTMD_FES_USER and PYTMD_FES_PASSWORD "
-                    "are required for FES models. Create a .env file with your "
-                    "AVISO credentials."
-                )
-            print(f"Descargando modelo {self.model_name}...")
-            if self.model_name.startswith('GOT4'):
+            model_info = self.SUPPORTED_MODELS[self.model_name]
+            
+            # Verificar credenciales para modelos FES
+            if model_info['requires_auth']:
+                if not os.environ.get('PYTMD_FES_USER') or not os.environ.get('PYTMD_FES_PASSWORD'):
+                    raise EnvironmentError(
+                        f"Modelo {self.model_name} requiere credenciales AVISO.\n"
+                        "Configurar variables de entorno:\n"
+                        "  PYTMD_FES_USER=tu_usuario\n"
+                        "  PYTMD_FES_PASSWORD=tu_contraseña\n"
+                        "Registrarse en: https://www.aviso.altimetry.fr/en/data/data-access.html"
+                    )
+            
+            print(f"Descargando modelo {self.model_name} ({model_info['provider']})...")
+            
+            if model_info['provider'] == 'GSFC':
                 fetch_gsfc_got(
                     model=self.model_name,
                     directory=self.directory,
                     format="netcdf",
                     compressed=False
                 )
-            elif self.model_name.startswith('FES'):
+            elif model_info['provider'] == 'AVISO':
                 fetch_aviso_fes(
                     model=self.model_name,
                     directory=self.directory,
@@ -57,8 +98,6 @@ class PyTMDTideModel:
                     password=os.environ.get('PYTMD_FES_PASSWORD'),
                     compressed=True
                 )
-            else:
-                raise ValueError("The model name is not valid") 
         else:
             print(f"Modelo {self.model_name} ya descargado")
 
