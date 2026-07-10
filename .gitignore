@@ -16,6 +16,7 @@ env/
 # Jupyter
 # ==========================
 .ipynb_checkpoints/
+*_sentinel2_scl (*).ipynb
 
 # ==========================
 # Resultados y datos generados
@@ -37,6 +38,7 @@ dataset_foz/tide_models/
 dataset_foz/*.tif
 dataset_foz/*.csv
 dataset_foz/*.zip
+dataset_foz/dataset_foz_code.zip
 
 # ==========================
 # Datos específicos del proyecto
@@ -50,7 +52,10 @@ intertidal_mask*
 reference*
 mareografo_santander*
 ARQUITECTURE.md*
-README.md*
+README_DATASET_GENERATOR.md
+water_frequency.tif
+stand-by/
+utils.py
 
 # ==========================
 # Archivos temporales

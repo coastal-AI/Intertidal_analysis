@@ -1,0 +1,115 @@
+# Metadatos del Dataset - Zona Intermareal Ría de Foz
+
+dataset:
+  titulo: "Dataset Zona Intermareal - Ría de Foz"
+  version: "1.0"
+  fecha: "2026-07-09"
+  
+  descripcion: >
+    Imágenes Sentinel-2 RGB sincronizadas con alturas de marea para entrenar
+    modelos generativos que rellenen huecos en zonas intermareales.
+
+# Área de Estudio
+area_estudio:
+  nombre: "Ría de Foz"
+  ubicacion: "Galicia, España"
+  coordenadas:
+    latitud: 43.5333
+    longitud: -7.2417
+  tipo: "Estuario mesomareal"
+  rango_mareal: "2-4 metros"
+
+# Cobertura Temporal
+temporal:
+  inicio: "2021-07-16"
+  fin: "2026-06-30"
+  total_años: 5
+  total_muestras: 170  # esperado
+  frecuencia: "~10-15 días (después de filtrado de nubes)"
+
+# Datos
+datos:
+  imagenes:
+    formato: "PNG"
+    tipo: "RGB uint8 (0-255)"
+    resolucion: "10 metros/píxel"
+    dimensiones: "~659×786 píxeles"
+    normalizacion: "Percentiles p2-p98"
+    
+  scl:
+    formato: "PNG RGB (coloreado)"
+    clases: 12
+    paleta: "ESA oficial"
+    
+  marea:
+    modelo: "GOT4.10"
+    unidad: "metros"
+    rango: "±2.5 m aproximadamente"
+    precision: "±20-30 cm"
+
+# Fuentes
+fuentes:
+  imagenes:
+    satelite: "Sentinel-2 L2A"
+    proveedor: "ESA/Copernicus"
+    acceso: "OpenEO API"
+    url: "https://dataspace.copernicus.eu/"
+    
+  mareas:
+    modelo: "GOT4.10"
+    autor: "Richard D. Ray, NASA GSFC"
+    libreria: "pyTMD (Tyler Sutterley)"
+
+# Procesamiento
+procesamiento:
+  - "Filtrado de nubes <10% en zona de transición"
+  - "Recorte espacial al polígono exacto del AOI"
+  - "Cálculo de marea con modelo GOT4.10"
+  - "Normalización RGB (percentiles) → PNG uint8"
+  - "Colorización SCL con paleta ESA"
+
+# Notas Técnicas
+notas_tecnicas:
+  tiles_sentinel2:
+    descripcion: >
+      Sentinel-2 organiza las imágenes en tiles (cuadrículas) de ~100×100 km.
+      La Ría de Foz está en el límite entre varios tiles.
+    
+    cobertura_parcial:
+      causa: "El AOI puede estar dividido entre dos tiles en una misma fecha"
+      efecto: "Algunas imágenes muestran solo parte del polígono"
+      impacto_dataset: >
+        Las imágenes parciales contienen información válida.
+        La marea se calcula correctamente en el centroide.
+        No afecta el entrenamiento de modelos generativos.
+    
+    recomendacion: >
+      Los modelos aprenden de píxeles válidos (no-NaN).
+      Filtrar imágenes con >50% cobertura si se requiere región completa.
+
+# Estructura CSV
+csv_columnas:
+  - fecha: "Fecha de adquisición (YYYY-MM-DD)"
+  - hora_utc: "Hora UTC (HH:MM:SS)"
+  - imagen_rgb: "Ruta PNG RGB normalizado"
+  - imagen_scl: "Ruta PNG SCL coloreado"
+  - marea_m: "Altura de marea (metros)"
+  - nubes_pct: "% nubes en zona de transición"
+  - cobertura_tile_pct: "% del AOI con datos válidos (tiles parciales)"
+  - lat: "Latitud de referencia"
+  - lon: "Longitud de referencia"
+
+# Uso y Recomendaciones
+uso:
+  filtrado_cobertura:
+    completas: "cobertura_tile_pct >= 95.0 para imágenes con AOI completo"
+    parciales: "cobertura_tile_pct >= 50.0 para mantener imágenes con datos útiles"
+    nota: >
+      Los modelos generativos pueden entrenarse con imágenes parciales.
+      La columna permite filtrar según necesidades específicas.
+  
+  carga_python: "pd.read_csv('dataset_foz.csv')"
+  formato_imagenes: "PIL.Image.open() o cv2.imread()"
+  altura_marea: "Directamente de la columna 'marea_m'"
+
+
