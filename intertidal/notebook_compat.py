@@ -34,16 +34,16 @@ class OpenEOManager(OpenEOClient):
         super().__init__(backend_url=backend_url)
 
 
-def download_date_rgb(conn, date, bbox, out_dir):
+def download_date_rgb(conn, date, bbox, out_dir, polygon=None):
     client = OpenEOClient()
     client.connection = conn
-    return client.download_rgb(date, bbox, out_dir)
+    return client.download_rgb(date, bbox, out_dir, polygon=polygon)
 
 
-def download_date_scl(conn, date, bbox, out_dir):
+def download_date_scl(conn, date, bbox, out_dir, polygon=None):
     client = OpenEOClient()
     client.connection = conn
-    return client.download_scl(date, bbox, out_dir)
+    return client.download_scl(date, bbox, out_dir, polygon=polygon)
 
 
 def tif_to_rgb(path):

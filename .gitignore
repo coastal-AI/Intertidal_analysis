@@ -27,6 +27,18 @@ tifs_scl/
 scl/
 
 # ==========================
+# Dataset Foz - Excluir datos grandes
+# ==========================
+dataset_foz/rgb/
+dataset_foz/scl/
+dataset_foz/rgb_png/
+dataset_foz/scl_png/
+dataset_foz/tide_models/
+dataset_foz/*.tif
+dataset_foz/*.csv
+dataset_foz/*.zip
+
+# ==========================
 # Datos específicos del proyecto
 # ==========================
 4.2.0/

@@ -9,8 +9,10 @@ y operaciones básicas con GeoTIFFs.
 import os
 from pathlib import Path
 import numpy as np
+import pandas as pd
 import rasterio
 from rasterio.transform import Affine
+from PIL import Image
 
 
 class RasterProcessor:
@@ -279,3 +281,170 @@ class RasterProcessor:
         # Estiramiento lineal
         out = (band - vmin) / (vmax - vmin)
         return np.clip(out, 0, 1)
+    
+    @staticmethod
+    def convert_tifs_to_png(
+        df,
+        rgb_dir,
+        scl_dir,
+        output_dir,
+        percentile_low=2,
+        percentile_high=98,
+        compress_level=6
+    ):
+        """
+        Convierte imágenes GeoTIFF a PNG normalizado para modelos generativos.
+        
+        Calcula automáticamente el % de cobertura del tile (píxeles válidos vs NaN)
+        y añade la columna 'cobertura_tile_pct' al DataFrame.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame con columna 'fecha'
+        rgb_dir : Path
+            Directorio con archivos rgb_{date}.tif
+        scl_dir : Path
+            Directorio con archivos scl_{date}.tif
+        output_dir : Path
+            Directorio base para salida
+        percentile_low : float, optional
+            Percentil inferior para contrast stretching (default: 2)
+        percentile_high : float, optional
+            Percentil superior para contrast stretching (default: 98)
+        compress_level : int, optional
+            Nivel de compresión PNG 0-9 (default: 6)
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame actualizado con rutas PNG y columna 'cobertura_tile_pct'
+        """
+        # Paleta de colores SCL oficial ESA
+        SCL_COLORS = {
+            0:  [0, 0, 0],          # Sin datos (negro)
+            1:  [255, 0, 0],        # Saturado/Defectuoso (rojo)
+            2:  [47, 47, 47],       # Sombra oscura (gris oscuro)
+            3:  [100, 50, 0],       # Sombra de nube (marrón oscuro)
+            4:  [0, 160, 0],        # Vegetación (verde)
+            5:  [255, 230, 90],     # No vegetación (amarillo)
+            6:  [0, 0, 255],        # Agua (azul)
+            7:  [128, 128, 128],    # Incierto (gris)
+            8:  [192, 192, 192],    # Nube media (gris claro)
+            9:  [255, 255, 255],    # Nube alta (blanco)
+            10: [100, 200, 255],    # Cirrus (azul claro)
+            11: [255, 150, 255],    # Nieve/Hielo (rosa)
+        }
+        
+        # Crear directorios
+        png_rgb_dir = output_dir / "rgb_png"
+        png_scl_dir = output_dir / "scl_png"
+        png_rgb_dir.mkdir(exist_ok=True)
+        png_scl_dir.mkdir(exist_ok=True)
+        
+        print("Convirtiendo imágenes TIF → PNG normalizado...\n")
+        
+        # Verificar si ya existe columna de cobertura (evitar recálculo)
+        cobertura_exists = 'cobertura_tile_pct' in df.columns
+        if cobertura_exists:
+            print("💡 Columna 'cobertura_tile_pct' ya existe, se preservará\n")
+        
+        conversion_results = []
+        
+        for i, row in df.iterrows():
+            date = row['fecha']
+            
+            tif_rgb = rgb_dir / f"rgb_{date}.tif"
+            png_rgb = png_rgb_dir / f"rgb_{date}.png"
+            tif_scl = scl_dir / f"scl_{date}.tif"
+            png_scl = png_scl_dir / f"scl_{date}.png"
+            
+            try:
+                # ----- RGB: Normalización con contrast stretching -----
+                # Solo calcular cobertura si no existe ya en el DataFrame
+                if cobertura_exists:
+                    cobertura_pct = row['cobertura_tile_pct']
+                else:
+                    cobertura_pct = 0.0
+                
+                with rasterio.open(tif_rgb) as src:
+                    rgb = np.dstack([src.read(i) for i in [1, 2, 3]])
+                    
+                    valid_pixels = ~np.isnan(rgb).any(axis=2)
+                    valid_count = valid_pixels.sum()
+                    
+                    # Calcular cobertura solo si no existía previamente
+                    if not cobertura_exists:
+                        total_pixels = valid_pixels.size
+                        cobertura_pct = (valid_count / total_pixels) * 100 if total_pixels > 0 else 0.0
+                    
+                    if valid_count > 0:
+                        p_low, p_high = np.percentile(
+                            rgb[valid_pixels], 
+                            (percentile_low, percentile_high)
+                        )
+                        rgb_stretched = np.clip(
+                            (rgb - p_low) / (p_high - p_low), 0, 1
+                        )
+                        rgb_uint8 = (rgb_stretched * 255).astype(np.uint8)
+                        rgb_uint8[~valid_pixels] = [0, 0, 0]
+                        
+                        Image.fromarray(rgb_uint8, mode='RGB').save(
+                            png_rgb, compress_level=compress_level
+                        )
+                
+                # ----- SCL: Mapeo categórico a colores ESA -----
+                with rasterio.open(tif_scl) as src:
+                    scl = src.read(1)
+                    scl_rgb = np.zeros((*scl.shape, 3), dtype=np.uint8)
+                    
+                    for class_id, color in SCL_COLORS.items():
+                        scl_rgb[scl == class_id] = color
+                    
+                    scl_rgb[np.isnan(scl)] = SCL_COLORS[0]
+                    
+                    Image.fromarray(scl_rgb, mode='RGB').save(
+                        png_scl, compress_level=compress_level
+                    )
+                
+                conversion_results.append({
+                    'date': date,
+                    'rgb_png': str(png_rgb.relative_to(output_dir)),
+                    'scl_png': str(png_scl.relative_to(output_dir)),
+                    'cobertura_tile_pct': round(cobertura_pct, 2)
+                })
+                
+                print(f"  ✓ {date} ({cobertura_pct:.1f}% cobertura)")
+                
+            except Exception as e:
+                print(f"  ✗ {date} - Error: {e}")
+        
+        print(f"\n✓ Convertidas {len(conversion_results)} fechas a PNG")
+        print(f"\nDirectorios PNG:")
+        print(f"  RGB: {png_rgb_dir}")
+        print(f"  SCL: {png_scl_dir}")
+        
+        # Actualizar DataFrame
+        df_updated = df.copy()
+        df_updated['imagen_rgb_tif'] = df_updated['imagen_rgb'].copy()
+        df_updated['imagen_scl_tif'] = df_updated['imagen_scl'].copy()
+        df_updated['imagen_rgb'] = [f"rgb_png/rgb_{d}.png" for d in df_updated['fecha']]
+        df_updated['imagen_scl'] = [f"scl_png/scl_{d}.png" for d in df_updated['fecha']]
+        
+        # Añadir o actualizar columna de cobertura del tile
+        if not cobertura_exists:
+            cobertura_dict = {r['date']: r['cobertura_tile_pct'] for r in conversion_results}
+            df_updated['cobertura_tile_pct'] = df_updated['fecha'].map(cobertura_dict)
+        # Si ya existe, se preserva automáticamente en el copy()
+        
+        # Estadísticas de cobertura
+        print(f"\n📊 Estadísticas de cobertura del tile:")
+        print(f"  Media:   {df_updated['cobertura_tile_pct'].mean():>6.2f}%")
+        print(f"  Mínima:  {df_updated['cobertura_tile_pct'].min():>6.2f}%")
+        print(f"  Máxima:  {df_updated['cobertura_tile_pct'].max():>6.2f}%")
+        
+        parciales = (df_updated['cobertura_tile_pct'] < 95).sum()
+        if parciales > 0:
+            print(f"  ⚠️  {parciales} imágenes con cobertura <95% (tiles parciales)")
+        
+        return df_updated

@@ -11,6 +11,7 @@ import requests
 import openeo
 import numpy as np
 import xarray
+from datetime import datetime, timedelta
 from scipy.ndimage import binary_dilation
 
 
@@ -183,7 +184,8 @@ class OpenEOClient:
         self,
         date: str,
         bbox: dict,
-        output_dir: str
+        output_dir: str,
+        polygon: dict = None
     ) -> str:
         """
         Descarga RGB (B04+B03+B02) para una fecha.
@@ -200,6 +202,9 @@ class OpenEOClient:
             Bounding box con west/south/east/north
         output_dir : str
             Directorio donde guardar el GeoTIFF
+        polygon : dict, optional
+            GeoJSON polygon para recorte exacto. Si se proporciona,
+            se usa filter_spatial para recortar al polígono exacto.
             
         Returns
         -------
@@ -226,14 +231,23 @@ class OpenEOClient:
             # Crear directorio si no existe
             os.makedirs(output_dir, exist_ok=True)
             
+            # Calcular rango temporal (date -> date+1)
+            # OpenEO requiere rango, no fecha única
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            next_day = (date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+            
             # Definir proceso graph
             cube = self.connection.load_collection(
                 "SENTINEL2_L2A",
                 spatial_extent=bbox,
-                temporal_extent=[date, date],
+                temporal_extent=[date, next_day],
                 bands=["B04", "B03", "B02"],  # R, G, B
                 max_cloud_cover=100,
             )
+            
+            # Si se proporciona polígono, recortar al área exacta
+            if polygon is not None:
+                cube = cube.filter_spatial(geometries=polygon)
             
             # Reducir dimensión temporal (promedio si hay múltiples tomas)
             cube = cube.reduce_dimension(dimension="t", reducer="mean")
@@ -259,7 +273,8 @@ class OpenEOClient:
         self,
         date: str,
         bbox: dict,
-        output_dir: str
+        output_dir: str,
+        polygon: dict = None
     ) -> str:
         """
         Descarga SCL (Scene Classification Layer) para una fecha.
@@ -275,6 +290,8 @@ class OpenEOClient:
             Bounding box con west/south/east/north
         output_dir : str
             Directorio donde guardar el GeoTIFF
+        polygon : dict, optional
+            GeoJSON polygon para recorte exacto
             
         Returns
         -------
@@ -297,13 +314,22 @@ class OpenEOClient:
         try:
             os.makedirs(output_dir, exist_ok=True)
             
+            # Calcular rango temporal (date -> date+1)
+            # OpenEO requiere rango, no fecha única
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            next_day = (date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+            
             cube = self.connection.load_collection(
                 "SENTINEL2_L2A",
                 spatial_extent=bbox,
-                temporal_extent=[date, date],
+                temporal_extent=[date, next_day],
                 bands=["SCL"],
                 max_cloud_cover=100,
             )
+            
+            # Si se proporciona polígono, recortar al área exacta
+            if polygon is not None:
+                cube = cube.filter_spatial(geometries=polygon)
             
             cube = cube.reduce_dimension(dimension="t", reducer="mean")
             
