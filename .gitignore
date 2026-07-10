@@ -41,6 +41,18 @@ dataset_foz/*.zip
 dataset_foz/dataset_foz_code.zip
 
 # ==========================
+# Modelo Generativo - Excluir datos grandes
+# ==========================
+modelo_generativo/rgb/
+modelo_generativo/scl/
+modelo_generativo/rgb_png/
+modelo_generativo/scl_png/
+modelo_generativo/tide_models/
+modelo_generativo/*.tif
+modelo_generativo/*.csv
+modelo_generativo/*.zip
+
+# ==========================
 # Datos específicos del proyecto
 # ==========================
 4.2.0/
