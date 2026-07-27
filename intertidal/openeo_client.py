@@ -7,12 +7,14 @@ Gestiona conexión, autenticación y descargas de datos Sentinel-2.
 """
 
 import os
+from matplotlib import dates
 import requests
 import openeo
 import numpy as np
 import xarray
 from datetime import datetime, timedelta
 from scipy.ndimage import binary_dilation
+import re
 
 
 class OpenEOClient:
@@ -347,9 +349,8 @@ class OpenEOClient:
         except Exception as e:
             print(f"   {date} — error: {e}")
             return f"error: {e}"
-    
-    def download_rgb_batch(
-        self,
+
+    def download_rgb_batch(self,
         dates: list[str],
         bbox: dict,
         output_dir: str
@@ -553,6 +554,261 @@ class OpenEOClient:
         except Exception as e:
             print(f"  Error en batch job reference map: {e}")
             return f"error: {e}"
+        
+        
+    def download_rgb_batch_single_job(
+        self,
+        dates: list[str],
+        bbox: dict,
+        output_dir: str,
+        polygon=None,
+        keep_only_valid: bool = True
+    ) -> list[str]:
+        """
+    Descarga múltiples imágenes RGB mediante UN ÚNICO Batch Job.
+
+    Estrategia
+    ----------
+    1. Crear un único DataCube para todo el intervalo temporal.
+    2. Filtrar únicamente las fechas válidas.
+    3. Recortar al AOI.
+    4. Exportar como GeoTIFF.
+    5. Descargar todos los assets del job.
+
+    Parameters
+    ----------
+    dates : list[str]
+    bbox : dict
+    output_dir : str
+    polygon : GeoJSON | None
+
+    Returns
+    -------
+    list[str]
+        Lista de archivos descargados.
+    """
+
+        import os
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        dates = sorted(dates)
+
+        start = dates[0]
+        end = dates[-1]
+
+        print(f"Intervalo temporal : {start} → {end}")
+        print(f"Fechas solicitadas : {len(dates)}")
+
+    # ----------------------------------------------------------
+    # Crear un único cubo
+    # ----------------------------------------------------------
+
+        cube = self.connection.load_collection(
+            "SENTINEL2_L2A",
+            spatial_extent=bbox,
+            temporal_extent=[start, end],
+            bands=["B04", "B03", "B02"],
+            max_cloud_cover=100,
+    )
+
+    # ----------------------------------------------------------
+    # Filtrar únicamente las fechas válidas
+    # ----------------------------------------------------------
+
+        try:
+            cube = cube.filter_labels(
+                dimension="t",
+                condition=lambda x: x.isin(dates)
+            )
+
+            print("✓ filter_labels aplicado")
+
+        except Exception as e:
+            print("⚠ filter_labels no soportado por el backend")
+            print(e)
+            print("Se utilizará todo el intervalo temporal.")
+
+    # ----------------------------------------------------------
+    # Recorte al AOI
+    # ----------------------------------------------------------
+
+        if polygon is not None:
+            cube = cube.filter_spatial(polygon)
+
+    # ----------------------------------------------------------
+    # Guardar resultado
+    # ----------------------------------------------------------
+
+        cube = cube.save_result("GTiff")
+
+    # ----------------------------------------------------------
+    # Lanzar UN único job
+    # ----------------------------------------------------------
+
+        job = cube.create_job(
+            title=f"RGB stack ({len(dates)} fechas)"
+        )
+
+        print("Lanzando Batch Job...")
+
+        job.start_and_wait()
+
+        print("Job finalizado.")
+
+    # ----------------------------------------------------------
+    # Descargar assets
+    # ----------------------------------------------------------
+        # ----------------------------------------------------------
+        # Descargar assets
+        # ----------------------------------------------------------
+
+        results = job.get_results()
+
+        assets = results.get_assets()
+
+        print(f"{len(assets)} assets encontrados")
+
+        downloaded = []
+
+        valid_dates_set = set(dates)
+
+        for asset in assets:
+
+            # Extraer fecha del nombre del asset
+            if keep_only_valid:  # Agregar este parámetro a la función
+
+                match = re.search(r"\d{4}-\d{2}-\d{2}", asset.name)
+
+                if match is None:
+                    print(f"⚠ No se pudo identificar la fecha de {asset.name}")
+                    continue
+
+                asset_date = match.group(0)
+
+                if asset_date not in valid_dates_set:
+                    print(f"⏭ Saltando {asset.name}")
+                    continue
+
+            filename = os.path.join(
+                output_dir,
+                asset.name
+            )
+
+            print(f"↓ {asset.name}")
+
+            asset.download(filename)
+
+            downloaded.append(filename)
+
+        print(f"✓ {len(downloaded)} archivos descargados")
+
+        return downloaded
+    
+    def download_scl_batch_single_job(
+        self,
+        dates: list[str],
+        bbox: dict,
+        output_dir: str,
+        polygon=None,
+        keep_only_valid: bool = True
+    ) -> list[str]:
+        """
+        Descarga todas las imágenes SCL mediante un único Batch Job.
+        """
+
+        import os
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        dates = sorted(dates)
+
+        start = dates[0]
+        end = dates[-1]
+
+        print(f"Intervalo: {start} → {end}")
+        print(f"Fechas: {len(dates)}")
+
+        cube = self.connection.load_collection(
+            "SENTINEL2_L2A",
+            spatial_extent=bbox,
+            temporal_extent=[start, end],
+            bands=["SCL"],
+            max_cloud_cover=100,
+        )
+
+        # Mantener únicamente las fechas válidas
+        try:
+            cube = cube.filter_labels(
+                dimension="t",
+                condition=lambda x: x.isin(dates)
+            )
+            print("✓ filter_labels aplicado")
+        except Exception as e:
+            print("⚠ filter_labels no disponible")
+            print(e)
+
+        # Recorte al AOI
+        if polygon is not None:
+            cube = cube.filter_spatial(polygon)
+
+        cube = cube.save_result("GTiff")
+
+        job = cube.create_job(
+            title=f"SCL stack ({len(dates)} escenas)"
+        )
+
+        print("Lanzando Batch Job...")
+
+        job.start_and_wait()
+
+        print("Descargando resultados...")
+
+        # ----------------------------------------------------------
+        # Descargar assets
+        # ----------------------------------------------------------
+
+        results = job.get_results()
+
+        assets = results.get_assets()
+
+        print(f"{len(assets)} assets encontrados")
+
+        downloaded = []
+
+        valid_dates_set = set(dates)
+
+        for asset in assets:
+
+            # Extraer fecha del nombre del asset
+            if keep_only_valid:
+
+                match = re.search(r"\d{4}-\d{2}-\d{2}", asset.name)
+
+                if match is None:
+                    print(f"⚠ No se pudo identificar la fecha de {asset.name}")
+                    continue
+
+                asset_date = match.group(0)
+
+                if asset_date not in valid_dates_set:
+                    print(f"⏭ Saltando {asset.name}")
+                    continue
+
+            filename = os.path.join(
+                output_dir,
+                asset.name
+            )
+
+            print(f"↓ {asset.name}")
+
+            asset.download(filename)
+
+            downloaded.append(filename)
+
+        print(f"✓ {len(downloaded)} archivos descargados")
+
+        return downloaded
     
     @staticmethod
     def _get_reference_udf_code() -> str:

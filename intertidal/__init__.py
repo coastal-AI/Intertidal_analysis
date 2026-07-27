@@ -82,6 +82,12 @@ from .notebook_compat import (
     get_water_centroid,
 )
 from .overpass import get_overpass_times, overpass_hour_utc
+from .marsh_detector import (
+    compute_ndwi_mndwi_openeo,
+    compute_ndwi_mndwi_batch_openeo,
+    detect_flooded_vegetation,
+    correct_scl_for_marshes,
+)
 
 __all__ = [
     "GeometryProcessor",
@@ -91,6 +97,11 @@ __all__ = [
     "IntertidalMapper",
     "TideAnalyzer",
     "Visualizer",
+    # Detección de marismas (vegetación inundada)
+    "compute_ndwi_mndwi_openeo",
+    "compute_ndwi_mndwi_batch_openeo",
+    "detect_flooded_vegetation",
+    "correct_scl_for_marshes",
     # Métricas de calidad de distribuciones mareales
     "calcular_cobertura_rango_mareal",
     "calcular_uniformidad_ks",

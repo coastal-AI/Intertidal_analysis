@@ -41,7 +41,7 @@ class RasterProcessor:
         Parameters
         ----------
         path : str or Path
-            Ruta al archivo GeoTIFF
+            # Ruta al archivo GeoTIFF
             
         Returns
         -------
@@ -320,7 +320,7 @@ class RasterProcessor:
         pd.DataFrame
             DataFrame actualizado con rutas PNG y columna 'cobertura_tile_pct'
         """
-        # Paleta de colores SCL oficial ESA
+        # Paleta de colores SCL oficial ESA + clase personalizada
         SCL_COLORS = {
             0:  [0, 0, 0],          # Sin datos (negro)
             1:  [255, 0, 0],        # Saturado/Defectuoso (rojo)
@@ -334,6 +334,7 @@ class RasterProcessor:
             9:  [255, 255, 255],    # Nube alta (blanco)
             10: [100, 200, 255],    # Cirrus (azul claro)
             11: [255, 150, 255],    # Nieve/Hielo (rosa)
+            12: [0, 153, 153],      # Vegetación inundada/marisma (verde-azulado)
         }
         
         # Crear directorios
@@ -368,8 +369,13 @@ class RasterProcessor:
                     cobertura_pct = 0.0
                 
                 with rasterio.open(tif_rgb) as src:
-                    rgb = np.dstack([src.read(i) for i in [1, 2, 3]])
+                    rgb = np.dstack([src.read(i) for i in [1, 2, 3]]).astype(float)
                     
+                    nodata = src.nodata
+                    
+                    if nodata is not None:
+                        rgb[rgb == nodata] = np.nan
+
                     valid_pixels = ~np.isnan(rgb).any(axis=2)
                     valid_count = valid_pixels.sum()
                     
@@ -378,18 +384,24 @@ class RasterProcessor:
                         total_pixels = valid_pixels.size
                         cobertura_pct = (valid_count / total_pixels) * 100 if total_pixels > 0 else 0.0
                     
-                    if valid_count > 0:
-                        p_low, p_high = np.percentile(
-                            rgb[valid_pixels], 
-                            (percentile_low, percentile_high)
-                        )
-                        rgb_stretched = np.clip(
-                            (rgb - p_low) / (p_high - p_low), 0, 1
-                        )
-                        rgb_uint8 = (rgb_stretched * 255).astype(np.uint8)
-                        rgb_uint8[~valid_pixels] = [0, 0, 0]
+                    if valid_count == 0:
+                        raise RuntimeError("No hay píxeles válidos en el GeoTIFF RGB")
+                    
+                    valid_values = rgb[valid_pixels]
+                    
+                    p_low = np.percentile(valid_values, percentile_low)
+                    p_high = np.percentile(valid_values, percentile_high)
+                    
+                    if p_high <= p_low:
+                        p_high = p_low + 1
                         
-                        Image.fromarray(rgb_uint8, mode='RGB').save(
+                    rgb = (rgb - p_low) / (p_high - p_low)
+                    rgb = np.clip(rgb, 0, 1)
+
+                    rgb_uint8 = (rgb * 255).astype(np.uint8)
+                    rgb_uint8[~valid_pixels] = [0, 0, 0]
+            
+                    Image.fromarray(rgb_uint8, mode='RGB').save(
                             png_rgb, compress_level=compress_level
                         )
                 

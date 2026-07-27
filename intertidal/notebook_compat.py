@@ -282,10 +282,26 @@ def evaluate_transition_cloud_coverage_openeo(
         # Fallback robusto: usar get_overpass_times (endpoint STAC v1, que sí
         # funciona) en lugar de get_available_dates (endpoint antiguo que
         # devuelve 400/0 resultados).
-        from .overpass import get_overpass_times
-
-        overpass = get_overpass_times(bbox, time_extent)
-        all_dates = sorted(overpass.keys())
+        try:
+            from .overpass import get_overpass_times
+            overpass = get_overpass_times(bbox, time_extent)
+            all_dates = sorted(overpass.keys())
+        except Exception as stac_exc:
+            print(f"  STAC también falló ({stac_exc}); usando fechas de archivos locales")
+            # Último fallback: leer fechas de los archivos SCL descargados
+            # Nota: os y re ya están importados a nivel módulo, no reimportar
+            all_dates = []
+            if os.path.isdir(scl_dir):
+                for filename in os.listdir(scl_dir):
+                    match = _re.match(r"scl_(\d{4}-\d{2}-\d{2})\.tif$", filename)
+                    if match:
+                        all_dates.append(match.group(1))
+            all_dates = sorted(set(all_dates))
+            if all_dates:
+                print(f"  ✓ Encontradas {len(all_dates)} fechas en archivos locales")
+            else:
+                print(f"  ⚠️ No se pudieron obtener fechas por ningún método")
+                return {}
 
     print(f"  Ejemplo fechas parseadas: {all_dates[:3] if all_dates else '(ninguna)'}")
 
@@ -426,6 +442,10 @@ import xarray
 def apply_datacube(cube: xarray.DataArray, context: dict) -> xarray.DataArray:
 
     water_class = context.get("water_class", 6)
+    # Soportar múltiples clases de "agua" (ej: [6, 12] = agua + vegetación inundada)
+    if not isinstance(water_class, list):
+        water_class = [water_class]
+    
     clear_classes = context.get("clear_classes", [4, 5, 6])
     valid_dates = context.get("valid_dates", None)
     min_obs = int(context.get("min_obs", 0))
@@ -445,7 +465,7 @@ def apply_datacube(cube: xarray.DataArray, context: dict) -> xarray.DataArray:
         if keep.any():
             arr = arr[keep]
 
-    water_votes = np.sum(arr == water_class, axis=0).astype(np.float32)
+    water_votes = np.sum(np.isin(arr, water_class), axis=0).astype(np.float32)
     clear_votes = np.sum(np.isin(arr, clear_classes), axis=0).astype(np.float32)
 
     # Evitar división por cero
@@ -476,8 +496,8 @@ def compute_water_frequency_openeo(
     out_path="water_frequency.tif",
     force=False,
     scl_dir="tifs_scl",
-    water_class=6,
-    clear_classes=(4, 5, 6),
+    water_class=[6, 12],  # Agua abierta (6) + vegetación inundada/marisma (12)
+    clear_classes=(4, 5, 6, 12),  # Incluir marisma como observación válida
     min_obs=8,
 ):
     """Calcula el water frequency raster ejecutando un UDF en el backend de

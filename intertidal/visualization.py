@@ -41,7 +41,7 @@ class Visualizer:
     >>> Visualizer.plot_reference_map(ref_map)
     """
     
-    # Paleta de colores SCL oficial ESA
+    # Paleta de colores SCL oficial ESA + clase personalizada
     SCL_COLORS = {
         0:  ("Sin datos",           "#000000"),
         1:  ("Saturado/Defectuoso", "#ff0000"),
@@ -55,6 +55,7 @@ class Visualizer:
         9:  ("Nube alta",           "#ffffff"),
         10: ("Cirrus",              "#64c8ff"),
         11: ("Nieve/Hielo",         "#ff96ff"),
+        12: ("Vegetación inundada", "#009999"),  # Verde-azulado (marismas)
     }
     
     @staticmethod
@@ -139,10 +140,10 @@ class Visualizer:
         
         # Panel SCL
         scl_float = scl_arr.astype(float)
-        color_list = [Visualizer.SCL_COLORS.get(c, ("?", "#aaaaaa"))[1] for c in range(12)]
+        color_list = [Visualizer.SCL_COLORS.get(c, ("?", "#aaaaaa"))[1] for c in range(13)]
         cmap = mcolors.ListedColormap(color_list)
         cmap.set_bad("white")
-        norm = mcolors.BoundaryNorm(boundaries=list(range(13)), ncolors=12)
+        norm = mcolors.BoundaryNorm(boundaries=list(range(14)), ncolors=13)
         
         ax_scl.imshow(scl_float, cmap=cmap, norm=norm, interpolation="nearest")
         ax_scl.set_title(f"SCL — {date}", fontsize=12, fontweight="bold")
@@ -236,10 +237,10 @@ class Visualizer:
                 scl_arr[~mask] = np.nan
         
         # Configurar colores
-        color_list = [Visualizer.SCL_COLORS.get(c, ("?", "#aaaaaa"))[1] for c in range(12)]
+        color_list = [Visualizer.SCL_COLORS.get(c, ("?", "#aaaaaa"))[1] for c in range(13)]
         cmap = mcolors.ListedColormap(color_list)
         cmap.set_bad("white")
-        norm = mcolors.BoundaryNorm(boundaries=list(range(13)), ncolors=12)
+        norm = mcolors.BoundaryNorm(boundaries=list(range(14)), ncolors=13)
         
         # Crear figura
         fig, (ax_scl, ax_legend) = plt.subplots(

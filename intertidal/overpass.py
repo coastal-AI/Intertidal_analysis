@@ -58,51 +58,91 @@ def get_overpass_times(bbox: dict, time_extent: list[str]) -> dict[str, datetime
     """
     overpass: dict[str, datetime] = {}
 
+    # Validar y normalizar bbox (asegurar que sean floats)
+    try:
+        bbox_list = [
+            float(bbox["west"]),
+            float(bbox["south"]),
+            float(bbox["east"]),
+            float(bbox["north"])
+        ]
+    except (KeyError, ValueError, TypeError) as e:
+        raise ValueError(f"bbox inválido: {e}")
+
+    # Construir body de la consulta STAC
     body = {
         "collections": ["sentinel-2-l2a"],
-        "bbox": [bbox["west"], bbox["south"], bbox["east"], bbox["north"]],
+        "bbox": bbox_list,
         "datetime": f"{time_extent[0]}T00:00:00Z/{time_extent[1]}T23:59:59Z",
-        "limit": 200,
+        "limit": 100,  # Reducir límite para evitar timeouts
     }
 
     session = _create_session_with_retries()
     url: str | None = STAC_SEARCH
     
     try:
-        while url:
-            resp = session.post(url, json=body, timeout=120)  # Timeout aumentado a 120s
-            resp.raise_for_status()
-            data = resp.json()
+        page_count = 0
+        max_pages = 50  # Límite de seguridad para evitar loops infinitos
+        
+        while url and page_count < max_pages:
+            try:
+                resp = session.post(url, json=body, timeout=120)
+                resp.raise_for_status()
+                data = resp.json()
+                page_count += 1
 
-            for feature in data.get("features", []):
-                # La hora real está en el nombre del producto: _YYYYMMDDTHHMMSS_
-                title = feature["properties"].get("title", "") or feature.get("id", "")
-                # Filtrar solo productos L2A (Nivel 2A) en local: su nombre
-                # contiene 'MSIL2A' (evita el filtro CQL2 que el backend rechaza).
-                if "MSIL2A" not in title:
-                    continue
-                match = re.search(r"_(\d{8}T\d{6})_", title)
-                if not match:
-                    continue
-                dt = datetime.strptime(match.group(1), "%Y%m%dT%H%M%S")
-                date_key = dt.strftime("%Y-%m-%d")
-                if date_key not in overpass:
-                    overpass[date_key] = dt
+                features = data.get("features", [])
+                if not features and page_count == 1:
+                    print(f"⚠️ No se encontraron escenas en el catálogo STAC")
+                    print(f"   bbox: {bbox_list}")
+                    print(f"   time: {time_extent}")
+                    break
 
-            next_link = next(
-                (lk for lk in data.get("links", []) if lk.get("rel") == "next"), None
-            )
-            # En paginación POST, el 'next' incluye el cuerpo (con el token de
-            # paginación) en next_link["body"]; se reutiliza para la siguiente
-            # petición. El href apunta a la misma URL de búsqueda.
-            if next_link:
-                url = next_link.get("href", STAC_SEARCH)
-                body = next_link.get("body", body)
-            else:
-                url = None
+                for feature in features:
+                    # La hora real está en el nombre del producto: _YYYYMMDDTHHMMSS_
+                    title = feature["properties"].get("title", "") or feature.get("id", "")
+                    # Filtrar solo productos L2A (Nivel 2A) en local: su nombre
+                    # contiene 'MSIL2A' (evita el filtro CQL2 que el backend rechaza).
+                    if "MSIL2A" not in title:
+                        continue
+                    match = re.search(r"_(\d{8}T\d{6})_", title)
+                    if not match:
+                        continue
+                    dt = datetime.strptime(match.group(1), "%Y%m%dT%H%M%S")
+                    date_key = dt.strftime("%Y-%m-%d")
+                    if date_key not in overpass:
+                        overpass[date_key] = dt
+
+                next_link = next(
+                    (lk for lk in data.get("links", []) if lk.get("rel") == "next"), None
+                )
+                # En paginación POST, el 'next' incluye el cuerpo (con el token de
+                # paginación) en next_link["body"]; se reutiliza para la siguiente
+                # petición. El href apunta a la misma URL de búsqueda.
+                if next_link:
+                    url = next_link.get("href", STAC_SEARCH)
+                    body = next_link.get("body", body)
+                else:
+                    url = None
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"⚠️ Error en consulta STAC (página {page_count}): {e}")
+                if page_count == 1:
+                    # Si falla en la primera página, no hay datos
+                    raise
+                # Si falla en páginas posteriores, devolver lo que tenemos
+                break
+                
     finally:
         session.close()
 
+    if not overpass:
+        print("⚠️ No se pudieron obtener fechas del catálogo STAC")
+        print("   Esto puede deberse a:")
+        print("   - El área de estudio está fuera de la cobertura de Sentinel-2")
+        print("   - El período temporal no tiene escenas disponibles")
+        print("   - Problemas temporales con el servicio STAC de Copernicus")
+        
     return dict(sorted(overpass.items()))
 
 
