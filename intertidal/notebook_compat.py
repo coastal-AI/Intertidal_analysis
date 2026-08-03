@@ -6,6 +6,7 @@ históricos sin mantener funciones auxiliares dentro de las celdas.
 
 from __future__ import annotations
 
+from datetime import date
 import os
 import base64
 import zlib
@@ -114,7 +115,138 @@ def plot_water_frequency(water_freq, transform, crs, title=None, polygon=None,
         water_presence_threshold=water_presence_threshold,
     )
 
+def plot_intertidal_map(intertidal_mask,
+        wf_transform,
+        wf_crs,
+        intertidal_out_path,
+        low_threshold,
+        high_threshold,
+        area_km2):
+    return Visualizer.plot_intertidal_map(intertidal_mask,
+            wf_transform,
+            wf_crs,
+            intertidal_out_path,
+            low_threshold,
+            high_threshold,
+            area_km2
+    )
+    
+def plot_tide_time_series(
+        dates_reference,
+        heights,
+        title: str,):
+    return Visualizer.plot_tide_time_series(
+        dates_reference=dates_reference,
+        heights=heights,
+        title=title,
+    )
+    
+def plot_tide_distribution(
+        reference_heights,
+        selected_heights,
+        model_name,
+        title: str,):
+    return Visualizer.plot_tide_distribution(
+        reference_heights=reference_heights,
+        selected_heights=selected_heights,
+        model_name=model_name,
+        title=title,
+    )
 
+def plot_bathymetry(
+    elevation,
+    confidence=None,
+    hillshade=None,
+    contour_interval=0.25,
+    title="Bathymetry",
+    figsize=(11, 10),
+    alpha_min=0.35,
+    alpha_max=1.0,
+    min_confidence=0.0,
+    **kwargs,
+):
+    return Visualizer.plot_bathymetry(
+        elevation=elevation,
+        confidence=confidence,
+        hillshade=hillshade,
+        contour_interval=contour_interval,
+        title=title,
+        figsize=figsize,
+        alpha_min=alpha_min,
+        alpha_max=alpha_max,
+        min_confidence=min_confidence,
+        **kwargs,
+    )
+    
+def plot_bathymetry_uncertainty(
+    confidence,
+    mask,
+    elevation=None,
+    figsize=(10, 10),
+    **kwargs,
+):
+    return Visualizer.plot_bathymetry_uncertainty(
+        confidence=confidence,
+        mask=mask,
+        elevation=elevation,
+        figsize=figsize,
+        **kwargs,
+    )
+
+def plot_bathymetry_profile(
+    elevation,
+    mask,
+    start,
+    end,
+    pixel_size=10.0,
+    smooth_sigma=2.0,
+    figsize=(12, 5),
+    **kwargs,
+):
+    return Visualizer.plot_bathymetry_profile(
+        elevation=elevation,
+        mask=mask,
+        start=start,
+        end=end,
+        pixel_size=pixel_size,
+        smooth_sigma=smooth_sigma,
+        figsize=figsize,
+        **kwargs,
+    )
+
+def plot_bathymetry_3d(
+    elevation,
+    mask=None,
+    confidence=None,
+    min_confidence=0.0,
+    pixel_size=10.0,
+    vertical_exaggeration=5.0,
+    downsample=2,
+    fill_region=True,
+    clip_to_region=False,
+    close_iter=2,
+    region_dilate=2,
+    despike_size=5,
+    smooth_sigma=1.5,
+    **kwargs,
+):
+    return Visualizer.plot_bathymetry_3d(
+        elevation=elevation,
+        mask=mask,
+        confidence=confidence,
+        min_confidence=min_confidence,
+        pixel_size=pixel_size,
+        vertical_exaggeration=vertical_exaggeration,
+        downsample=downsample,
+        fill_region=fill_region,
+        clip_to_region=clip_to_region,
+        close_iter=close_iter,
+        region_dilate=region_dilate,
+        despike_size=despike_size,
+        smooth_sigma=smooth_sigma,
+        **kwargs,
+    )
+    
 def download_reference_map_openeo(
     conn,
     bbox,
@@ -202,7 +334,6 @@ def evaluate_transition_cloud_coverage_openeo(
     bbox,
     time_extent,
     reference_map,
-    reference_transform,
     bad_classes,
     reference_dates=None,
     global_bad_fraction_threshold=0.05,
@@ -570,3 +701,19 @@ def get_water_centroid(obj):
         c = obj.centroid
         return c.x, c.y
     raise TypeError("get_water_centroid espera un shapely Polygon")
+
+def get_tidal_coverage_percentage(date, rgb_dir):
+    
+    # Calcular cobertura del tile (% de píxeles válidos)
+    cobertura_pct = 0.0
+    tif_rgb_path = rgb_dir / f"rgb_{date}.tif"
+    
+    if tif_rgb_path.exists():
+        try:
+            with rasterio.open(tif_rgb_path) as src:
+                rgb = np.dstack([src.read(i) for i in [1, 2, 3]])
+                valid_pixels = ~np.isnan(rgb).any(axis=2)
+                cobertura_pct = (valid_pixels.sum() / valid_pixels.size) * 100
+        except Exception as e:
+            print(f"⚠️  Error leyendo {date} para cobertura: {e}")
+    return cobertura_pct

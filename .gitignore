@@ -53,6 +53,12 @@ modelo_generativo/*.csv
 modelo_generativo/*.zip
 
 # ==========================
+# Batimetría - productos generados y caché SCL
+# ==========================
+bathymetry/
+newplot.png
+
+# ==========================
 # Datos específicos del proyecto
 # ==========================
 4.2.0/

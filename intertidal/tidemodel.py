@@ -5,6 +5,7 @@ from pyTMD.datasets import fetch_gsfc_got, fetch_aviso_fes
 from datetime import datetime
 import copernicusmarine
 import pandas as pd
+import geopandas as gpd
 
 
 class PyTMDTideModel:
@@ -50,7 +51,22 @@ class PyTMDTideModel:
         self.resolution = resolution
         self.model_path = os.path.join(directory, model_name)
         self._download_model()
-
+        
+    def _fill_coords(self, polygon, tide_location=None):
+        """
+        Llena las coordenadas de marea para un polígono dado.
+        
+        Args:
+            polygon: shapely Polygon que define la zona de interés.
+            tide_location: (lat, lon) opcional. Si no se proporciona,
+                           se calcula el centroide del polígono.
+        """
+        if tide_location is None:
+            gdf = gpd.GeoDataFrame(geometry=[polygon], crs="EPSG:4326")
+            centroid = gdf.geometry.iloc[0].centroid
+            tide_location = (centroid.y, centroid.x)  # (lat, lon)
+        return tide_location
+    
     def _download_model(self):
         """Descarga el modelo de marea si no existe en caché."""
         matches = False

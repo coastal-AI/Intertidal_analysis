@@ -88,6 +88,10 @@ from .marsh_detector import (
     detect_flooded_vegetation,
     correct_scl_for_marshes,
 )
+from .bathymetry import (
+    BathymetryReconstructor,
+    BathymetryResult,
+)
 
 __all__ = [
     "GeometryProcessor",
@@ -97,6 +101,9 @@ __all__ = [
     "IntertidalMapper",
     "TideAnalyzer",
     "Visualizer",
+    # Batimetría intermareal
+    "BathymetryReconstructor",
+    "BathymetryResult",
     # Detección de marismas (vegetación inundada)
     "compute_ndwi_mndwi_openeo",
     "compute_ndwi_mndwi_batch_openeo",
