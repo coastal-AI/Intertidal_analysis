@@ -79,6 +79,8 @@ from .notebook_compat import (
     evaluate_transition_cloud_coverage_openeo,
     quantify_reference_gain,
     compute_water_frequency_openeo,
+    compute_water_frequency_mndwi_openeo,
+    compute_water_frequency_multi_openeo,
     get_water_centroid,
 )
 from .overpass import get_overpass_times, overpass_hour_utc
@@ -92,6 +94,13 @@ from .bathymetry import (
     BathymetryReconstructor,
     BathymetryResult,
 )
+from .validation import (
+    download_mdt_ign,
+    reproject_to_grid,
+    validate_wf_vs_elevation,
+    intertidal_from_wf,
+    pairwise_iou,
+)
 
 __all__ = [
     "GeometryProcessor",
@@ -104,6 +113,11 @@ __all__ = [
     # Batimetría intermareal
     "BathymetryReconstructor",
     "BathymetryResult",
+    "download_mdt_ign",
+    "reproject_to_grid",
+    "validate_wf_vs_elevation",
+    "intertidal_from_wf",
+    "pairwise_iou",
     # Detección de marismas (vegetación inundada)
     "compute_ndwi_mndwi_openeo",
     "compute_ndwi_mndwi_batch_openeo",
@@ -140,6 +154,8 @@ __all__ = [
     "evaluate_transition_cloud_coverage_openeo",
     "quantify_reference_gain",
     "compute_water_frequency_openeo",
+    "compute_water_frequency_mndwi_openeo",
+    "compute_water_frequency_multi_openeo",
     "get_water_centroid",
     "get_overpass_times",
     "overpass_hour_utc",

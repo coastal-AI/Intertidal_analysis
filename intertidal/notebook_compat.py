@@ -696,6 +696,355 @@ def compute_water_frequency_openeo(
     return water_freq, transform, crs
 
 
+# =====================================================================
+# Water frequency por índice espectral (MNDWI) — variante para comparar
+# con la clasificación SCL. La detección de agua usa MNDWI > umbral, pero
+# el enmascarado de nubes (denominador de observaciones claras) sigue
+# usando la máscara SCL: así el ÚNICO cambio respecto a la versión SCL es
+# el criterio agua/no-agua (comparación A/B limpia).
+# =====================================================================
+
+_WATER_FREQUENCY_MNDWI_UDF = r"""
+import numpy as np
+import xarray
+
+
+def apply_datacube(cube: xarray.DataArray, context: dict) -> xarray.DataArray:
+
+    threshold = float(context.get("threshold", 0.0))
+    clear_classes = context.get("clear_classes", [4, 5, 6, 12])
+    valid_dates = context.get("valid_dates", None)
+    min_obs = int(context.get("min_obs", 0))
+
+    arr = cube.values.astype("float64")  # (t, bands, y, x)
+
+    bnames = [str(b) for b in cube.coords["bands"].values]
+    ib03 = bnames.index("B03")
+    ib11 = bnames.index("B11")
+    iscl = bnames.index("SCL")
+
+    green = arr[:, ib03, :, :]
+    swir = arr[:, ib11, :, :]
+    scl = arr[:, iscl, :, :]
+
+    # ── Filtrar a solo las fechas válidas ────────────────────────────────────
+    if valid_dates:
+        tname = "t" if "t" in cube.dims else cube.dims[0]
+        tcoords = np.asarray(cube.coords[tname].values)
+        tstr = np.array([str(t)[:10] for t in tcoords])
+        keep = np.isin(tstr, list(valid_dates))
+        if keep.any():
+            green = green[keep]
+            swir = swir[keep]
+            scl = scl[keep]
+
+    # MNDWI = (Green - SWIR1) / (Green + SWIR1)
+    den = green + swir
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mndwi = np.where(den != 0, (green - swir) / den, np.nan)
+
+    # SCL puede venir remuestreado (20 m -> 10 m); redondear a clase entera.
+    scl_int = np.round(scl).astype(np.int16)
+
+    clear = np.isin(scl_int, clear_classes)                    # nubes fuera (igual que SCL)
+    water = clear & np.isfinite(mndwi) & (mndwi > threshold)    # agua por MNDWI
+
+    water_votes = np.sum(water, axis=0).astype(np.float32)
+    clear_votes = np.sum(clear, axis=0).astype(np.float32)
+
+    safe = np.where(clear_votes == 0, 1.0, clear_votes)
+    water_freq = (water_votes / safe).astype(np.float32)
+
+    threshold_obs = max(1, min_obs)
+    water_freq[clear_votes < threshold_obs] = np.nan
+
+    return xarray.DataArray(
+        water_freq[np.newaxis, :, :],
+        dims=["bands", "y", "x"],
+        coords={
+            "bands": ["water_frequency"],
+            "y": cube.coords["y"],
+            "x": cube.coords["x"],
+        },
+    )
+"""
+
+
+def compute_water_frequency_mndwi_openeo(
+    conn,
+    bbox,
+    time_extent,
+    valid_dates=None,
+    out_path="water_frequency_mndwi.tif",
+    force=False,
+    threshold=0.0,
+    clear_classes=(4, 5, 6, 12),
+    min_obs=8,
+):
+    """Water frequency detectando agua por MNDWI (B03/B11) en lugar de la clase
+    SCL, manteniendo la máscara de nubes SCL. Misma firma/uso que
+    ``compute_water_frequency_openeo``.
+
+    Parameters
+    ----------
+    threshold : float
+        Umbral de MNDWI para considerar un píxel como agua (default 0.0, Xu 2006).
+    clear_classes : tuple[int]
+        Clases SCL consideradas observación clara (denominador), idéntico a la
+        versión SCL para que la comparación sea justa.
+    min_obs : int
+        Mínimo de observaciones claras por píxel; por debajo se marca NaN.
+
+    Devuelve (water_freq, transform, crs).
+    """
+    if (not force) and os.path.exists(out_path):
+        return RasterProcessor.load_reference_map(out_path)
+
+    cube = conn.load_collection(
+        "SENTINEL2_L2A",
+        spatial_extent=bbox,
+        temporal_extent=time_extent,
+        bands=["B03", "B11", "SCL"],
+        max_cloud_cover=100,
+    )
+
+    # Filtrar a las fechas válidas EN LA CARGA (no dentro del UDF): así el
+    # backend solo lee esas escenas en vez de todo el time_extent. Cargar
+    # B03 a 10 m para muchas escenas es lo que hace lento el job.
+    if valid_dates:
+        try:
+            cube = cube.filter_labels(
+                dimension="t",
+                condition=lambda x: x.isin(list(valid_dates)),
+            )
+        except Exception as exc:
+            print(f"  (filter_labels no disponible; se filtrará en el UDF): {exc}")
+
+    udf = openeo.UDF(
+        code=_WATER_FREQUENCY_MNDWI_UDF,
+        runtime="Python",
+        context={
+            "threshold": float(threshold),
+            "clear_classes": list(clear_classes),
+            "valid_dates": list(valid_dates) if valid_dates else None,
+            "min_obs": int(min_obs),
+        },
+    )
+
+    wf_cube = cube.reduce_dimension(dimension="t", reducer=udf)
+
+    job = (
+        wf_cube
+        .save_result(format="GTiff")
+        .create_job(title="water_frequency_mndwi")
+    )
+
+    print(
+        f"  Lanzando batch job water frequency MNDWI "
+        f"({time_extent[0]} → {time_extent[1]})..."
+    )
+    job.start_and_wait()
+
+    assets = job.get_results().get_assets()
+    if not assets:
+        raise RuntimeError("El job de water frequency (MNDWI) no devolvió assets")
+
+    assets[0].download(out_path)
+    print(f"  Water frequency (MNDWI) descargado -> {out_path}")
+
+    with rasterio.open(out_path) as src:
+        water_freq = src.read(1).astype(np.float32)
+        transform = src.transform
+        crs = src.crs
+
+    return water_freq, transform, crs
+
+
+# =====================================================================
+# Water frequency MULTI-MÉTODO en un solo job (para comparar de forma justa)
+# Baja las bandas una sola vez y calcula, sobre las MISMAS fechas y la MISMA
+# máscara de nubes SCL, el water frequency con varios criterios de agua:
+#   scl   : clase de agua del SCL (referencia)
+#   ndwi  : (B03 - B08)/(B03 + B08) > umbral        (McFeeters 1996)
+#   mndwi : (B03 - B11)/(B03 + B11) > umbral        (Xu 2006)
+#   awei  : 4(B03-B11) - (0.25·B08 + 2.75·B12) > 0  (Feyisa 2014, AWEI_nsh)
+# Devuelve una banda de water frequency por método -> comparación directa.
+# =====================================================================
+
+_WATER_FREQUENCY_MULTI_UDF = r"""
+import numpy as np
+import xarray
+
+
+def apply_datacube(cube: xarray.DataArray, context: dict) -> xarray.DataArray:
+
+    methods = context.get("methods", ["scl", "ndwi", "mndwi", "awei"])
+    thresholds = context.get("thresholds", {})
+    scl_water = context.get("scl_water_classes", [6, 12])
+    clear_classes = context.get("clear_classes", [4, 5, 6, 12])
+    valid_dates = context.get("valid_dates", None)
+    min_obs = int(context.get("min_obs", 0))
+
+    arr = cube.values.astype("float64")  # (t, bands, y, x)
+    bn = [str(b) for b in cube.coords["bands"].values]
+
+    def band(name):
+        return arr[:, bn.index(name), :, :]
+
+    green = band("B03"); red = band("B04"); nir = band("B08")
+    swir1 = band("B11"); swir2 = band("B12"); scl = band("SCL")
+
+    if valid_dates:
+        tname = "t" if "t" in cube.dims else cube.dims[0]
+        tstr = np.array([str(t)[:10] for t in np.asarray(cube.coords[tname].values)])
+        keep = np.isin(tstr, list(valid_dates))
+        if keep.any():
+            green, red, nir, swir1, swir2, scl = (
+                green[keep], red[keep], nir[keep], swir1[keep], swir2[keep], scl[keep]
+            )
+
+    scl_int = np.round(scl).astype(np.int16)
+    clear = np.isin(scl_int, clear_classes)
+
+    # Escala de reflectancia (AWEI es lineal -> necesita [0,1]; NDWI/MNDWI son
+    # razones y no dependen de la escala).
+    finite_g = green[np.isfinite(green)]
+    scale = 10000.0 if (finite_g.size and np.nanmax(finite_g) > 1.5) else 1.0
+    g, r, n = green / scale, red / scale, nir / scale
+    s1, s2 = swir1 / scale, swir2 / scale
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        d_ndwi = g + n
+        ndwi = np.where(d_ndwi != 0, (g - n) / d_ndwi, np.nan)
+        d_mndwi = g + s1
+        mndwi = np.where(d_mndwi != 0, (g - s1) / d_mndwi, np.nan)
+        awei = 4.0 * (g - s1) - (0.25 * n + 2.75 * s2)
+
+    clear_votes = np.sum(clear, axis=0).astype("float32")
+    safe = np.where(clear_votes == 0, 1.0, clear_votes)
+    threshold_obs = max(1, min_obs)
+
+    def water_freq(water_mask):
+        wv = np.sum(clear & water_mask, axis=0).astype("float32")
+        wf = (wv / safe).astype("float32")
+        wf[clear_votes < threshold_obs] = np.nan
+        return wf
+
+    out_bands, out_names = [], []
+    for m in methods:
+        if m == "scl":
+            water = np.isin(scl_int, scl_water)
+        elif m == "ndwi":
+            water = np.isfinite(ndwi) & (ndwi > float(thresholds.get("ndwi", 0.0)))
+        elif m == "mndwi":
+            water = np.isfinite(mndwi) & (mndwi > float(thresholds.get("mndwi", 0.0)))
+        elif m == "awei":
+            water = np.isfinite(awei) & (awei > float(thresholds.get("awei", 0.0)))
+        else:
+            continue
+        out_bands.append(water_freq(water))
+        out_names.append("wf_" + m)
+
+    stacked = np.stack(out_bands, axis=0)
+
+    return xarray.DataArray(
+        stacked,
+        dims=["bands", "y", "x"],
+        coords={"bands": out_names, "y": cube.coords["y"], "x": cube.coords["x"]},
+    )
+"""
+
+
+def compute_water_frequency_multi_openeo(
+    conn,
+    bbox,
+    time_extent,
+    valid_dates=None,
+    methods=("scl", "ndwi", "mndwi", "awei"),
+    thresholds=None,
+    clear_classes=(4, 5, 6, 12),
+    scl_water_classes=(6, 12),
+    min_obs=8,
+    max_cloud_cover=40,
+    out_path="water_frequency_multi.tif",
+    force=False,
+):
+    """Calcula el water frequency con VARIOS métodos de detección de agua en un
+    único batch job (baja las bandas una sola vez). Todos comparten las mismas
+    fechas y la misma máscara de nubes SCL -> comparación justa.
+
+    Returns
+    -------
+    (wf_dict, transform, crs)
+        wf_dict = {"scl": arr, "ndwi": arr, "mndwi": arr, "awei": arr}
+    """
+    methods = list(methods)
+    thresholds = dict(thresholds or {"ndwi": 0.0, "mndwi": 0.0, "awei": 0.0})
+
+    if (not force) and os.path.exists(out_path):
+        # El GTiff se guarda en el orden de 'methods' (los nombres de banda no
+        # siempre se conservan), así que se keyea por posición.
+        with rasterio.open(out_path) as src:
+            if src.count != len(methods):
+                raise ValueError(
+                    f"'{out_path}' tiene {src.count} bandas pero methods={methods}. "
+                    "Usa force=True o ajusta 'methods' al fichero."
+                )
+            arrs = {methods[i]: src.read(i + 1).astype(np.float32) for i in range(src.count)}
+            return arrs, src.transform, src.crs
+
+    cube = conn.load_collection(
+        "SENTINEL2_L2A",
+        spatial_extent=bbox,
+        temporal_extent=time_extent,
+        bands=["B03", "B04", "B08", "B11", "B12", "SCL"],
+        max_cloud_cover=max_cloud_cover,
+    )
+
+    if valid_dates:
+        try:
+            cube = cube.filter_labels(
+                dimension="t", condition=lambda x: x.isin(list(valid_dates))
+            )
+        except Exception as exc:
+            print(f"  (filter_labels no disponible; se filtrará en el UDF): {exc}")
+
+    udf = openeo.UDF(
+        code=_WATER_FREQUENCY_MULTI_UDF,
+        runtime="Python",
+        context={
+            "methods": methods,
+            "thresholds": thresholds,
+            "clear_classes": list(clear_classes),
+            "scl_water_classes": list(scl_water_classes),
+            "valid_dates": list(valid_dates) if valid_dates else None,
+            "min_obs": int(min_obs),
+        },
+    )
+
+    wf_cube = cube.reduce_dimension(dimension="t", reducer=udf)
+
+    job = (
+        wf_cube.save_result(format="GTiff").create_job(title="water_frequency_multi")
+    )
+    print(f"  Lanzando batch job multi-método ({', '.join(methods)})...")
+    job.start_and_wait()
+
+    assets = job.get_results().get_assets()
+    if not assets:
+        raise RuntimeError("El job multi-método no devolvió assets")
+    assets[0].download(out_path)
+    print(f"  Descargado -> {out_path}")
+
+    with rasterio.open(out_path) as src:
+        arrs = {}
+        for i in range(src.count):
+            arrs[methods[i]] = src.read(i + 1).astype(np.float32)
+        transform, crs = src.transform, src.crs
+
+    return arrs, transform, crs
+
+
 def get_water_centroid(obj):
     if isinstance(obj, Polygon):
         c = obj.centroid

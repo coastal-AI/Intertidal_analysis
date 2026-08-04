@@ -98,3 +98,9 @@ Thumbs.db
 # Variables de entorno
 # ==========================
 .env
+
+# Comparación de métodos de agua (datos/figuras generados)
+water_frequency_mndwi.tif
+water_frequency_multi*.tif
+mdt5_*.tif
+foz_mdt5*.tif
