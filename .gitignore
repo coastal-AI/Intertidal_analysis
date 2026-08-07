@@ -104,3 +104,7 @@ water_frequency_mndwi.tif
 water_frequency_multi*.tif
 mdt5_*.tif
 foz_mdt5*.tif
+
+# Benchmark intermediate rasters (results JSON is tracked)
+bench/
+final_notebook.ipynb.bak

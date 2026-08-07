@@ -515,7 +515,8 @@ class Visualizer:
         intertidal_out_path,
         low_threshold,
         high_threshold,
-        area_km2
+        area_km2,
+        title
     ):
         height, width = intertidal_mask.shape
         with rasterio.open(
@@ -536,7 +537,7 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.imshow(intertidal_mask, cmap="Blues")
         ax.set_title(
-            "Máscara intertidal final — Ría de Foz 2023\n"
+            f"¨{title}\n"
             f"Umbral: WF ∈ [{low_threshold:.2f}, {high_threshold:.2f}]  |  "
             f"{area_km2:.2f} km²"
         )
@@ -1445,9 +1446,11 @@ class Visualizer:
         ax.grid(True, alpha=0.3)
         ax.legend()
 
-        # Formato del eje X
-        ax.xaxis.set_major_locator(mdates.MonthLocator())
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+        # Formato del eje X: locator automático según el rango temporal
+        # (meses si es ~1 año, años si son varios) -> legible en cualquier span.
+        locator = mdates.AutoDateLocator(minticks=4, maxticks=12)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
         fig.autofmt_xdate()
 

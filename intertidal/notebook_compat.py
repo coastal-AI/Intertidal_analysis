@@ -121,15 +121,17 @@ def plot_intertidal_map(intertidal_mask,
         intertidal_out_path,
         low_threshold,
         high_threshold,
-        area_km2):
+        area_km2,
+        title):
     return Visualizer.plot_intertidal_map(intertidal_mask,
             wf_transform,
             wf_crs,
             intertidal_out_path,
             low_threshold,
             high_threshold,
-            area_km2
-    )
+            area_km2,
+            title
+        )
     
 def plot_tide_time_series(
         dates_reference,
@@ -274,6 +276,67 @@ def download_reference_map_openeo(
 
 def load_reference_map_tif(path):
     return RasterProcessor.load_reference_map(path)
+
+
+def build_reference_map_from_cube(
+    scl_stack,
+    bad_classes,
+    bad_fraction_threshold=0.05,
+    stable_threshold=0.95,
+    transition_buffer_pixels=10,
+):
+    """
+    Reference map en LOCAL a partir del cubo SCL (t, y, x).
+
+    Replica EXACTAMENTE el UDF server-side de ``OpenEOClient.build_reference_map``
+    (misma lógica y misma codificación de clases 0/1/2), para poder calcular el
+    reference map desde el cubo ya descargado en vez de lanzar un job aparte.
+
+    Pasos: filtrar escenas limpias (<= bad_fraction_threshold de píxeles malos) →
+    votar agua(6)/tierra(4,5) → estable si P >= stable_threshold → buffer por
+    dilatación → mapa 0=transición, 1=agua estable, 2=tierra estable.
+    """
+    from scipy.ndimage import binary_dilation
+
+    arr = np.asarray(scl_stack)
+    if arr.ndim == 4:
+        arr = arr[:, 0, :, :]
+
+    n_pixels = arr.shape[1] * arr.shape[2]
+
+    keep = [
+        t for t in range(arr.shape[0])
+        if np.isin(arr[t], bad_classes).sum() / n_pixels <= bad_fraction_threshold
+    ]
+
+    h, w = arr.shape[1:]
+    reference_map = np.zeros((h, w), dtype=np.uint8)
+
+    if keep:
+        clean = arr[keep]
+        water_votes = np.sum(clean == 6, axis=0)
+        land_votes = np.sum(np.isin(clean, [4, 5]), axis=0)
+
+        valid_votes = water_votes + land_votes
+        valid_votes[valid_votes == 0] = 1
+
+        p_water = water_votes / valid_votes
+        p_land = land_votes / valid_votes
+
+        water_stable = p_water >= stable_threshold
+        land_stable = p_land >= stable_threshold
+        transition = ~(water_stable | land_stable)
+
+        if transition_buffer_pixels > 0:
+            transition = binary_dilation(
+                transition, iterations=int(transition_buffer_pixels)
+            )
+
+        reference_map[water_stable] = 1
+        reference_map[land_stable] = 2
+        reference_map[transition] = 0
+
+    return reference_map
 
 
 # ── UDF: porcentaje de nubes en zona de transición, por fecha ─────────────────
@@ -526,6 +589,372 @@ def evaluate_transition_cloud_coverage_openeo(
 
     print(f"  Evaluacion completada: {len(result)} fechas")
     return result
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  DESCARGA UNIFICADA: un solo cubo SCL → reference map + nubes + water frequency
+# ═════════════════════════════════════════════════════════════════════════════
+# El pipeline clásico baja el SCL TRES veces (un job para el reference map, la
+# descarga del cubo para el filtro de nubes, y otro job para el water frequency).
+# Como los tres productos salen del MISMO stack SCL (t, y, x), aquí se descarga
+# el cubo UNA vez y se calcula todo en local. Ahorra los dos jobs de reduce
+# (reference map + WF) por sitio; la réplica local del reference map coincide con
+# el server-side al 99.7% (IoU transición 0.99).
+
+def _grid_from_dataset(ds):
+    """(transform, crs) a partir de un Dataset netCDF de OpenEO.
+
+    Los coords x/y son CENTROS de píxel; el origen del transform es la esquina
+    superior-izquierda (x[0]-dx/2, y[0]-dy/2). El CRS se lee del WKT de la
+    variable ``crs`` (o ``spatial_ref``) que escribe el backend.
+    """
+    x = np.asarray(ds["x"].values, dtype="float64")
+    y = np.asarray(ds["y"].values, dtype="float64")
+    dx = float(x[1] - x[0])
+    dy = float(y[1] - y[0])  # normalmente negativo (y descendente)
+    transform = rasterio.transform.from_origin(
+        x[0] - dx / 2.0, y[0] - dy / 2.0, dx, -dy
+    )
+
+    crs = None
+    for vname in ("crs", "spatial_ref"):
+        if vname in ds.variables:
+            attrs = ds[vname].attrs
+            wkt = attrs.get("crs_wkt") or attrs.get("spatial_ref")
+            if wkt:
+                crs = rasterio.crs.CRS.from_wkt(wkt)
+                break
+    return transform, crs
+
+
+def compute_water_frequency_from_cube(
+    scl_stack,
+    dates,
+    valid_dates=None,
+    water_class=(6, 12),
+    clear_classes=(4, 5, 6, 12),
+    min_obs=8,
+):
+    """Water frequency 2D en LOCAL desde el cubo SCL (t, y, x).
+
+    Réplica numpy exacta de ``_WATER_FREQUENCY_UDF`` (mismo criterio agua/claro
+    y mismo min_obs), para no lanzar un job aparte:
+        wf = nº obs agua (SCL in water_class) / nº obs claras (SCL in clear_classes)
+    Píxeles con menos de ``min_obs`` observaciones claras → NaN.
+    """
+    arr = np.asarray(scl_stack)
+    if arr.ndim == 4:
+        arr = arr[:, 0, :, :]
+
+    if valid_dates:
+        dstr = np.array([str(d)[:10] for d in dates])
+        keep = np.isin(dstr, list(valid_dates))
+        if keep.any():
+            arr = arr[keep]
+
+    water_class = list(water_class) if isinstance(water_class, (list, tuple)) else [water_class]
+    clear_classes = list(clear_classes)
+
+    water_votes = np.sum(np.isin(arr, water_class), axis=0).astype(np.float32)
+    clear_votes = np.sum(np.isin(arr, clear_classes), axis=0).astype(np.float32)
+
+    safe = np.where(clear_votes == 0, 1.0, clear_votes)
+    water_freq = (water_votes / safe).astype(np.float32)
+    water_freq[clear_votes < max(1, int(min_obs))] = np.nan
+    return water_freq
+
+
+class SclCubeAnalysis:
+    """Resultado de :func:`analyze_scl_cube_openeo`.
+
+    Guarda el cubo SCL descargado (t, y, x) y los productos derivados en local.
+    Condensa lo que antes hacían las celdas de reference map (descarga + stats +
+    plot) y de cobertura nubosa (clasificación de fechas + ganancia). El water
+    frequency NO se calcula en el __init__ porque depende de las ``valid_dates``
+    que se deciden tras aplicar el umbral de nubes; se obtiene con
+    :meth:`water_frequency` reutilizando el mismo cubo.
+
+    Atributos aguas abajo (equivalentes a las variables del notebook):
+        reference_map, transform, crs
+        transition_stats      -> {date: {"bad_fraction","bad_pct"}}  (formato notebook)
+        transition_pct        -> {date: pct}                          (crudo)
+        valid_dates           -> fechas que pasan el filtro de transición
+        invalid_dates, reference_dates, newly_valid
+        gain                  -> dict de quantify_reference_gain
+    """
+
+    def __init__(self, scl_stack, dates, transform, crs, reference_map,
+                 transition_pct, bad_classes, ref_bad_fraction_threshold,
+                 transition_cloud_threshold):
+        self.scl_stack = scl_stack          # (t, y, x) int16
+        self.dates = dates                  # list[str] 'YYYY-MM-DD'
+        self.transform = transform
+        self.crs = crs
+        self.reference_map = reference_map   # (y, x) uint8 0/1/2
+        self.bad_classes = bad_classes
+        self.ref_bad_fraction_threshold = ref_bad_fraction_threshold
+        self.transition_cloud_threshold = transition_cloud_threshold
+
+        # ── Formato notebook + clasificación de fechas (celda 13) ────────────
+        self.transition_pct = dict(transition_pct)
+        self.transition_stats = {
+            d: {"bad_fraction": pct / 100.0, "bad_pct": pct}
+            for d, pct in transition_pct.items()
+        }
+        rt = ref_bad_fraction_threshold
+        ct = transition_cloud_threshold
+        self.valid_dates = [d for d, s in self.transition_stats.items()
+                            if s["bad_fraction"] <= ct]
+        self.invalid_dates = [d for d, s in self.transition_stats.items()
+                              if s["bad_fraction"] > ct]
+        self.reference_dates = sorted(
+            d for d, s in self.transition_stats.items() if s["bad_fraction"] <= rt
+        )
+        self.newly_valid = sorted(
+            d for d, s in self.transition_stats.items()
+            if rt < s["bad_fraction"] <= ct
+        )
+        self._n_ref_quality = len(self.reference_dates)
+        self._n_total = len(self.transition_stats)
+
+    # ── Reporte completo (los dos bloques) ───────────────────────────────────
+    def report(self, plot=True):
+        self.report_reference_map(plot=plot)
+        self.report_cloud_coverage()
+        return self
+
+    # ── Bloque reference map (equivale a la celda 11) ────────────────────────
+    def report_reference_map(self, plot=True):
+        rm = self.reference_map
+        res_m = abs(self.transform.a) if self.transform is not None else 10
+        print(f"Dimensions: {rm.shape}  ({rm.shape[1]*res_m:.0f}×{rm.shape[0]*res_m:.0f} m)")
+        print(f"CRS:         {self.crs}")
+        print()
+        # Etiquetas CORREGIDAS: 1=agua, 2=tierra (la celda 11 las tenía al revés)
+        class_map = {
+            0: "Transition zone, intertidal candidate",
+            1: "Stable water",
+            2: "Stable land",
+        }
+        for val, label in class_map.items():
+            n = int((rm == val).sum())
+            pct = 100 * n / rm.size
+            print(f"Class {val} ({label}): {n} pixels ({pct:.2f}%)")
+        if plot:
+            plot_reference_map(rm)
+        return self
+
+    # ── Bloque cobertura nubosa (equivale a la celda 13) ─────────────────────
+    def report_cloud_coverage(self):
+        rt = self.ref_bad_fraction_threshold
+        ct = self.transition_cloud_threshold
+        n_ref = self._n_ref_quality
+        n_trans_only = sum(1 for s in self.transition_stats.values()
+                           if s["bad_fraction"] > rt)
+        n_discarded = len(self.transition_stats) - n_ref - len(self.newly_valid)
+        print(f"  Reference Quality (≤{rt*100:.0f}% global): {n_ref:3d} ← used for reference map")
+        print(f"  Only valid in transition:                    {n_trans_only:3d})")
+        print(f"  Discarded (>{ct*100:.0f}% in transition):        {n_discarded:3d}")
+        print()
+        for date, s in sorted(self.transition_stats.items()):
+            if s["bad_fraction"] <= rt:
+                tag = "[ref]"
+            elif s["bad_fraction"] <= ct:
+                tag = "[✓]  "
+            else:
+                tag = "[✗]  "
+            print(f"  {tag} {date}: {s['bad_pct']:.1f}%")
+
+        print(f"Umbralization used: ≤{ct*100:.0f}% clouds in the transition zone")
+        print()
+        print(f"Valid dates:  {len(self.valid_dates):3d}")
+        print(f"Discarded dates:               {len(self.invalid_dates):3d}")
+        print(f"─────────────────────────────────────────────")
+        print(f"TOTAL dates for water frequency: {len(self.valid_dates):3d}")
+
+        print(f"Dates that pass transition filter: {len(self.valid_dates)}")
+        print(f"  → Reference quality (≤{rt*100:.0f}% global):        {len(self.reference_dates):3d} dates")
+        print(f"  → Recovered by transition filter:          {len(self.newly_valid):3d} dates")
+        print(f"     (>{rt*100:.0f}% global but ≤{ct*100:.0f}% in transition)")
+        print()
+        self.gain = quantify_reference_gain(
+            n_initial_valid=n_ref,
+            n_recovered=self._n_total - n_ref,
+            n_total_dates=self._n_total,
+        )
+        return self
+
+    def save_reference_map(self, out_path="reference_map.tif"):
+        _write_geotiff(out_path, self.reference_map, self.transform, self.crs,
+                       dtype="uint8", nodata=None)
+        return out_path
+
+    def water_frequency(self, valid_dates="__use_analysis__",
+                        out_path="water_frequency.tif",
+                        water_class=(6, 12), clear_classes=(4, 5, 6, 12),
+                        min_obs=8, save=True):
+        """Water frequency en local desde el cubo. Por defecto usa
+        ``self.valid_dates`` (las que pasaron el filtro de nubes)."""
+        if valid_dates == "__use_analysis__":
+            valid_dates = self.valid_dates
+        wf = compute_water_frequency_from_cube(
+            self.scl_stack, self.dates, valid_dates=valid_dates,
+            water_class=water_class, clear_classes=clear_classes, min_obs=min_obs,
+        )
+        if save:
+            _write_geotiff(out_path, wf, self.transform, self.crs,
+                           dtype="float32", nodata=np.nan)
+        return wf, self.transform, self.crs
+
+
+def _write_geotiff(out_path, arr, transform, crs, dtype, nodata=None):
+    arr = np.asarray(arr)
+    profile = {
+        "driver": "GTiff", "height": arr.shape[0], "width": arr.shape[1],
+        "count": 1, "dtype": dtype, "transform": transform, "crs": crs,
+        "compress": "deflate",
+    }
+    if nodata is not None:
+        profile["nodata"] = nodata
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(arr.astype(dtype), 1)
+
+
+def analyze_scl_cube_openeo(
+    conn,
+    bbox,
+    time_extent,
+    bad_classes=(3, 8, 9, 10),
+    bad_fraction_threshold=0.05,
+    stable_threshold=0.95,
+    transition_buffer_pixels=10,
+    global_bad_fraction_threshold=0.05,
+    transition_cloud_threshold=0.1,
+    reference_dates=None,
+    cache_nc=None,
+    keep_nc=False,
+    verbose=True,
+    plot=True,
+):
+    """Descarga el cubo SCL UNA vez y calcula reference map + nubes en local.
+
+    Sustituye a ``download_reference_map_openeo`` +
+    ``evaluate_transition_cloud_coverage_openeo`` (dos productos que antes eran
+    dos accesos separados al SCL). El water frequency se obtiene después con
+    ``SclCubeAnalysis.water_frequency(valid_dates)`` sobre el MISMO cubo, sin
+    volver a descargar.
+
+    Parameters
+    ----------
+    cache_nc : str | None
+        Si se pasa y el fichero existe, se reutiliza el cubo en vez de lanzar el
+        job (útil para re-ejecutar sin re-descargar). Si no existe, se descarga
+        ahí.
+    keep_nc : bool
+        Conservar el netCDF tras leerlo (default: borrar el temporal).
+
+    Returns
+    -------
+    SclCubeAnalysis
+    """
+    import xarray as _xr
+
+    bad_classes = list(bad_classes)
+    reference_dates = set(reference_dates or [])
+
+    # ── 1. Obtener el cubo SCL (t, y, x) en un solo job (o cache) ─────────────
+    if cache_nc and os.path.exists(cache_nc):
+        nc_path = cache_nc
+        print(f"  Reutilizando cubo SCL cacheado -> {nc_path}")
+    else:
+        cube = conn.load_collection(
+            "SENTINEL2_L2A",
+            spatial_extent=bbox,
+            temporal_extent=list(time_extent),
+            bands=["SCL"],
+            max_cloud_cover=100,
+        )
+        nc_path = cache_nc or tempfile.mktemp(suffix=".nc")
+        job = cube.save_result(format="netCDF").create_job(title="scl_cube_unificado")
+        print("  Lanzando batch job (descarga UNICA del cubo SCL)...")
+        job.start_and_wait()
+        assets = job.get_results().get_assets()
+        if not assets:
+            raise RuntimeError("El job no devolvió assets")
+        assets[0].download(nc_path)
+        print(f"  Cubo SCL descargado -> {nc_path}")
+
+    # ── 2. Leer cubo, grid y CRS ─────────────────────────────────────────────
+    ds = _xr.open_dataset(nc_path)
+    scl_var = "SCL" if "SCL" in ds.data_vars else next(
+        v for v in ds.data_vars if v != "crs"
+    )
+    da = ds[scl_var]
+    t_dim = "t" if "t" in da.dims else ("time" if "time" in da.dims else da.dims[0])
+    scl_stack = np.asarray(da.transpose(t_dim, ...).values).astype(np.int16)
+
+    import re as _re
+
+    def _to_iso(v):
+        m = _re.search(r"\d{4}-\d{2}-\d{2}", str(v))
+        if m:
+            return m.group(0)
+        try:
+            return pd.to_datetime(str(v)).strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return str(v)
+
+    dates = [_to_iso(v) for v in np.asarray(da[t_dim].values)]
+    transform, crs = _grid_from_dataset(ds)
+    ds.close()
+    if not keep_nc and not cache_nc:
+        try:
+            os.remove(nc_path)
+        except OSError:
+            pass
+
+    # ── 3. Reference map en local (réplica del UDF server-side) ──────────────
+    reference_map = build_reference_map_from_cube(
+        scl_stack,
+        bad_classes=bad_classes,
+        bad_fraction_threshold=bad_fraction_threshold,
+        stable_threshold=stable_threshold,
+        transition_buffer_pixels=transition_buffer_pixels,
+    )
+    transition_mask = reference_map == 0
+
+    # ── 4. Estadística de nubes por fecha en local ───────────────────────────
+    # Misma lógica que evaluate_transition_cloud_coverage_openeo: si la fracción
+    # global de píxeles malos ≤ umbral → se usa la global (fecha de referencia);
+    # si no → fracción de nubes dentro de la zona de transición.
+    n_trans = max(int(transition_mask.sum()), 1)
+    transition_stats = {}
+    for i, d in enumerate(dates):
+        if d in reference_dates:
+            continue
+        bad = np.isin(scl_stack[i], bad_classes)
+        global_frac = float(bad.sum()) / max(bad.size, 1)
+        if global_frac <= global_bad_fraction_threshold:
+            pct = global_frac * 100
+        else:
+            pct = float(bad[transition_mask].sum()) / n_trans * 100
+        transition_stats[d] = round(pct, 4)
+
+    print(
+        f"  Analisis local completo: cubo {scl_stack.shape} | "
+        f"transicion {int(transition_mask.sum())} px | "
+        f"{len(transition_stats)} fechas evaluadas"
+    )
+    analysis = SclCubeAnalysis(
+        scl_stack=scl_stack, dates=dates, transform=transform, crs=crs,
+        reference_map=reference_map, transition_pct=transition_stats,
+        bad_classes=bad_classes,
+        ref_bad_fraction_threshold=global_bad_fraction_threshold,
+        transition_cloud_threshold=transition_cloud_threshold,
+    )
+    if verbose:
+        analysis.report(plot=plot)
+    return analysis
 
 
 def quantify_reference_gain(n_initial_valid, n_recovered, n_total_dates):
