@@ -664,15 +664,182 @@ def compute_water_frequency_from_cube(
     return water_freq
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  STREAMING: calcular los productos SIN cargar el cubo (t,y,x) entero en RAM
+# ═════════════════════════════════════════════════════════════════════════════
+# El cubo completo en memoria escala con años × km² (p.ej. 500 km² × 10 años ≈
+# 14 GB solo el array, y ~5.7× con los temporales de np.isin → muro de memoria).
+# Estas funciones iteran la dimensión temporal del netCDF en BLOQUES y acumulan
+# arrays (y,x): la RAM queda en O(chunk × pixeles), independiente de los años.
+# Resultado idéntico a las versiones in-memory (validado bit a bit).
+
+def _auto_chunk(pixels, chunk=None, budget_bytes=400_000_000, cap=128):
+    """Nº de fechas por bloque para acotar la RAM del streaming.
+
+    Si ``chunk`` se da, se respeta. Si no, se elige para que un bloque
+    (cubo int16 + booleano de np.isin ≈ 3 bytes/px·fecha) quepa en
+    ``budget_bytes``.
+    """
+    if chunk is not None:
+        return max(1, int(chunk))
+    return max(4, min(cap, int(budget_bytes / max(pixels * 3, 1))))
+
+
+def _open_scl(nc_path):
+    """Abre el netCDF y devuelve (ds, da transpuesto a (t,y,x), t_dim)."""
+    import xarray as _xr
+    ds = _xr.open_dataset(nc_path)
+    var = "SCL" if "SCL" in ds.data_vars else next(
+        v for v in ds.data_vars if v != "crs"
+    )
+    da = ds[var]
+    t_dim = "t" if "t" in da.dims else ("time" if "time" in da.dims else da.dims[0])
+    ydim = "y" if "y" in da.dims else da.dims[-2]
+    xdim = "x" if "x" in da.dims else da.dims[-1]
+    da = da.transpose(t_dim, ydim, xdim)
+    return ds, da, t_dim
+
+
+def build_reference_and_cloud_streaming(
+    da,
+    t_dim,
+    dates,
+    bad_classes,
+    bad_fraction_threshold=0.05,
+    stable_threshold=0.95,
+    transition_buffer_pixels=10,
+    global_bad_fraction_threshold=0.05,
+    reference_dates=None,
+    chunk=None,
+):
+    """Reference map + cobertura de nubes por fecha, en STREAMING sobre el netCDF.
+
+    Dos pasadas por la dimensión temporal acumulando arrays (y,x):
+      PASS 1 → votos agua/tierra (solo fechas limpias) + fracción global por fecha
+      PASS 2 → % de nubes (global si la fecha es limpia; en zona de transición si no)
+    Equivale a ``build_reference_map_from_cube`` + el bucle de nubes de
+    ``analyze_scl_cube_openeo``, pero sin materializar el cubo (t,y,x).
+
+    Devuelve ``(reference_map, transition_pct)``.
+    """
+    from scipy.ndimage import binary_dilation
+
+    bad_classes = list(bad_classes)
+    reference_dates = set(reference_dates or [])
+    T = da.sizes[t_dim]
+    H = da.sizes[da.dims[1]]
+    W = da.sizes[da.dims[2]]
+    ch = _auto_chunk(H * W, chunk)
+
+    water = np.zeros((H, W), np.int64)
+    land = np.zeros((H, W), np.int64)
+    gfrac = np.zeros(T, np.float64)
+
+    # ── PASS 1 ───────────────────────────────────────────────────────────────
+    for a in range(0, T, ch):
+        blk = np.asarray(da.isel({t_dim: slice(a, a + ch)}).values).astype(np.int16)
+        bad = np.isin(blk, bad_classes)
+        gf = bad.reshape(bad.shape[0], -1).mean(axis=1)
+        gfrac[a:a + blk.shape[0]] = gf
+        clean = gf <= bad_fraction_threshold
+        if clean.any():
+            cb = blk[clean]
+            water += (cb == 6).sum(0)
+            land += np.isin(cb, [4, 5]).sum(0)
+
+    valid = water + land
+    valid[valid == 0] = 1
+    water_stable = (water / valid) >= stable_threshold
+    land_stable = (land / valid) >= stable_threshold
+    transition = ~(water_stable | land_stable)
+    if transition_buffer_pixels > 0:
+        transition = binary_dilation(transition, iterations=int(transition_buffer_pixels))
+    reference_map = np.zeros((H, W), np.uint8)
+    reference_map[water_stable] = 1
+    reference_map[land_stable] = 2
+    reference_map[transition] = 0
+
+    transition_mask = reference_map == 0
+    n_trans = max(int(transition_mask.sum()), 1)
+
+    # ── PASS 2 ───────────────────────────────────────────────────────────────
+    transition_pct = {}
+    for a in range(0, T, ch):
+        gfc = gfrac[a:a + ch]
+        need = np.any(gfc > global_bad_fraction_threshold)
+        blk = None
+        if need:
+            blk = np.asarray(da.isel({t_dim: slice(a, a + ch)}).values).astype(np.int16)
+        for j in range(len(gfc)):
+            d = dates[a + j]
+            if d in reference_dates:
+                continue
+            gf = float(gfc[j])
+            if gf <= global_bad_fraction_threshold:
+                pct = gf * 100
+            else:
+                bad = np.isin(blk[j], bad_classes)
+                pct = float(bad[transition_mask].sum()) / n_trans * 100
+            transition_pct[d] = round(pct, 4)
+
+    return reference_map, transition_pct
+
+
+def compute_water_frequency_streaming(
+    nc_path,
+    dates,
+    valid_dates=None,
+    water_class=(6, 12),
+    clear_classes=(4, 5, 6, 12),
+    min_obs=8,
+    chunk=None,
+):
+    """Water frequency 2D en STREAMING desde el netCDF (sin cargar (t,y,x)).
+
+    Réplica exacta de ``compute_water_frequency_from_cube`` acumulando los votos
+    agua/claro por bloques temporales.
+    """
+    ds, da, t_dim = _open_scl(nc_path)
+    try:
+        T = da.sizes[t_dim]
+        H = da.sizes[da.dims[1]]
+        W = da.sizes[da.dims[2]]
+        ch = _auto_chunk(H * W, chunk)
+        water_class = list(water_class)
+        clear_classes = list(clear_classes)
+        vd = set(valid_dates) if valid_dates else None
+
+        wv = np.zeros((H, W), np.int64)
+        cv = np.zeros((H, W), np.int64)
+        for a in range(0, T, ch):
+            n = min(ch, T - a)
+            keep = None
+            if vd is not None:
+                keep = [j for j in range(n) if dates[a + j] in vd]
+                if not keep:
+                    continue
+            blk = np.asarray(da.isel({t_dim: slice(a, a + ch)}).values).astype(np.int16)
+            sub = blk[keep] if keep is not None else blk
+            wv += np.isin(sub, water_class).sum(0)
+            cv += np.isin(sub, clear_classes).sum(0)
+
+        safe = np.where(cv == 0, 1, cv).astype(np.float32)
+        water_freq = (wv / safe).astype(np.float32)
+        water_freq[cv < max(1, int(min_obs))] = np.nan
+        return water_freq
+    finally:
+        ds.close()
+
+
 class SclCubeAnalysis:
     """Resultado de :func:`analyze_scl_cube_openeo`.
 
-    Guarda el cubo SCL descargado (t, y, x) y los productos derivados en local.
-    Condensa lo que antes hacían las celdas de reference map (descarga + stats +
-    plot) y de cobertura nubosa (clasificación de fechas + ganancia). El water
-    frequency NO se calcula en el __init__ porque depende de las ``valid_dates``
-    que se deciden tras aplicar el umbral de nubes; se obtiene con
-    :meth:`water_frequency` reutilizando el mismo cubo.
+    Guarda la RUTA del netCDF SCL descargado (no el cubo en RAM) y los productos
+    derivados. Condensa lo que antes hacían las celdas de reference map (descarga
+    + stats + plot) y de cobertura nubosa (clasificación de fechas + ganancia). El
+    water frequency NO se calcula en el __init__ porque depende de las
+    ``valid_dates`` que se deciden tras aplicar el umbral de nubes; se obtiene con
+    :meth:`water_frequency`, que lee el mismo netCDF en streaming.
 
     Atributos aguas abajo (equivalentes a las variables del notebook):
         reference_map, transform, crs
@@ -683,10 +850,12 @@ class SclCubeAnalysis:
         gain                  -> dict de quantify_reference_gain
     """
 
-    def __init__(self, scl_stack, dates, transform, crs, reference_map,
+    def __init__(self, nc_path, dates, transform, crs, reference_map,
                  transition_pct, bad_classes, ref_bad_fraction_threshold,
-                 transition_cloud_threshold):
-        self.scl_stack = scl_stack          # (t, y, x) int16
+                 transition_cloud_threshold, chunk=None, owns_nc=True):
+        self.nc_path = nc_path              # netCDF en disco (se lee en streaming)
+        self.owns_nc = owns_nc              # si es temporal nuestro (borrable)
+        self.chunk = chunk                  # nº de fechas por bloque (None = auto)
         self.dates = dates                  # list[str] 'YYYY-MM-DD'
         self.transform = transform
         self.crs = crs
@@ -793,18 +962,28 @@ class SclCubeAnalysis:
                         out_path="water_frequency.tif",
                         water_class=(6, 12), clear_classes=(4, 5, 6, 12),
                         min_obs=8, save=True):
-        """Water frequency en local desde el cubo. Por defecto usa
-        ``self.valid_dates`` (las que pasaron el filtro de nubes)."""
+        """Water frequency en STREAMING desde el netCDF (RAM acotada). Por defecto
+        usa ``self.valid_dates`` (las que pasaron el filtro de nubes)."""
         if valid_dates == "__use_analysis__":
             valid_dates = self.valid_dates
-        wf = compute_water_frequency_from_cube(
-            self.scl_stack, self.dates, valid_dates=valid_dates,
-            water_class=water_class, clear_classes=clear_classes, min_obs=min_obs,
+        wf = compute_water_frequency_streaming(
+            self.nc_path, self.dates, valid_dates=valid_dates,
+            water_class=water_class, clear_classes=clear_classes,
+            min_obs=min_obs, chunk=self.chunk,
         )
         if save:
             _write_geotiff(out_path, wf, self.transform, self.crs,
                            dtype="float32", nodata=np.nan)
         return wf, self.transform, self.crs
+
+    def cleanup(self):
+        """Borra el netCDF temporal (solo si es nuestro, no un cache del usuario).
+        Tras esto ya no se puede llamar a :meth:`water_frequency`."""
+        if self.owns_nc and self.nc_path and os.path.exists(self.nc_path):
+            try:
+                os.remove(self.nc_path)
+            except OSError:
+                pass
 
 
 def _write_geotiff(out_path, arr, transform, crs, dtype, nodata=None):
@@ -832,37 +1011,41 @@ def analyze_scl_cube_openeo(
     transition_cloud_threshold=0.1,
     reference_dates=None,
     cache_nc=None,
-    keep_nc=False,
+    chunk=None,
     verbose=True,
     plot=True,
 ):
-    """Descarga el cubo SCL UNA vez y calcula reference map + nubes en local.
+    """Descarga el cubo SCL UNA vez y calcula reference map + nubes en STREAMING.
 
     Sustituye a ``download_reference_map_openeo`` +
     ``evaluate_transition_cloud_coverage_openeo`` (dos productos que antes eran
     dos accesos separados al SCL). El water frequency se obtiene después con
-    ``SclCubeAnalysis.water_frequency(valid_dates)`` sobre el MISMO cubo, sin
+    ``SclCubeAnalysis.water_frequency(valid_dates)`` sobre el MISMO netCDF, sin
     volver a descargar.
+
+    El cálculo NO carga el cubo (t,y,x) entero en RAM: itera el netCDF por
+    bloques temporales (``chunk``), así la memoria queda acotada a
+    O(chunk × pixeles) y escala a AOIs grandes (cientos de km²).
 
     Parameters
     ----------
     cache_nc : str | None
         Si se pasa y el fichero existe, se reutiliza el cubo en vez de lanzar el
-        job (útil para re-ejecutar sin re-descargar). Si no existe, se descarga
-        ahí.
-    keep_nc : bool
-        Conservar el netCDF tras leerlo (default: borrar el temporal).
+        job. Si no existe, se descarga ahí (y se conserva como cache del usuario).
+    chunk : int | None
+        Nº de fechas por bloque de streaming (None = automático según píxeles).
 
     Returns
     -------
     SclCubeAnalysis
+        Conserva la ruta del netCDF para el water frequency; ``.cleanup()`` borra
+        el temporal cuando ya no se necesita.
     """
-    import xarray as _xr
-
     bad_classes = list(bad_classes)
     reference_dates = set(reference_dates or [])
 
-    # ── 1. Obtener el cubo SCL (t, y, x) en un solo job (o cache) ─────────────
+    # ── 1. Obtener el cubo SCL en un solo job (o cache) ──────────────────────
+    owns_nc = cache_nc is None
     if cache_nc and os.path.exists(cache_nc):
         nc_path = cache_nc
         print(f"  Reutilizando cubo SCL cacheado -> {nc_path}")
@@ -884,14 +1067,8 @@ def analyze_scl_cube_openeo(
         assets[0].download(nc_path)
         print(f"  Cubo SCL descargado -> {nc_path}")
 
-    # ── 2. Leer cubo, grid y CRS ─────────────────────────────────────────────
-    ds = _xr.open_dataset(nc_path)
-    scl_var = "SCL" if "SCL" in ds.data_vars else next(
-        v for v in ds.data_vars if v != "crs"
-    )
-    da = ds[scl_var]
-    t_dim = "t" if "t" in da.dims else ("time" if "time" in da.dims else da.dims[0])
-    scl_stack = np.asarray(da.transpose(t_dim, ...).values).astype(np.int16)
+    # ── 2. Abrir netCDF (lazy), grid, CRS y fechas — sin cargar el cubo ───────
+    ds, da, t_dim = _open_scl(nc_path)
 
     import re as _re
 
@@ -906,51 +1083,32 @@ def analyze_scl_cube_openeo(
 
     dates = [_to_iso(v) for v in np.asarray(da[t_dim].values)]
     transform, crs = _grid_from_dataset(ds)
-    ds.close()
-    if not keep_nc and not cache_nc:
-        try:
-            os.remove(nc_path)
-        except OSError:
-            pass
 
-    # ── 3. Reference map en local (réplica del UDF server-side) ──────────────
-    reference_map = build_reference_map_from_cube(
-        scl_stack,
+    # ── 3-4. Reference map + nubes en STREAMING (RAM acotada) ────────────────
+    reference_map, transition_stats = build_reference_and_cloud_streaming(
+        da, t_dim, dates,
         bad_classes=bad_classes,
         bad_fraction_threshold=bad_fraction_threshold,
         stable_threshold=stable_threshold,
         transition_buffer_pixels=transition_buffer_pixels,
+        global_bad_fraction_threshold=global_bad_fraction_threshold,
+        reference_dates=reference_dates,
+        chunk=chunk,
     )
-    transition_mask = reference_map == 0
-
-    # ── 4. Estadística de nubes por fecha en local ───────────────────────────
-    # Misma lógica que evaluate_transition_cloud_coverage_openeo: si la fracción
-    # global de píxeles malos ≤ umbral → se usa la global (fecha de referencia);
-    # si no → fracción de nubes dentro de la zona de transición.
-    n_trans = max(int(transition_mask.sum()), 1)
-    transition_stats = {}
-    for i, d in enumerate(dates):
-        if d in reference_dates:
-            continue
-        bad = np.isin(scl_stack[i], bad_classes)
-        global_frac = float(bad.sum()) / max(bad.size, 1)
-        if global_frac <= global_bad_fraction_threshold:
-            pct = global_frac * 100
-        else:
-            pct = float(bad[transition_mask].sum()) / n_trans * 100
-        transition_stats[d] = round(pct, 4)
+    ds.close()
 
     print(
-        f"  Analisis local completo: cubo {scl_stack.shape} | "
-        f"transicion {int(transition_mask.sum())} px | "
+        f"  Analisis local completo (streaming): {da.sizes[t_dim]} fechas x "
+        f"{reference_map.shape} | transicion {int((reference_map == 0).sum())} px | "
         f"{len(transition_stats)} fechas evaluadas"
     )
     analysis = SclCubeAnalysis(
-        scl_stack=scl_stack, dates=dates, transform=transform, crs=crs,
+        nc_path=nc_path, dates=dates, transform=transform, crs=crs,
         reference_map=reference_map, transition_pct=transition_stats,
         bad_classes=bad_classes,
         ref_bad_fraction_threshold=global_bad_fraction_threshold,
         transition_cloud_threshold=transition_cloud_threshold,
+        chunk=chunk, owns_nc=owns_nc,
     )
     if verbose:
         analysis.report(plot=plot)
