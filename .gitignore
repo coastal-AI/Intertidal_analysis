@@ -107,4 +107,4 @@ foz_mdt5*.tif
 
 # Benchmark intermediate rasters (results JSON is tracked)
 bench/
-final_notebook.ipynb.bak
+final_notebook.ipynb.bak*

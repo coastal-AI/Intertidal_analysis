@@ -78,7 +78,9 @@ from scipy import ndimage
 # el entorno de ejecución Python del backend OpenEO elegido lo incluya;
 # no todos los backends lo garantizan por defecto.
 
-_BATHYMETRY_UDF = '''
+# ── LEGACY: UDF de batimetria basado en SCL (agua/tierra por clases SCL). ──
+# Se conserva como water_source="scl". El nuevo por defecto es NDWI a 10 m.
+_BATHYMETRY_UDF_SCL = '''
 import numpy as np
 from scipy import ndimage
 import xarray as xr
@@ -527,6 +529,467 @@ def _stack_bands(
     return result
 '''
 
+
+_BATHYMETRY_UDF_NDWI = '''
+import numpy as np
+from scipy import ndimage
+import xarray as xr
+from openeo.udf import XarrayDataCube
+
+
+def apply_datacube(cube: XarrayDataCube, context: dict) -> XarrayDataCube:
+    """
+    Reconstrucción batimétrica intermareal a partir de un cubo temporal SCL.
+
+    Server-side: clasificación agua/tierra, acotación de elevación mediante
+    alturas de marea, optimización basada en energía con preservación de
+    taludes y difusión anisótropa tipo Perona-Malik.
+    """
+
+    array = cube.get_array()
+    time_dim = _resolve_time_dimension(array)
+
+    # Bandas por nombre: B03 y B08 son nativas a 10 m -> NDWI a 10 m REAL.
+    # El SCL (20 m remuestreado) se usa SOLO como máscara de nubes.
+    band_names = [str(b) for b in array.coords["bands"].values]
+
+    def _band(name):
+        da = array.isel(bands=band_names.index(name))
+        spatial = [dim for dim in da.dims if dim != time_dim]
+        return da.transpose(time_dim, *spatial)
+
+    b03 = _band("B03").values.astype(np.float32)
+    b08 = _band("B08").values.astype(np.float32)
+    template = _band("SCL")
+    scl = template.values.astype(np.int16)
+    spatial_dims = [dim for dim in template.dims if dim != time_dim]
+    dates = _extract_dates(template[time_dim].values)
+
+    tide_heights = context.get("tide_heights") or {}
+    valid_dates = context.get("valid_dates")
+    clear_classes = context.get("clear_classes") or [4, 5, 6, 12]
+    ndwi_threshold = float(context.get("ndwi_threshold", 0.1))
+    smooth_lambda = float(context.get("smooth_lambda") or 0.35)
+    edge_sigma = float(context.get("edge_sigma") or 0.3)
+    diffusion_iterations = int(context.get("diffusion_iterations") or 8)
+
+    # Método de reconstrucción de la elevación:
+    #   "optimized" (por defecto): bracketing + optimización + difusión
+    #   "pixels":   bracketing puro (punto medio del intervalo por píxel)
+    #   "isolines": interpolación desde las líneas de costa (waterlines)
+    method = context.get("method") or "optimized"
+
+    tide_array, temporal_mask = _build_temporal_arrays(
+        dates=dates,
+        tide_heights=tide_heights,
+        valid_dates=valid_dates,
+    )
+
+    # NDWI = (B03 - B08) / (B03 + B08); agua = clear & NDWI > umbral
+    den = b03 + b08
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ndwi = np.where(den != 0, (b03 - b08) / den, np.nan)
+
+    clear_mask = _isin(scl, clear_classes) & temporal_mask[:, None, None]
+    finite = np.isfinite(ndwi)
+    water_mask = clear_mask & finite & (ndwi > ndwi_threshold)
+    land_mask = clear_mask & finite & (ndwi <= ndwi_threshold)
+
+    zmin, zmax, observation_count = _bracket_elevations(
+        tide_array=tide_array,
+        water_mask=water_mask,
+        land_mask=land_mask,
+    )
+
+    z0, inconsistent = _initial_estimate(zmin, zmax)
+
+    if method == "pixels":
+        # Bracketing puro: la elevación es el punto medio del intervalo, solo
+        # en los píxeles acotados por agua y tierra (z0 finito). Sin optimizar.
+        elevation = z0.astype(np.float32)
+
+    elif method == "isolines":
+        # Interpolación desde las líneas de costa; se restringe a los píxeles
+        # acotados (z0 finito) para ser comparable con el método "pixels".
+        elevation = _isoline_elevation(
+            water_mask=water_mask,
+            land_mask=land_mask,
+            tide_array=tide_array,
+            temporal_mask=temporal_mask,
+        )
+        elevation = np.where(np.isfinite(z0), elevation, np.nan).astype(np.float32)
+
+    else:
+        elevation = _optimize_elevation(
+            z0=z0,
+            valid_mask=~np.isnan(z0),
+            smooth_lambda=smooth_lambda,
+            edge_sigma=edge_sigma,
+        )
+
+        elevation = _anisotropic_diffusion(
+            elevation,
+            iterations=diffusion_iterations,
+            kappa=edge_sigma,
+        )
+
+    residual = zmax - zmin
+
+    confidence = _compute_confidence(
+        observation_count=observation_count,
+        residual=residual,
+        inconsistent=inconsistent,
+    )
+
+    result = _stack_bands(
+        elevation=elevation,
+        confidence=confidence,
+        residual=residual,
+        observation_count=observation_count,
+        template=template,
+        time_dim=time_dim,
+        spatial_dims=spatial_dims,
+    )
+
+    return XarrayDataCube(result)
+
+
+def _drop_band_dimension(array):
+    """
+    Elimina la dimensión 'bands' cuando el cubo contiene una única banda
+    (SCL), preservando el resto de dimensiones intactas.
+    """
+
+    if "bands" in array.dims and array.sizes["bands"] == 1:
+        array = array.isel(bands=0, drop=True)
+
+    return array
+
+
+def _resolve_time_dimension(array):
+    """
+    Identifica el nombre de la dimensión temporal ('t' o 'time').
+    """
+
+    for candidate in ("t", "time"):
+        if candidate in array.dims:
+            return candidate
+
+    raise ValueError("No temporal dimension found in input datacube.")
+
+
+def _extract_dates(time_values):
+    """
+    Convierte las coordenadas temporales del cubo en cadenas 'YYYY-MM-DD'.
+    """
+
+    dates = []
+
+    for value in time_values:
+        as_day = np.datetime64(value, "D")
+        dates.append(str(as_day))
+
+    return dates
+
+
+def _isin(array, classes):
+    return np.isin(array, classes)
+
+
+def _build_temporal_arrays(dates, tide_heights, valid_dates):
+    """
+    Construye el vector de alturas de marea por fecha de adquisición y la
+    máscara temporal de observaciones utilizables (fecha válida y con
+    altura de marea conocida).
+    """
+
+    n_obs = len(dates)
+
+    tide_array = np.full(n_obs, np.nan, dtype=np.float32)
+    temporal_mask = np.zeros(n_obs, dtype=bool)
+
+    valid_dates_set = set(valid_dates) if valid_dates is not None else None
+
+    for index, date in enumerate(dates):
+
+        if valid_dates_set is not None and date not in valid_dates_set:
+            continue
+
+        height = tide_heights.get(date)
+
+        if height is None:
+            continue
+
+        tide_array[index] = height
+        temporal_mask[index] = True
+
+    return tide_array, temporal_mask
+
+
+def _bracket_elevations(tide_array, water_mask, land_mask):
+    """
+    Calcula, por píxel:
+
+        zmin: máxima altura de marea observada estando el píxel en tierra
+        zmax: mínima altura de marea observada estando el píxel en agua
+
+    junto con el número total de observaciones válidas.
+    """
+
+    tide_broadcast = tide_array[:, None, None]
+
+    land_heights = np.where(land_mask, tide_broadcast, -np.inf)
+    zmin = np.max(land_heights, axis=0)
+    zmin = np.where(np.isfinite(zmin), zmin, np.nan).astype(np.float32)
+
+    water_heights = np.where(water_mask, tide_broadcast, np.inf)
+    zmax = np.min(water_heights, axis=0)
+    zmax = np.where(np.isfinite(zmax), zmax, np.nan).astype(np.float32)
+
+    observation_count = np.sum(water_mask | land_mask, axis=0).astype(np.float32)
+
+    return zmin, zmax, observation_count
+
+
+def _initial_estimate(zmin, zmax):
+    """
+    Estimación inicial z0 = (zmin + zmax) / 2. Marca como inconsistentes
+    los píxeles donde zmin > zmax, para penalizar su confianza más tarde.
+    """
+
+    with np.errstate(invalid="ignore"):
+        inconsistent = zmin > zmax
+
+    z0 = (zmin + zmax) / 2.0
+
+    return z0.astype(np.float32), inconsistent
+
+
+def _shift(array, dy, dx):
+    """
+    Desplaza el raster (dy, dx) píxeles reutilizando el valor de borde más
+    cercano, mediante scipy.ndimage.shift con interpolación de orden 0.
+    """
+
+    return ndimage.shift(array, shift=(-dy, -dx), order=0, mode="nearest")
+
+
+def _optimize_elevation(z0, valid_mask, smooth_lambda, edge_sigma, iterations=60):
+    """
+    Optimización basada en energía:
+
+        E = sum((z - z0)^2) + lambda * sum(w_ij * (z_i - z_j)^2)
+
+    con pesos de suavidad w_ij = exp(-delta^2 / sigma^2) que preservan
+    taludes pronunciados. Se resuelve mediante iteración tipo Jacobi,
+    lo que además permite reconstruir (inpaint) los píxeles sin dato.
+    """
+
+    has_valid = np.any(valid_mask)
+    fill_value = np.nanmean(z0) if has_valid else 0.0
+    z0_filled = np.where(valid_mask, z0, fill_value).astype(np.float32)
+
+    neighbor_offsets = ((-1, 0), (1, 0), (0, -1), (0, 1))
+    sigma_sq = edge_sigma ** 2 + 1e-6
+
+    weights = []
+    for dy, dx in neighbor_offsets:
+        neighbor = _shift(z0_filled, dy, dx)
+        delta_sq = (z0_filled - neighbor) ** 2
+        weights.append(np.exp(-delta_sq / sigma_sq).astype(np.float32))
+
+    data_weight = valid_mask.astype(np.float32)
+    z = z0_filled.copy()
+
+    for _ in range(iterations):
+
+        neighbor_sum = np.zeros_like(z)
+        weight_sum = np.zeros_like(z)
+
+        for (dy, dx), weight in zip(neighbor_offsets, weights):
+            neighbor_z = _shift(z, dy, dx)
+            neighbor_sum += weight * neighbor_z
+            weight_sum += weight
+
+        numerator = data_weight * z0_filled + smooth_lambda * neighbor_sum
+        denominator = data_weight + smooth_lambda * weight_sum
+        denominator = np.where(denominator > 1e-6, denominator, 1.0)
+
+        z = numerator / denominator
+
+    return z.astype(np.float32)
+
+
+def _isoline_elevation(
+    water_mask,
+    land_mask,
+    tide_array,
+    temporal_mask,
+    smooth_lambda=3.0,
+    iterations=300,
+):
+    """
+    Reconstrucción por isolíneas (waterlines), server-side.
+
+    Para cada fecha se extrae la línea de costa (píxeles de agua adyacentes a
+    tierra y viceversa) y se le asigna la altura de marea de esa fecha. Cada
+    orilla es una observación BLANDA de la elevación; el DEM se obtiene
+    minimizando por mínimos cuadrados
+
+        sum_i c_i (z_i - obs_i)^2  +  lambda * sum (z_i - z_vecino)^2
+
+    donde c_i es el nº de fechas en que el píxel fue orilla (más peso a los
+    más observados). El término de suavidad promedia las orillas en conflicto
+    (píxeles vecinos con mareas dispares) y rellena los huecos, dando una
+    superficie suave. Se resuelve por iteración de Jacobi (tile-safe).
+    """
+
+    n_obs, height, width = water_mask.shape
+
+    accum = np.zeros((height, width), dtype=np.float64)
+    count = np.zeros((height, width), dtype=np.float64)
+
+    for index in range(n_obs):
+
+        if not temporal_mask[index]:
+            continue
+
+        tide = tide_array[index]
+
+        water = water_mask[index]
+        land = land_mask[index]
+
+        shoreline = (water & ndimage.binary_dilation(land)) | (
+            land & ndimage.binary_dilation(water)
+        )
+
+        accum[shoreline] += tide
+        count[shoreline] += 1.0
+
+    has_shoreline = count > 0
+
+    if not has_shoreline.any():
+        return np.full((height, width), np.nan, dtype=np.float32)
+
+    # Observación por píxel (media de mareas donde fue orilla) y su peso.
+    observation = accum / np.where(count > 0, count, 1.0)
+    data_weight = count.astype(np.float64)
+
+    # Inicialización e iteración de Jacobi del sistema de mínimos cuadrados.
+    fill = float(observation[has_shoreline].mean())
+    z = np.where(has_shoreline, observation, fill).astype(np.float64)
+
+    smooth_lambda = float(smooth_lambda)
+
+    for _ in range(int(iterations)):
+
+        neighbor_sum = (
+            _shift(z, -1, 0)
+            + _shift(z, 1, 0)
+            + _shift(z, 0, -1)
+            + _shift(z, 0, 1)
+        )
+
+        numerator = data_weight * observation + smooth_lambda * neighbor_sum
+        denominator = data_weight + smooth_lambda * 4.0
+
+        z = numerator / denominator
+
+    return z.astype(np.float32)
+
+
+def _anisotropic_diffusion(elevation, iterations, kappa, step=0.15):
+    """
+    Difusión anisótropa tipo Perona-Malik. Suaviza terrazas manteniendo
+    los taludes pronunciados gracias al coeficiente de conducción
+    c = exp(-(gradiente / kappa)^2).
+    """
+
+    z = elevation.astype(np.float32).copy()
+    kappa = max(float(kappa), 1e-3)
+
+    for _ in range(max(iterations, 0)):
+
+        north = _shift(z, -1, 0) - z
+        south = _shift(z, 1, 0) - z
+        east = _shift(z, 0, 1) - z
+        west = _shift(z, 0, -1) - z
+
+        c_north = np.exp(-(north / kappa) ** 2)
+        c_south = np.exp(-(south / kappa) ** 2)
+        c_east = np.exp(-(east / kappa) ** 2)
+        c_west = np.exp(-(west / kappa) ** 2)
+
+        z = z + step * (
+            c_north * north
+            + c_south * south
+            + c_east * east
+            + c_west * west
+        )
+
+    return z.astype(np.float32)
+
+
+def _compute_confidence(
+    observation_count,
+    residual,
+    inconsistent,
+    min_observations=4.0,
+    residual_scale=1.5,
+):
+    """
+    Mapa de confianza combinando número de observaciones, anchura del
+    intervalo (zmax - zmin) y consistencia de la reconstrucción.
+    Normalizado en [0, 1].
+    """
+
+    observation_term = np.clip(observation_count / min_observations, 0.0, 1.0)
+
+    residual_abs = np.abs(residual)
+    residual_term = np.exp(-residual_abs / residual_scale)
+    residual_term = np.where(np.isnan(residual), 0.0, residual_term)
+
+    consistency_term = np.where(inconsistent, 0.5, 1.0)
+
+    confidence = observation_term * residual_term * consistency_term
+    confidence = np.where(observation_count > 0, confidence, 0.0)
+
+    return np.clip(confidence, 0.0, 1.0).astype(np.float32)
+
+
+def _stack_bands(
+    elevation,
+    confidence,
+    residual,
+    observation_count,
+    template,
+    time_dim,
+    spatial_dims,
+):
+    """
+    Ensambla el DataArray multibanda de salida (Elevation, Confidence,
+    Residual, Observations), conservando las coordenadas espaciales
+    originales del cubo de entrada.
+    """
+
+    stacked = np.stack([elevation, confidence, residual, observation_count], axis=0)
+
+    coords = {
+        name: coordinate
+        for name, coordinate in template.coords.items()
+        if time_dim not in coordinate.dims
+    }
+    coords["bands"] = ["Elevation", "Confidence", "Residual", "Observations"]
+
+    result = xr.DataArray(
+        stacked,
+        dims=["bands"] + list(spatial_dims),
+        coords=coords,
+    )
+
+    return result
+'''
+
 # ---------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------
@@ -607,6 +1070,8 @@ class BathymetryReconstructor:
         out_dir: str | Path = "bathymetry",
         force: bool = False,
         min_confidence: float = 0.0,
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
     ) -> BathymetryResult:
         """
         Reconstruct an intertidal DEM from Sentinel-2 SCL observations and
@@ -671,6 +1136,8 @@ class BathymetryReconstructor:
             time_extent=time_extent,
             tide_heights=tide_heights,
             valid_dates=valid_dates,
+            ndwi_threshold=ndwi_threshold,
+            water_source=water_source,
         )
 
         # -------------------------------------------------------------
@@ -787,6 +1254,8 @@ class BathymetryReconstructor:
         out_dir: str | Path = "bathymetry",
         force: bool = False,
         min_confidence: float = 0.0,
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
     ) -> BathymetryResult:
         """
         Método 1 — Bracketing por píxel (diccionario de píxeles), server-side.
@@ -808,6 +1277,8 @@ class BathymetryReconstructor:
             method="pixels",
             filename="bathymetry_pixels.tif",
             title="bathymetry_pixels",
+            ndwi_threshold=ndwi_threshold,
+            water_source=water_source,
         )
 
     def reconstruct_isolines(
@@ -819,6 +1290,8 @@ class BathymetryReconstructor:
         out_dir: str | Path = "bathymetry",
         force: bool = False,
         min_confidence: float = 0.0,
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
     ) -> BathymetryResult:
         """
         Método 2 — Isolíneas (waterlines), server-side.
@@ -839,6 +1312,8 @@ class BathymetryReconstructor:
             method="isolines",
             filename="bathymetry_isolines.tif",
             title="bathymetry_isolines",
+            ndwi_threshold=ndwi_threshold,
+            water_source=water_source,
         )
 
     def _reconstruct_udf(
@@ -853,6 +1328,8 @@ class BathymetryReconstructor:
         method: str,
         filename: str,
         title: str,
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
     ) -> BathymetryResult:
         """
         Ejecuta la reconstrucción server-side con el ``method`` indicado y
@@ -877,6 +1354,8 @@ class BathymetryReconstructor:
             tide_heights=tide_heights,
             valid_dates=valid_dates,
             method=method,
+            ndwi_threshold=ndwi_threshold,
+            water_source=water_source,
         )
 
         self._run_batch_job(
@@ -897,6 +1376,8 @@ class BathymetryReconstructor:
         tide_heights: dict[str, float],
         valid_dates: Sequence[str] | None = None,
         method: str = "optimized",
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
     ):
         """
         Build the OpenEO processing graph for bathymetry reconstruction.
@@ -907,18 +1388,55 @@ class BathymetryReconstructor:
 
         ``method`` selecciona el estimador de elevación en el UDF:
         "optimized" (por defecto), "pixels" o "isolines".
+
+        ``water_source`` elige cómo se detecta agua/tierra:
+          - "ndwi" (por defecto): NDWI = (B03-B08)/(B03+B08) a 10 m REAL
+            (B03/B08 nativos a 10 m); el SCL solo se usa como máscara de nubes.
+          - "scl"  (LEGACY): clasificación agua/tierra por clases SCL (20 m).
         """
 
+        if water_source == "scl":
+            # ── LEGACY: agua/tierra por clases SCL (20 m) ────────────────────
+            cube = self.connection.load_collection(
+                "SENTINEL2_L2A",
+                spatial_extent=bbox,
+                temporal_extent=time_extent,
+                bands=["SCL"],
+                max_cloud_cover=100,
+            )
+            udf = openeo.UDF(
+                code=_BATHYMETRY_UDF_SCL,
+                runtime="Python",
+                context={
+                    "tide_heights": tide_heights,
+                    "valid_dates": list(valid_dates)
+                    if valid_dates is not None
+                    else None,
+                    "method": method,
+                },
+            )
+            cube = cube.apply_dimension(
+                dimension="t", target_dimension="bands", process=udf,
+            )
+            return cube
+
+        # ── NDWI (por defecto): agua por índice a 10 m real ──────────────────
         cube = self.connection.load_collection(
             "SENTINEL2_L2A",
             spatial_extent=bbox,
             temporal_extent=time_extent,
-            bands=["SCL"],
+            bands=["B03", "B08", "SCL"],
             max_cloud_cover=100,
         )
+        # Rejilla a 10 m: B03/B08 ya lo son (NDWI a 10 m real); SCL sube a 10 m
+        # (solo máscara de nubes).
+        try:
+            cube = cube.resample_spatial(resolution=10, method="near")
+        except Exception:
+            pass
 
         udf = openeo.UDF(
-            code=_BATHYMETRY_UDF,
+            code=_BATHYMETRY_UDF_NDWI,
             runtime="Python",
             context={
                 "tide_heights": tide_heights,
@@ -926,6 +1444,7 @@ class BathymetryReconstructor:
                 if valid_dates is not None
                 else None,
                 "method": method,
+                "ndwi_threshold": float(ndwi_threshold),
             },
         )
 

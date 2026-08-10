@@ -1115,6 +1115,304 @@ def analyze_scl_cube_openeo(
     return analysis
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  PIPELINE NDWI — detección de agua por índice a 10 m REAL (no SCL a 20 m)
+# ═════════════════════════════════════════════════════════════════════════════
+# El SCL es nativo a 20 m (en nuestro cubo va remuestreado a 10 m: detalle falso).
+# NDWI = (B03 - B08) / (B03 + B08) usa dos bandas nativas a 10 m -> resolución
+# REAL doble y detección de agua continua. La máscara de nubes sigue en SCL.
+# Reutiliza toda la infraestructura de streaming (RAM acotada) y de reporte.
+
+def _open_ndwi_cube(nc_path):
+    """Abre el netCDF (B03, B08, SCL) y devuelve (ds, b03, b08, scl, t_dim), todos
+    transpuestos a (t, y, x). Soporta bandas como data_vars separados o como una
+    dimensión ``bands``."""
+    import xarray as _xr
+    ds = _xr.open_dataset(nc_path)
+
+    def _get(name):
+        if name in ds.data_vars:
+            da = ds[name]
+        else:
+            # fallback: variable con dimensión 'bands'
+            var = next(v for v in ds.data_vars if "bands" in ds[v].dims)
+            da = ds[var].sel(bands=name)
+        t_dim = "t" if "t" in da.dims else ("time" if "time" in da.dims else
+                                            [d for d in da.dims if d not in ("y", "x", "bands")][0])
+        ydim = "y" if "y" in da.dims else da.dims[-2]
+        xdim = "x" if "x" in da.dims else da.dims[-1]
+        return da.transpose(t_dim, ydim, xdim), t_dim
+
+    b03, t_dim = _get("B03")
+    b08, _ = _get("B08")
+    scl, _ = _get("SCL")
+    return ds, b03, b08, scl, t_dim
+
+
+def _ndwi(b03_block, b08_block):
+    """NDWI = (B03 - B08) / (B03 + B08) para un bloque (k, y, x)."""
+    g = np.asarray(b03_block, dtype=np.float32)
+    n = np.asarray(b08_block, dtype=np.float32)
+    den = g + n
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(den != 0, (g - n) / den, np.nan).astype(np.float32)
+
+
+def build_reference_and_cloud_streaming_ndwi(
+    ds, b03, b08, scl, t_dim, dates,
+    ndwi_threshold=0.1,
+    bad_classes=(3, 8, 9, 10),
+    clear_classes=(4, 5, 6, 12),
+    bad_fraction_threshold=0.05,
+    stable_threshold=0.95,
+    transition_buffer_pixels=10,
+    global_bad_fraction_threshold=0.05,
+    reference_dates=None,
+    chunk=None,
+):
+    """Reference map + cobertura de nubes por STREAMING, con agua detectada por
+    NDWI (agua = clear & NDWI>umbral). La máscara de nubes sigue en SCL.
+    Misma lógica que la versión SCL; devuelve (reference_map, transition_pct)."""
+    from scipy.ndimage import binary_dilation
+
+    bad_classes = list(bad_classes)
+    clear_classes = list(clear_classes)
+    reference_dates = set(reference_dates or [])
+    T = scl.sizes[t_dim]
+    H = scl.sizes[scl.dims[1]]
+    W = scl.sizes[scl.dims[2]]
+    ch = _auto_chunk(H * W, chunk)
+
+    water = np.zeros((H, W), np.int64)
+    land = np.zeros((H, W), np.int64)
+    gfrac = np.zeros(T, np.float64)
+
+    # ── PASS 1: votos agua/tierra (fechas limpias) + fracción global de nubes ──
+    for a in range(0, T, ch):
+        sl = {t_dim: slice(a, a + ch)}
+        scl_blk = np.asarray(scl.isel(sl).values).astype(np.int16)
+        bad = np.isin(scl_blk, bad_classes)
+        gf = bad.reshape(bad.shape[0], -1).mean(axis=1)
+        gfrac[a:a + scl_blk.shape[0]] = gf
+        clean = gf <= bad_fraction_threshold
+        if clean.any():
+            ndwi_blk = _ndwi(b03.isel(sl).values, b08.isel(sl).values)
+            clear = np.isin(scl_blk, clear_classes)
+            water_msk = clear & np.isfinite(ndwi_blk) & (ndwi_blk > ndwi_threshold)
+            land_msk = clear & np.isfinite(ndwi_blk) & (ndwi_blk <= ndwi_threshold)
+            water += water_msk[clean].sum(0)
+            land += land_msk[clean].sum(0)
+
+    valid = water + land
+    valid[valid == 0] = 1
+    water_stable = (water / valid) >= stable_threshold
+    land_stable = (land / valid) >= stable_threshold
+    transition = ~(water_stable | land_stable)
+    if transition_buffer_pixels > 0:
+        transition = binary_dilation(transition, iterations=int(transition_buffer_pixels))
+    reference_map = np.zeros((H, W), np.uint8)
+    reference_map[water_stable] = 1
+    reference_map[land_stable] = 2
+    reference_map[transition] = 0
+
+    transition_mask = reference_map == 0
+    n_trans = max(int(transition_mask.sum()), 1)
+
+    # ── PASS 2: cobertura de nubes (SCL) global / en transición ───────────────
+    transition_pct = {}
+    for a in range(0, T, ch):
+        gfc = gfrac[a:a + ch]
+        need = np.any(gfc > global_bad_fraction_threshold)
+        scl_blk = None
+        if need:
+            scl_blk = np.asarray(scl.isel({t_dim: slice(a, a + ch)}).values).astype(np.int16)
+        for j in range(len(gfc)):
+            d = dates[a + j]
+            if d in reference_dates:
+                continue
+            gf = float(gfc[j])
+            if gf <= global_bad_fraction_threshold:
+                pct = gf * 100
+            else:
+                bad = np.isin(scl_blk[j], bad_classes)
+                pct = float(bad[transition_mask].sum()) / n_trans * 100
+            transition_pct[d] = round(pct, 4)
+
+    return reference_map, transition_pct
+
+
+def compute_water_frequency_streaming_ndwi(
+    nc_path,
+    dates,
+    valid_dates=None,
+    ndwi_threshold=0.1,
+    clear_classes=(4, 5, 6, 12),
+    min_obs=8,
+    chunk=None,
+):
+    """Water frequency por STREAMING con agua detectada por NDWI.
+    wf = nº obs (clear & NDWI>umbral) / nº obs claras (SCL in clear_classes)."""
+    ds, b03, b08, scl, t_dim = _open_ndwi_cube(nc_path)
+    try:
+        T = scl.sizes[t_dim]
+        H = scl.sizes[scl.dims[1]]
+        W = scl.sizes[scl.dims[2]]
+        ch = _auto_chunk(H * W, chunk)
+        clear_classes = list(clear_classes)
+        vd = set(valid_dates) if valid_dates else None
+
+        wv = np.zeros((H, W), np.int64)
+        cv = np.zeros((H, W), np.int64)
+        for a in range(0, T, ch):
+            n = min(ch, T - a)
+            keep = None
+            if vd is not None:
+                keep = [j for j in range(n) if dates[a + j] in vd]
+                if not keep:
+                    continue
+            sl = {t_dim: slice(a, a + ch)}
+            scl_blk = np.asarray(scl.isel(sl).values).astype(np.int16)
+            ndwi_blk = _ndwi(b03.isel(sl).values, b08.isel(sl).values)
+            clear = np.isin(scl_blk, clear_classes)
+            water_msk = clear & np.isfinite(ndwi_blk) & (ndwi_blk > ndwi_threshold)
+            if keep is not None:
+                clear = clear[keep]
+                water_msk = water_msk[keep]
+            wv += water_msk.sum(0)
+            cv += clear.sum(0)
+
+        safe = np.where(cv == 0, 1, cv).astype(np.float32)
+        water_freq = (wv / safe).astype(np.float32)
+        water_freq[cv < max(1, int(min_obs))] = np.nan
+        return water_freq
+    finally:
+        ds.close()
+
+
+class NdwiCubeAnalysis(SclCubeAnalysis):
+    """Como :class:`SclCubeAnalysis` pero el agua se detecta por NDWI (10 m real).
+    Reutiliza el reporte, guardado y limpieza; solo cambia el water frequency."""
+
+    def __init__(self, *args, ndwi_threshold=0.1, clear_classes=(4, 5, 6, 12), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ndwi_threshold = ndwi_threshold
+        self.clear_classes = tuple(clear_classes)
+
+    def water_frequency(self, valid_dates="__use_analysis__",
+                        out_path="water_frequency.tif", min_obs=8, save=True):
+        if valid_dates == "__use_analysis__":
+            valid_dates = self.valid_dates
+        wf = compute_water_frequency_streaming_ndwi(
+            self.nc_path, self.dates, valid_dates=valid_dates,
+            ndwi_threshold=self.ndwi_threshold, clear_classes=self.clear_classes,
+            min_obs=min_obs, chunk=self.chunk,
+        )
+        if save:
+            _write_geotiff(out_path, wf, self.transform, self.crs,
+                           dtype="float32", nodata=np.nan)
+        return wf, self.transform, self.crs
+
+
+def analyze_ndwi_cube_openeo(
+    conn,
+    bbox,
+    time_extent,
+    ndwi_threshold=0.1,
+    bad_classes=(3, 8, 9, 10),
+    clear_classes=(4, 5, 6, 12),
+    bad_fraction_threshold=0.05,
+    stable_threshold=0.95,
+    transition_buffer_pixels=10,
+    global_bad_fraction_threshold=0.05,
+    transition_cloud_threshold=0.1,
+    reference_dates=None,
+    cache_nc=None,
+    chunk=None,
+    verbose=True,
+    plot=True,
+):
+    """Equivalente NDWI de :func:`analyze_scl_cube_openeo`.
+
+    Descarga UNA vez B03 + B08 + SCL (B03/B08 nativos a 10 m -> NDWI a 10 m real;
+    SCL solo para la máscara de nubes) y calcula en STREAMING el reference map, la
+    cobertura de nubes y (con ``.water_frequency()``) el water frequency, todo con
+    el agua detectada por NDWI. Devuelve :class:`NdwiCubeAnalysis`.
+    """
+    bad_classes = list(bad_classes)
+    clear_classes = list(clear_classes)
+    reference_dates = set(reference_dates or [])
+
+    owns_nc = cache_nc is None
+    if cache_nc and os.path.exists(cache_nc):
+        nc_path = cache_nc
+        print(f"  Reutilizando cubo NDWI cacheado -> {nc_path}")
+    else:
+        cube = conn.load_collection(
+            "SENTINEL2_L2A",
+            spatial_extent=bbox,
+            temporal_extent=list(time_extent),
+            bands=["B03", "B08", "SCL"],
+            max_cloud_cover=100,
+        )
+        # Forzar rejilla de 10 m (B03/B08 ya lo son; SCL se sube a 10 m, solo
+        # sirve de máscara de nubes). Así el NDWI queda a 10 m REAL.
+        try:
+            cube = cube.resample_spatial(resolution=10, method="near")
+        except Exception as exc:
+            print(f"  (resample_spatial no disponible: {exc})")
+        nc_path = cache_nc or tempfile.mktemp(suffix=".nc")
+        job = cube.save_result(format="netCDF").create_job(title="ndwi_cube_unificado")
+        print("  Lanzando batch job (descarga UNICA B03/B08/SCL para NDWI)...")
+        job.start_and_wait()
+        assets = job.get_results().get_assets()
+        if not assets:
+            raise RuntimeError("El job no devolvió assets")
+        assets[0].download(nc_path)
+        print(f"  Cubo NDWI descargado -> {nc_path}")
+
+    ds, b03, b08, scl, t_dim = _open_ndwi_cube(nc_path)
+
+    import re as _re
+
+    def _to_iso(v):
+        m = _re.search(r"\d{4}-\d{2}-\d{2}", str(v))
+        if m:
+            return m.group(0)
+        try:
+            return pd.to_datetime(str(v)).strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return str(v)
+
+    dates = [_to_iso(v) for v in np.asarray(scl[t_dim].values)]
+    transform, crs = _grid_from_dataset(ds)
+
+    reference_map, transition_stats = build_reference_and_cloud_streaming_ndwi(
+        ds, b03, b08, scl, t_dim, dates,
+        ndwi_threshold=ndwi_threshold, bad_classes=bad_classes,
+        clear_classes=clear_classes, bad_fraction_threshold=bad_fraction_threshold,
+        stable_threshold=stable_threshold,
+        transition_buffer_pixels=transition_buffer_pixels,
+        global_bad_fraction_threshold=global_bad_fraction_threshold,
+        reference_dates=reference_dates, chunk=chunk,
+    )
+    ds.close()
+
+    print(
+        f"  Analisis NDWI completo (streaming): {len(dates)} fechas x "
+        f"{reference_map.shape} | umbral NDWI {ndwi_threshold} | "
+        f"transicion {int((reference_map == 0).sum())} px"
+    )
+    analysis = NdwiCubeAnalysis(
+        nc_path, dates, transform, crs, reference_map, transition_stats,
+        bad_classes, global_bad_fraction_threshold, transition_cloud_threshold,
+        chunk=chunk, owns_nc=owns_nc,
+        ndwi_threshold=ndwi_threshold, clear_classes=clear_classes,
+    )
+    if verbose:
+        analysis.report(plot=plot)
+    return analysis
+
+
 def quantify_reference_gain(n_initial_valid, n_recovered, n_total_dates):
     n_final = n_initial_valid + n_recovered
     pct_initial = (100 * n_initial_valid / n_total_dates) if n_total_dates else 0
