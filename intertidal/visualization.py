@@ -629,6 +629,10 @@ class Visualizer:
         alpha_min: float = 0.35,
         alpha_max: float = 1.0,
         min_confidence: float = 0.0,
+        show_contours: bool = False,
+        cmap_name: str = "viridis",
+        vert_exag: float = 2.0,
+        cbar_label: str = "Intertidal elevation (m above MSL)",
     ):
         """
         Publication-quality bathymetry visualization.
@@ -658,39 +662,29 @@ class Visualizer:
             conf = confidence.astype(float)
             valid = finite & np.isfinite(conf) & (conf > min_confidence)
         else:
+            conf = None
             valid = finite
 
-        # --------------------------------------------------------------
-        # Colormap
-        # --------------------------------------------------------------
-        cmap = plt.cm.gist_earth.copy()
-        cmap.set_bad("white")
+        from matplotlib.colors import Normalize
 
         # --------------------------------------------------------------
-        # Hillshade (enmascarado a la zona con dato real)
+        # Colormap estilo DEA Intertidal (viridis) + rango robusto
         # --------------------------------------------------------------
-        if hillshade is None:
-            ls = LightSource(azdeg=315, altdeg=45)
-            dem_masked = np.ma.masked_array(dem, mask=~valid)
-            shaded = ls.shade(
-                dem_masked,
-                cmap=cmap,
-                vert_exag=1.3,
-                blend_mode="overlay",
-            )
+        cmap = plt.cm.get_cmap(cmap_name).copy()
+        if valid.any():
+            vmin, vmax = np.nanpercentile(dem[valid], [2, 98])
+            if vmax <= vmin:
+                vmin, vmax = float(np.nanmin(dem[valid])), float(np.nanmax(dem[valid]))
         else:
-            if hillshade.ndim == 2:
-                shaded = hillshade / np.nanmax(hillshade)
-            else:
-                shaded = hillshade
-
-        hillshade_alpha = np.where(valid, 0.40, 0.0)
+            vmin, vmax = -1.0, 1.0
+        norm = Normalize(vmin=vmin, vmax=vmax)
 
         # --------------------------------------------------------------
-        # Transparencia del DEM a partir de la confianza
+        # Transparencia del DEM a partir de la confianza (0 fuera de dato)
         # --------------------------------------------------------------
-        if confidence is None:
-            alpha = np.where(valid, 0.85, 0.0)
+        alpha = np.zeros_like(dem, dtype=float)
+        if conf is None:
+            alpha[valid] = alpha_max
         else:
             conf_vals = conf[valid]
             if conf_vals.size > 0:
@@ -699,42 +693,51 @@ class Visualizer:
                     cmin, cmax = np.nanmin(conf_vals), np.nanmax(conf_vals)
             else:
                 cmin, cmax = 0.0, 1.0
-
             rng = (cmax - cmin) if (cmax - cmin) > 1e-12 else 1.0
-            conf_norm = np.zeros_like(dem, dtype=float)
-            conf_norm[valid] = np.clip((conf[valid] - cmin) / rng, 0, 1)
+            conf_norm = np.clip((conf[valid] - cmin) / rng, 0, 1)
+            alpha[valid] = alpha_min + (alpha_max - alpha_min) * conf_norm
 
-            alpha = np.zeros_like(dem, dtype=float)
-            alpha[valid] = alpha_min + (alpha_max - alpha_min) * conf_norm[valid]
+        # --------------------------------------------------------------
+        # Hillshade COLOREADO (viridis modulada por el relieve), como el DEA:
+        # LightSource.shade devuelve el DEM ya coloreado + sombreado.
+        # --------------------------------------------------------------
+        if hillshade is None:
+            ls = LightSource(azdeg=315, altdeg=45)
+            dem_masked = np.ma.masked_array(dem, mask=~valid)
+            rgb = ls.shade(
+                dem_masked, cmap=cmap, norm=norm,
+                vert_exag=vert_exag, blend_mode="soft",
+            )
+        else:
+            rgb = plt.cm.ScalarMappable(norm=norm, cmap=cmap).to_rgba(
+                np.where(valid, dem, np.nan)
+            )
+        rgb[..., 3] = alpha  # transparencia por confianza/validez
 
         # --------------------------------------------------------------
         # Plot
         # --------------------------------------------------------------
         fig, ax = plt.subplots(figsize=figsize)
-        # cmap="gray" solo aplica si 'shaded' es 2D (hillshade normalizado);
-        # si es RGBA (salida de LightSource.shade) matplotlib lo ignora.
-        ax.imshow(shaded, origin="upper", alpha=hillshade_alpha, cmap="gray")
-        im = ax.imshow(dem, cmap=cmap, origin="upper", alpha=alpha)
+        ax.set_facecolor("white")
+        ax.imshow(rgb, origin="upper")
 
-        # --------------------------------------------------------------
-        # Contornos (solo en la zona válida)
-        # --------------------------------------------------------------
-        if np.count_nonzero(valid) > 50:
+        # Curvas de nivel: opcionales (por defecto NO, para el look limpio del DEA)
+        if show_contours and np.count_nonzero(valid) > 50:
             dem_contour = np.where(valid, dem, np.nan)
-            vmin = np.nanmin(dem_contour)
-            vmax = np.nanmax(dem_contour)
             levels = np.arange(
                 np.floor(vmin / contour_interval) * contour_interval,
                 np.ceil(vmax / contour_interval) * contour_interval,
                 contour_interval,
             )
-            ax.contour(dem_contour, levels=levels, colors="0.25", linewidths=0.30, alpha=0.40)
+            ax.contour(dem_contour, levels=levels, colors="0.2", linewidths=0.30, alpha=0.35)
 
         # --------------------------------------------------------------
         # Colorbar
         # --------------------------------------------------------------
-        cbar = plt.colorbar(im, ax=ax, shrink=0.86, pad=0.03)
-        cbar.set_label("Elevation (m)", fontsize=12)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, shrink=0.86, pad=0.03)
+        cbar.set_label(cbar_label, fontsize=12)
 
         # --------------------------------------------------------------
         # Layout

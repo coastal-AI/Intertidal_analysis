@@ -108,3 +108,5 @@ foz_mdt5*.tif
 # Benchmark intermediate rasters (results JSON is tracked)
 bench/
 final_notebook.ipynb.bak*
+ndwi_cube_*.nc
+bathymetry_hsr*/

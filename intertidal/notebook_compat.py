@@ -673,16 +673,18 @@ def compute_water_frequency_from_cube(
 # arrays (y,x): la RAM queda en O(chunk × pixeles), independiente de los años.
 # Resultado idéntico a las versiones in-memory (validado bit a bit).
 
-def _auto_chunk(pixels, chunk=None, budget_bytes=400_000_000, cap=128):
+def _auto_chunk(pixels, chunk=None, budget_bytes=400_000_000, cap=128,
+                bytes_per_obs=3):
     """Nº de fechas por bloque para acotar la RAM del streaming.
 
-    Si ``chunk`` se da, se respeta. Si no, se elige para que un bloque
-    (cubo int16 + booleano de np.isin ≈ 3 bytes/px·fecha) quepa en
-    ``budget_bytes``.
+    Si ``chunk`` se da, se respeta. Si no, se elige para que un bloque quepa en
+    ``budget_bytes``. ``bytes_per_obs`` es el coste por píxel y fecha: ~3 para
+    la ruta SCL (int16 + máscara) y ~20 para la ruta NDWI (B03/B08/den/NDWI en
+    float32 + SCL + máscaras).
     """
     if chunk is not None:
         return max(1, int(chunk))
-    return max(4, min(cap, int(budget_bytes / max(pixels * 3, 1))))
+    return max(4, min(cap, int(budget_bytes / max(pixels * bytes_per_obs, 1))))
 
 
 def _open_scl(nc_path):
@@ -1181,7 +1183,7 @@ def build_reference_and_cloud_streaming_ndwi(
     T = scl.sizes[t_dim]
     H = scl.sizes[scl.dims[1]]
     W = scl.sizes[scl.dims[2]]
-    ch = _auto_chunk(H * W, chunk)
+    ch = _auto_chunk(H * W, chunk, bytes_per_obs=20)
 
     water = np.zeros((H, W), np.int64)
     land = np.zeros((H, W), np.int64)
@@ -1257,7 +1259,7 @@ def compute_water_frequency_streaming_ndwi(
         T = scl.sizes[t_dim]
         H = scl.sizes[scl.dims[1]]
         W = scl.sizes[scl.dims[2]]
-        ch = _auto_chunk(H * W, chunk)
+        ch = _auto_chunk(H * W, chunk, bytes_per_obs=20)
         clear_classes = list(clear_classes)
         vd = set(valid_dates) if valid_dates else None
 

@@ -591,55 +591,73 @@ def apply_datacube(cube: XarrayDataCube, context: dict) -> XarrayDataCube:
         ndwi = np.where(den != 0, (b03 - b08) / den, np.nan)
 
     clear_mask = _isin(scl, clear_classes) & temporal_mask[:, None, None]
-    finite = np.isfinite(ndwi)
-    water_mask = clear_mask & finite & (ndwi > ndwi_threshold)
-    land_mask = clear_mask & finite & (ndwi <= ndwi_threshold)
+    del b03, b08, den, scl
 
-    zmin, zmax, observation_count = _bracket_elevations(
-        tide_array=tide_array,
-        water_mask=water_mask,
-        land_mask=land_mask,
-    )
-
-    z0, inconsistent = _initial_estimate(zmin, zmax)
-
-    if method == "pixels":
-        # Bracketing puro: la elevación es el punto medio del intervalo, solo
-        # en los píxeles acotados por agua y tierra (z0 finito). Sin optimizar.
-        elevation = z0.astype(np.float32)
-
-    elif method == "isolines":
-        # Interpolación desde las líneas de costa; se restringe a los píxeles
-        # acotados (z0 finito) para ser comparable con el método "pixels".
-        elevation = _isoline_elevation(
-            water_mask=water_mask,
-            land_mask=land_mask,
-            tide_array=tide_array,
-            temporal_mask=temporal_mask,
-        )
-        elevation = np.where(np.isfinite(z0), elevation, np.nan).astype(np.float32)
+    if method in ("step", "siq"):
+        # ── Métodos que usan la SERIE NDWI continua + marea ─────────────────
+        #   "step" : mediana móvil NDWI vs marea -> cruce seco->mojado (DEA)
+        #   "siq"  : Soft Inundation Quantile (novel) -> inversión de la CDF de
+        #            marea usando la frecuencia soft de inundación (NDWI continuo)
+        if method == "step":
+            elevation, confidence, observation_count = _step_elevation(
+                ndwi, tide_array, clear_mask, ndwi_threshold,
+            )
+        else:
+            elevation, confidence, observation_count = _siq_elevation(
+                ndwi, tide_array, clear_mask, ndwi_threshold,
+            )
+        residual = np.zeros_like(elevation, dtype=np.float32)
+        del ndwi, clear_mask
 
     else:
-        elevation = _optimize_elevation(
-            z0=z0,
-            valid_mask=~np.isnan(z0),
-            smooth_lambda=smooth_lambda,
-            edge_sigma=edge_sigma,
+        # ── Métodos de bracketing (agua/tierra binario por NDWI) ────────────
+        finite = np.isfinite(ndwi)
+        water_mask = clear_mask & finite & (ndwi > ndwi_threshold)
+        land_mask = clear_mask & finite & (ndwi <= ndwi_threshold)
+        # Liberar los arrays temporales grandes (t,y,x) antes del bracketing.
+        del ndwi, finite, clear_mask
+
+        zmin, zmax, observation_count = _bracket_elevations(
+            tide_array=tide_array,
+            water_mask=water_mask,
+            land_mask=land_mask,
         )
 
-        elevation = _anisotropic_diffusion(
-            elevation,
-            iterations=diffusion_iterations,
-            kappa=edge_sigma,
+        z0, inconsistent = _initial_estimate(zmin, zmax)
+
+        if method == "pixels":
+            elevation = z0.astype(np.float32)
+
+        elif method == "isolines":
+            elevation = _isoline_elevation(
+                water_mask=water_mask,
+                land_mask=land_mask,
+                tide_array=tide_array,
+                temporal_mask=temporal_mask,
+            )
+            elevation = np.where(np.isfinite(z0), elevation, np.nan).astype(np.float32)
+
+        else:
+            elevation = _optimize_elevation(
+                z0=z0,
+                valid_mask=~np.isnan(z0),
+                smooth_lambda=smooth_lambda,
+                edge_sigma=edge_sigma,
+            )
+
+            elevation = _anisotropic_diffusion(
+                elevation,
+                iterations=diffusion_iterations,
+                kappa=edge_sigma,
+            )
+
+        residual = zmax - zmin
+
+        confidence = _compute_confidence(
+            observation_count=observation_count,
+            residual=residual,
+            inconsistent=inconsistent,
         )
-
-    residual = zmax - zmin
-
-    confidence = _compute_confidence(
-        observation_count=observation_count,
-        residual=residual,
-        inconsistent=inconsistent,
-    )
 
     result = _stack_bands(
         elevation=elevation,
@@ -957,6 +975,100 @@ def _compute_confidence(
     return np.clip(confidence, 0.0, 1.0).astype(np.float32)
 
 
+
+def _step_elevation(ndwi, tide_array, clear_mask, threshold,
+                    n_windows=100, window_frac=0.15, min_obs=5):
+    """Método del ESCALÓN (DEA): mediana móvil del NDWI en ventanas de marea;
+    la cota es la marea del primer cruce seco->mojado con marea creciente."""
+    n_t, h, w = ndwi.shape
+    valid_t = np.isfinite(tide_array)
+    tides = tide_array[valid_t]
+    nan = np.full((h, w), np.nan, np.float32)
+    if tides.size < 2:
+        return nan, nan.copy(), np.zeros((h, w), np.float32)
+    tmin, tmax = float(tides.min()), float(tides.max())
+    rng = tmax - tmin
+    if rng <= 0:
+        return nan, nan.copy(), np.zeros((h, w), np.float32)
+    half = 0.5 * window_frac * rng
+    centers = np.linspace(tmin, tmax, n_windows)
+    nd = np.where(clear_mask, ndwi, np.nan)
+    rolling = np.full((n_windows, h, w), np.nan, np.float32)
+    for k in range(n_windows):
+        tc = centers[k]
+        sel = valid_t & (tide_array >= tc - half) & (tide_array <= tc + half)
+        if sel.any():
+            with np.errstate(invalid="ignore"):
+                rolling[k] = np.nanmedian(nd[sel], axis=0)
+    obs = np.sum(clear_mask, axis=0).astype(np.float32)
+    wet = rolling >= threshold
+    dry_low = rolling[0] < threshold
+    wet_high = rolling[-1] >= threshold
+    inter = dry_low & wet_high & np.isfinite(rolling[0]) & np.isfinite(rolling[-1])
+    k1 = np.argmax(wet, axis=0)
+    k0 = np.clip(k1 - 1, 0, n_windows - 1)
+    r1 = np.take_along_axis(rolling, k1[None], 0)[0]
+    r0 = np.take_along_axis(rolling, k0[None], 0)[0]
+    c1 = centers[k1]
+    c0 = centers[k0]
+    d = r1 - r0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac = np.where(np.abs(d) > 1e-6, (threshold - r0) / d, 0.0)
+    frac = np.clip(np.nan_to_num(frac), 0, 1)
+    z = (c0 + frac * (c1 - c0)).astype(np.float32)
+    elevation = np.where(inter & (obs >= min_obs), z, np.nan).astype(np.float32)
+    confidence = np.where(
+        np.isfinite(elevation), np.clip(obs / (2.0 * min_obs), 0, 1), 0.0
+    ).astype(np.float32)
+    return elevation, confidence, obs
+
+
+def _siq_elevation(ndwi, tide_array, clear_mask, threshold,
+                   soft_halfwidth=0.1, min_obs=5):
+    """Soft Inundation Quantile (SIQ) - método NOVEL. Un píxel a cota z está
+    mojado cuando marea > z, luego su frecuencia de inundación F = P(marea > z),
+    y por tanto z = cuantil de marea en (1-F). Sin calibración (usa la CDF del
+    propio modelo de marea) y con NDWI continuo (frecuencia 'soft')."""
+    n_t, h, w = ndwi.shape
+    valid_t = np.isfinite(tide_array)
+    lo = threshold - soft_halfwidth
+    hi = threshold + soft_halfwidth
+    with np.errstate(invalid="ignore"):
+        w_soft = np.clip((ndwi - lo) / (hi - lo), 0.0, 1.0)
+    usable = clear_mask & valid_t[:, None, None]
+    w_soft = np.where(usable, w_soft, 0.0)
+    clear = usable.astype(np.float32)
+    n_wet = np.sum(w_soft, axis=0)
+    clear_votes = np.sum(clear, axis=0)
+    order = np.argsort(tide_array)[::-1]
+    tide_sorted = tide_array[order]
+    cum = np.cumsum(clear[order], axis=0)
+    reached = cum >= n_wet[None]
+    any_reached = reached.any(axis=0)
+    k1 = np.argmax(reached, axis=0)
+    k0 = np.clip(k1 - 1, 0, n_t - 1)
+    cum1 = np.take_along_axis(cum, k1[None], 0)[0]
+    cum0 = np.take_along_axis(cum, k0[None], 0)[0]
+    t1 = tide_sorted[k1]
+    t0 = tide_sorted[k0]
+    d = cum1 - cum0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac = np.where(np.abs(d) > 1e-6, (n_wet - cum0) / d, 0.0)
+    frac = np.clip(np.nan_to_num(frac), 0, 1)
+    z = (t0 + frac * (t1 - t0)).astype(np.float32)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        F = np.where(clear_votes > 0, n_wet / np.where(clear_votes > 0, clear_votes, 1), np.nan)
+    elevation = np.where(
+        (clear_votes >= min_obs) & (F > 0.001) & (F < 0.999) & any_reached,
+        z, np.nan,
+    ).astype(np.float32)
+    confidence = np.where(
+        np.isfinite(elevation),
+        np.clip(4.0 * F * (1.0 - F), 0, 1) * np.clip(clear_votes / (2.0 * min_obs), 0, 1),
+        0.0,
+    ).astype(np.float32)
+    return elevation, confidence, clear_votes.astype(np.float32)
+
 def _stack_bands(
     elevation,
     confidence,
@@ -1022,6 +1134,30 @@ class BathymetryResult:
     contours: Optional[gpd.GeoDataFrame] = None
 
     metadata: dict | None = None
+
+    def clip_to(self, intertidal_mask):
+        """Recorta el DEM a la MÁSCARA INTERMAREAL: fuera de ella, la elevación y
+        sus derivados pasan a NaN (y la máscara de validez a False). Así la
+        batimetría no da valores en píxeles que no son intermareales.
+
+        Alinea rejillas por si hay off-by-one (recorta a la región común).
+        Modifica el resultado in situ y lo devuelve (encadenable).
+        """
+        m = np.asarray(intertidal_mask, dtype=bool)
+        shp = self.elevation.shape
+        keep = np.zeros(shp, dtype=bool)
+        h = min(m.shape[0], shp[0])
+        w = min(m.shape[1], shp[1])
+        keep[:h, :w] = m[:h, :w]
+
+        for name in ("elevation", "confidence", "slope", "aspect", "hillshade", "residual"):
+            arr = getattr(self, name, None)
+            if arr is not None and getattr(arr, "shape", None) == shp:
+                setattr(self, name, np.where(keep, arr, np.nan).astype(np.float32))
+        if self.observation_count is not None and self.observation_count.shape == shp:
+            self.observation_count = np.where(keep, self.observation_count, 0).astype(np.float32)
+        self.mask = (self.mask & keep) if (self.mask is not None and self.mask.shape == shp) else keep
+        return self
 
 
 class BathymetryReconstructor:
@@ -1316,6 +1452,51 @@ class BathymetryReconstructor:
             water_source=water_source,
         )
 
+    def reconstruct_step(
+        self,
+        bbox: dict,
+        time_extent: Sequence[str],
+        tide_heights: dict[str, float],
+        valid_dates: Sequence[str] | None = None,
+        out_dir: str | Path = "bathymetry",
+        force: bool = False,
+        min_confidence: float = 0.0,
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
+    ) -> BathymetryResult:
+        """Método del ESCALÓN (DEA): mediana móvil del NDWI vs marea; la cota es
+        la marea del cruce seco->mojado. Requiere water_source="ndwi"."""
+        return self._reconstruct_udf(
+            bbox=bbox, time_extent=time_extent, tide_heights=tide_heights,
+            valid_dates=valid_dates, out_dir=out_dir, force=force,
+            min_confidence=min_confidence, method="step",
+            filename="bathymetry_step.tif", title="bathymetry_step",
+            ndwi_threshold=ndwi_threshold, water_source=water_source,
+        )
+
+    def reconstruct_siq(
+        self,
+        bbox: dict,
+        time_extent: Sequence[str],
+        tide_heights: dict[str, float],
+        valid_dates: Sequence[str] | None = None,
+        out_dir: str | Path = "bathymetry",
+        force: bool = False,
+        min_confidence: float = 0.0,
+        ndwi_threshold: float = 0.1,
+        water_source: str = "ndwi",
+    ) -> BathymetryResult:
+        """Soft Inundation Quantile (SIQ) - método NOVEL: cota = cuantil de marea
+        en (1 - frecuencia de inundación soft). Sin calibración, NDWI continuo.
+        Requiere water_source="ndwi"."""
+        return self._reconstruct_udf(
+            bbox=bbox, time_extent=time_extent, tide_heights=tide_heights,
+            valid_dates=valid_dates, out_dir=out_dir, force=force,
+            min_confidence=min_confidence, method="siq",
+            filename="bathymetry_siq.tif", title="bathymetry_siq",
+            ndwi_threshold=ndwi_threshold, water_source=water_source,
+        )
+
     def _reconstruct_udf(
         self,
         bbox: dict,
@@ -1369,6 +1550,23 @@ class BathymetryReconstructor:
             min_confidence=min_confidence,
         )
 
+    @staticmethod
+    def _filter_to_valid_dates(cube, valid_dates):
+        """Filtra el cubo a las fechas válidas ANTES del UDF: así el backend no
+        carga en memoria las escenas que el UDF va a descartar igualmente (evita
+        OOMKilled en rangos largos, p.ej. 10 años -> baja de ~1379 a ~312 fechas).
+        Si el backend no soporta filter_labels, se deja el cubo completo (el UDF
+        filtra internamente de todos modos)."""
+        if not valid_dates:
+            return cube
+        try:
+            return cube.filter_labels(
+                dimension="t",
+                condition=lambda x: x.isin(list(valid_dates)),
+            )
+        except Exception:
+            return cube
+
     def _compute_bathymetry_cube(
         self,
         bbox: dict,
@@ -1404,6 +1602,7 @@ class BathymetryReconstructor:
                 bands=["SCL"],
                 max_cloud_cover=100,
             )
+            cube = self._filter_to_valid_dates(cube, valid_dates)
             udf = openeo.UDF(
                 code=_BATHYMETRY_UDF_SCL,
                 runtime="Python",
@@ -1434,6 +1633,8 @@ class BathymetryReconstructor:
             cube = cube.resample_spatial(resolution=10, method="near")
         except Exception:
             pass
+
+        cube = self._filter_to_valid_dates(cube, valid_dates)
 
         udf = openeo.UDF(
             code=_BATHYMETRY_UDF_NDWI,
@@ -1466,10 +1667,20 @@ class BathymetryReconstructor:
         Execute an OpenEO Batch Job.
         """
 
+        # El UDF carga el stack temporal completo en memoria por executor.
+        # Se sube la memoria (sobre todo la del proceso Python del UDF) para
+        # evitar OOMKilled en rangos largos (p.ej. 10 años).
         job = (
             cube
             .save_result(format="GTiff")
-            .create_job(title=title)
+            .create_job(
+                title=title,
+                job_options={
+                    "executor-memory": "4G",
+                    "executor-memoryOverhead": "2G",
+                    "python-memory": "6G",
+                },
+            )
         )
 
         print(f"Launching '{title}'...")
