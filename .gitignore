@@ -110,3 +110,12 @@ bench/
 final_notebook.ipynb.bak*
 ndwi_cube_*.nc
 bathymetry_hsr*/
+
+# pyintertidal outputs
+products_*/
+scenes_rgb/
+scenes_scl/
+scenes_index/
+bathymetry_legacy/
+*_cog.tif
+_verify_intermediates.pkl
