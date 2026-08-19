@@ -1,0 +1,60 @@
+{
+ "operador": {
+  "centros_km": [
+   1.8,
+   3.405979736328125,
+   4.087106689453125,
+   4.52220361328125,
+   5.41386865234375,
+   7.71080322265625
+  ],
+  "tau_usado_min": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   26.09815016413839
+  ],
+  "fuera_del_nulo": [
+   false,
+   false,
+   false,
+   false,
+   false,
+   true
+  ]
+ },
+ "n_px_invertidos": {
+  "uniforme": 31298,
+  "operador": 31965
+ },
+ "delta_op_uni_m": {
+  "mediana_por_banda": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "p95_abs": 0.1444869625325107
+ },
+ "diagnostico_dev_rtk_DECLARADO": {
+  "uniforme": {
+   "n": 217,
+   "slope_dev": 0.7720373285069617,
+   "rmse_dev_centrado": 0.21103239241128485
+  },
+  "operador": {
+   "n": 217,
+   "slope_dev": 0.7720373285069617,
+   "rmse_dev_centrado": 0.21103239241128485
+  }
+ },
+ "inputs_sha": {
+  "store": "b23fde89b68d44e643d18a68b99e36d3d136e102d4ed485c064ac46f63277cb2",
+  "m2_real": "98362cda497c6e4e609991cadb38ddad7549a17a78b1765c14adc77c91661c01"
+ },
+ "duracion_s": 308.5
+}
