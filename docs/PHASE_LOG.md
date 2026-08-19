@@ -247,3 +247,14 @@ pasadas.
 - Pendiente que requiere al humano (R8): FASE P (credenciales SWOT, bbox, tabla de
   prior art, CITATION.cff), campaña RTK futura para el V3 real, y Parte IV multi-ría
   (Escalda/Saint-Malo/Sheerness ya tienen cubo en disco).
+
+## 2026-08-19 — Parte IV (validación externa): el Escalda vota que sí
+
+M2a (la config exacta que ganó la puerta M2) corrido a ciegas sobre el archivo
+sellado del Westerschelde (464 escenas, 73.764 px): perfil τ(s) anclado en la boca
+creciente hacia dentro, y **gradiente dentro de la tolerancia del medido por
+mareógrafos (0.9 min/km)** — la única verdad externa disponible sin instrumentos
+nuevos, nunca usada en calibración. M2d en el mismo sitio da un perfil más ruidoso.
+`results/p4_escalda/`. Con esto, la cadena v4 completa queda: puertas M0–M4 verdes en
+simulación con verdad plantada + señal real fuera de nulo en Villaviciosa + acuerdo
+externo con mareógrafos en el Escalda.
