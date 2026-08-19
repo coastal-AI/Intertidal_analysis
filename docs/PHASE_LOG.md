@@ -228,3 +228,22 @@ pasadas.
 - Fuga sin corregir demostrada: hasta 20.7 min de transferencia aparente con verdad
   plana — el modo de fallo que M3 elimina.
 - `tests/test_gate_m3.py` verde.
+
+## 2026-08-19 — B1/B2 y cierre del plan v4 (Villaviciosa)
+
+- **B1**: producto batimétrico doble (`products_villaviciosa/hsr_v4_{uniforme,operador}
+  _2023-2025.tif` + `results/b1_bathymetry/`). El operador solo actúa en la banda alta
+  (τ=+26.1 min, la única fuera del nulo); allí cambia cotas hasta 0.14 m (p95) y
+  resuelve 667 px más (mejor condicionamiento). Diagnóstico dev DECLARADO: pendiente
+  0.772, RMSE centrado 0.211 — idéntico en ambas variantes porque el RTK vive en las
+  bandas de boca donde el operador es identidad POR MEDIDA: la corrección actúa
+  exactamente donde no hay verdad de campo (el reservado sigue cerrado; acta en
+  rtk.py).
+- **B2**: descomposición σ: mediana ajustada 0.22 → σ_topo 0.177 m; 35 % de la
+  varianza de la anchura es nivel, no relieve; 11.211 px dominados por nivel.
+- **Suite de puertas completa en verde**: R1, M0, M1, M2 (v2), M3 (v3), M4. Commits
+  por sub-fase (M0/M1/M2/M3/M4+B) sin datos pesados (data_v4/ en .gitignore; la
+  procedencia queda en sealed/registry.jsonl con SHA256).
+- Pendiente que requiere al humano (R8): FASE P (credenciales SWOT, bbox, tabla de
+  prior art, CITATION.cff), campaña RTK futura para el V3 real, y Parte IV multi-ría
+  (Escalda/Saint-Malo/Sheerness ya tienen cubo en disco).
