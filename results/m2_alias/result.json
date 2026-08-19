@@ -1,0 +1,98 @@
+{
+ "n_escenas": 1380,
+ "hora_media_utc": 11.262653582930756,
+ "hora_p5_p95_utc": [
+  11.105277777777777,
+  11.403430555555556
+ ],
+ "tabla": {
+  "M2": {
+   "alias_days": 14.765294535536254,
+   "estimable": true,
+   "reason": "alias 14.8 d, bien muestreado",
+   "period_h": 12.4206012
+  },
+  "S2": {
+   "alias_days": Infinity,
+   "estimable": false,
+   "reason": "congelado: su periodo divide el dia solar; el jitter de 18 min de la hora real no lo rescata",
+   "period_h": 12.0
+  },
+  "N2": {
+   "alias_days": 9.61372793243691,
+   "estimable": true,
+   "reason": "alias 9.6 d, bien muestreado",
+   "period_h": 12.6583475
+  },
+  "K2": {
+   "alias_days": 182.62111630633055,
+   "estimable": false,
+   "reason": "alias 183 d: mas alla del umbral",
+   "period_h": 11.9672348
+  },
+  "K1": {
+   "alias_days": 365.2427915025753,
+   "estimable": false,
+   "reason": "alias ~anual: confundido con la estacionalidad",
+   "period_h": 23.9344697
+  },
+  "O1": {
+   "alias_days": 14.191584626461324,
+   "estimable": true,
+   "reason": "alias 14.2 d, bien muestreado",
+   "period_h": 25.8193417
+  },
+  "P1": {
+   "alias_days": 365.24233042244106,
+   "estimable": false,
+   "reason": "alias ~anual: confundido con la estacionalidad",
+   "period_h": 24.0658902
+  },
+  "Q1": {
+   "alias_days": 9.367160193151713,
+   "estimable": true,
+   "reason": "alias 9.4 d, bien muestreado",
+   "period_h": 26.8683567
+  },
+  "M4": {
+   "alias_days": 7.382647267768127,
+   "estimable": true,
+   "reason": "alias 7.4 d, bien muestreado",
+   "period_h": 6.2103006
+  },
+  "M6": {
+   "alias_days": 4.921764845178746,
+   "estimable": true,
+   "reason": "alias 4.9 d, bien muestreado",
+   "period_h": 4.1402004
+  },
+  "MS4": {
+   "alias_days": 14.76529089126785,
+   "estimable": true,
+   "reason": "alias 14.8 d, bien muestreado",
+   "period_h": 6.1033393
+  },
+  "MN4": {
+   "alias_days": 5.822605664962315,
+   "estimable": true,
+   "reason": "alias 5.8 d, bien muestreado",
+   "period_h": 6.2691739
+  }
+ },
+ "estimables": [
+  "M6",
+  "MS4",
+  "M4",
+  "MN4",
+  "M2",
+  "N2",
+  "O1",
+  "Q1"
+ ],
+ "clavados_al_prior_del_contorno": [
+  "K1",
+  "K2",
+  "P1",
+  "S2"
+ ]
+}
