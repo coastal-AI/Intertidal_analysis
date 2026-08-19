@@ -276,3 +276,22 @@ externo con mareógrafos en el Escalda.
   usuario sobre el reservado: sin campaña nueva de momento → estrategia "cero
   etiquetas + evaluación transparente con los 361 puntos" (la afirmación de sobre
   sellado queda para una réplica futura).
+
+## 2026-08-19 — P5: RMSE de cota por AOI contra levantamientos EMODnet
+
+Primera puntuación del método contra verdad de cota EXTERNA masiva (no RTK propio),
+con y sin operador (τ aplicado solo si |τ|>5 min, el ruido de M2a; sin nulos por
+sitio — criterio barato, declarado):
+- **Tajo interior** (286.280 px contra IB_Tagus_2020_64): τ meseta ~+45 min en toda
+  la celda (relativa a su borde marino; la celda está ~30 km dentro del estuario).
+  Con operador: pendiente 0.635→0.685, **RMSE centrado 0.279→0.247 m (−11 %)**.
+  Primera mejora de COTA verificada contra levantamiento real, cero instrumentos.
+- **Vadehavet** (344.061 px contra IB_Danske_Vadden_2020_64): τ medido 14–28 min,
+  pero aplicarlo NO mejora (0.275→0.282; pendiente 0.535→0.501) → el operador no se
+  adopta allí. Lectura coherente con lo ya medido en Villaviciosa: un retardo
+  aparente en llanura abierta puede ser encharcamiento/histéresis, y un
+  desplazamiento de reloj único no lo representa — el criterio de adopción por
+  beneficio (M4) hace su trabajo también en negativo.
+- Pendientes 0.5–0.7 contra levantamiento: llevan el recorte de rango (el Vadehavet
+  tiene más llanura que ventana mareal — su parte alta es inalcanzable para
+  cualquier imagen, censura esperada) y el desajuste de rejilla (16–23 m vs 10 m).
