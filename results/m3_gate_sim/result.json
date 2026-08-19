@@ -1,0 +1,62 @@
+{
+ "version_puerta": 3,
+ "plantado": {
+  "gamma_m2": 0.08,
+  "dt_m2_min": 12.0,
+  "nota": "gamma se planta pero NO se corrige (teorema afin): la puerta prueba que no falsea fase"
+ },
+ "recuperado": {
+  "gamma": 0.0,
+  "dt_min": 16.0,
+  "adopted": true,
+  "dt_min_raw": 16.0,
+  "nll_test_zero": 1.5389504582716833,
+  "nll_test_win": 1.5248512763456505
+ },
+ "T_corregido": {
+  "tau": [
+   0.0,
+   1.6951403620957197,
+   0.7606336276738871,
+   3.6770201115336407,
+   7.004810315388696,
+   7.005992988054835
+  ]
+ },
+ "T_sin_corregir_fuga": {
+  "tau": [
+   0.0,
+   15.612782925305673,
+   11.364877160543779,
+   13.78786425215878,
+   20.736475337115795,
+   20.267998685661247
+  ],
+  "max_min": 20.736475337115795
+ },
+ "centros_km": [
+  1.8,
+  3.405979736328125,
+  4.087106689453125,
+  4.52220361328125,
+  5.41386865234375,
+  7.71080322265625
+ ],
+ "residuales": {
+  "rms_tau_min": 4.798413207855835
+ },
+ "puerta": {
+  "dt_ok": true,
+  "T_plano_ok": true,
+  "fuga_demostrada_ok": true,
+  "PASA": true
+ },
+ "rms_correccion_m": 0.11102148279616131,
+ "seed": 20260819,
+ "inputs_sha": {
+  "store": "b23fde89b68d44e643d18a68b99e36d3d136e102d4ed485c064ac46f63277cb2",
+  "base": "221ec086721c73ea44f7b58abef08bf3156316ddcfbf7760c77be55fef57fc47",
+  "geometria": "5d37a2481cbd0303ca77e2ed1ebfa5c9df3452f175ecaf80e3b88df6ea2b82e2"
+ },
+ "duracion_s": 316.9
+}
