@@ -295,3 +295,15 @@ sitio — criterio barato, declarado):
 - Pendientes 0.5–0.7 contra levantamiento: llevan el recorte de rango (el Vadehavet
   tiene más llanura que ventana mareal — su parte alta es inalcanzable para
   cualquier imagen, censura esperada) y el desajuste de rejilla (16–23 m vs 10 m).
+
+## 2026-08-19 — P6: la tabla final en Terneuzen (modelos vs métodos vs el nuevo)
+
+Mismo juez y misma receta que el 2026-08-18 (mareógrafo trnz jamás usado en
+calibración, ventana test 35 %, RMSE centrado). Nivel de agua:
+GOT4.8 0.705 · GOT4.10 0.703 · ensemble(3) 0.592 · EOT20 0.4195 ·
+EOT20+adaptador v3 0.4096 · **EOT20+operador nuevo (M2a, τ=7.3 desde el archivo
+sellado) 0.4074** · techo solo-retardo (+10, barrido CONTRA el mareógrafo) 0.4063 ·
+operador calibrado con 2 mareógrafos (referencia histórica) 0.3072.
+El operador nuevo recupera el **92 % de lo alcanzable por retardo** (v3 recuperaba
+el 75 %) sin ningún instrumento; lo que queda hasta 0.307 es marejada y ganancia,
+que exigen mareógrafo (y la ganancia es ciega al binario por teorema).
