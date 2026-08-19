@@ -1,0 +1,26 @@
+# Para que el repo sea citable (GitHub renderiza esto como "Cite this repository").
+# EDITAR: nombre completo y ORCID del autor; DOI de Zenodo cuando exista.
+cff-version: 1.2.0
+message: "Si usas este software, cita este repositorio."
+title: "pyintertidal: intertidal topography and distributed tide gauging from the Sentinel-2 archive"
+type: software
+authors:
+  - given-names: Jorge
+    family-names: "Alias Alvarez"          # EDITAR si procede (acentos, segundo apellido)
+    email: jorge.alias.alvarez@gmail.com
+    affiliation: "Universidad de Oviedo"    # EDITAR si procede
+repository-code: "https://github.com/coastal-AI/Intertidal_analysis"
+license: MIT                                # EDITAR: decidir licencia real
+keywords:
+  - intertidal topography
+  - Sentinel-2
+  - tidal transfer
+  - estuaries
+  - remote sensing
+abstract: >-
+  Per-pixel inversion of intertidal topography from the Sentinel-2 archive,
+  with the interior tide of the estuary estimated from the archive itself
+  (binary tide gauging with limb-dependent lags), a calibrated simulator as
+  matched null for every claim, sealed predictions, and a validation
+  framework that separates method error from point-versus-pixel survey
+  sampling error.

@@ -110,3 +110,7 @@ bench/
 final_notebook.ipynb.bak*
 ndwi_cube_*.nc
 bathymetry_hsr*/
+
+# datos pesados v4: fuera del repo; su procedencia queda en sealed/registry.jsonl
+data_v4/
+*.nc

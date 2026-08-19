@@ -1,0 +1,40 @@
+# Puerta M0 — referencias fijadas en la adopción del plan v4 (2026-08-18).
+# R7: cambiar cualquier valor de aquí es un cambio de puerta y se registra en
+# docs/PHASE_LOG.md con su porqué.
+
+baseline:
+  # medido en la adopción con la partición canónica (semilla 20260817, 361 FIX)
+  pooled_dev_slope_adopcion: 0.728
+  tolerancia_autoconsistencia: 0.02
+  # IC histórico del subconjunto emparejado (192 puntos): el agrupado canónico
+  # debe caer dentro
+  ci_historico: [0.608, 0.782]
+  min_bloques_con_8pts: 8
+  min_recorrido_pendientes: 0.5     # la ESTRUCTURA es el objetivo del plan
+
+simulador:
+  # marginales del archivo que el modo nulo debe reproducir (tolerancias en
+  # fracción relativa sobre los percentiles 25/50/75 de a, b, sigma y sobre la
+  # fracción de observaciones utiles)
+  tolerancia_relativa: 0.15
+  seed: 20260818
+  # incertidumbre de NIVEL del archivo, reinyectada por el nulo (metros).
+  # Fuentes medidas 2026-08-18: sd=0.134 m solo por hora real de paso vs
+  # nominal; ~0.22 m EOT20 contra mareografos dentro de rias. La sigma del
+  # archivo la lleva convuelta; calibrate() la deconvoluciona (sigma_topo).
+  sd_nivel_m: 0.13
+  # sigma vive en una rejilla de 8 atomos: la comparacion es distancia TV
+  # entre distribuciones de atomos. La deconvolucion+recuantizacion desplaza
+  # masa a atomos ADYACENTES (medido en la adopcion: TV=0.179, todo entre
+  # vecinos). Tolerancia propia de sigma:
+  tolerancia_tv_sigma: 0.20
+
+particion:
+  block_m: 150.0
+  holdout_fraction: 0.35
+  seed: 20260817
+
+datos:
+  producto_baseline: products_villaviciosa/hsr_eot20_2023-2025.tif
+  store: data_v4/store/ndwi_intermareal.npz
+  mareas: data_v4/store/mareas_villa.npz
