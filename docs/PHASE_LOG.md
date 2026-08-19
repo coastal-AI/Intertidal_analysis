@@ -258,3 +258,21 @@ nuevos, nunca usada en calibración. M2d en el mismo sitio da un perfil más rui
 `results/p4_escalda/`. Con esto, la cadena v4 completa queda: puertas M0–M4 verdes en
 simulación con verdad plantada + señal real fuera de nulo en Villaviciosa + acuerdo
 externo con mareógrafos en el Escalda.
+
+## 2026-08-19 — Parte IV multi-ría (exploratorio) + FASE P cerrada por el usuario
+
+- **Saint-Malo** (464 escenas, s hasta ~9 km): perfil de fase casi plano (τ ≤ 8 min).
+  Como Ferrol: estuario profundo, la marea de la boca vale tal cual.
+- **Sheerness** (464 escenas, 239.410 px, s hasta 9.6 km): τ ≤ 8 min sin crecimiento
+  monótono, y M2a y M2d COINCIDEN (±5 min) — llanura abierta, sin confinamiento.
+- Lectura conjunta con Villaviciosa (+26 min en cabecera) y el Escalda (gradiente
+  0.72≈0.9 de los mareógrafos): el detector separa por sí solo los estuarios que
+  necesitan operador de los que no, sin etiquetas — el mapa conceptual
+  profundo/somero medido, no supuesto. Cuxhaven queda pendiente (su cubo nunca llegó;
+  el job openEO quedó huérfano).
+- FASE P: tabla de prior art rellenada del PDF por el agente a petición del usuario;
+  SWOT con cobertura real (596 gránulos, 249 días 2023-2025) → validación externa
+  futura con niveles medidos desde satélite; AOI ampliado en descarga; decisión del
+  usuario sobre el reservado: sin campaña nueva de momento → estrategia "cero
+  etiquetas + evaluación transparente con los 361 puntos" (la afirmación de sobre
+  sellado queda para una réplica futura).
