@@ -68,16 +68,22 @@ def main():
     def cube_path(name):
         return f"ndwi_cube_{name}.nc"
 
-    # ── SUBMIT ───────────────────────────────────────────────────────────
-    for name, cell in cells.items():
-        if done(name) or os.path.exists(cube_path(name)):
-            continue
-        st = manifest.get(name, {}).get("estado")
-        if st in ("enviado", "descargado"):
-            continue
-        for intento in range(6):
+    # ── SUBMIT continuo: CDSE limita a 30 jobs concurrentes por cuenta ───
+    # (medido: [400] ConcurrentJobLimit). La cola de envio se vacia desde el
+    # bucle de cosecha: cada job terminado libera un hueco.
+    to_submit = [n for n, c in cells.items()
+                 if not done(n) and not os.path.exists(cube_path(n))
+                 and manifest.get(n, {}).get("estado")
+                 not in ("enviado", "descargado")]
+    limit_hit = [0.0]        # instante del ultimo ConcurrentJobLimit
+
+    def try_submit_next():
+        if not to_submit or time.time() - limit_hit[0] < 120:
+            return
+        name = to_submit[0]
+        for intento in range(4):
             try:
-                aoi = AOI.from_polygon(cell["polygon"], name=name)
+                aoi = AOI.from_polygon(cells[name]["polygon"], name=name)
                 cube = conn.load_collection(
                     "SENTINEL2_L2A", spatial_extent=aoi.bbox,
                     temporal_extent=["2023-01-01", "2025-12-31"],
@@ -92,20 +98,28 @@ def main():
                 job.start()
                 manifest[name] = {"job": job.job_id, "estado": "enviado"}
                 save_manifest(manifest)
-                log(f"ENVIADO {name} -> {job.job_id}")
+                log(f"ENVIADO {name} -> {job.job_id} "
+                    f"(quedan {len(to_submit)-1} por encolar)")
+                to_submit.pop(0)
                 time.sleep(2.0)
-                break
+                return
             except Exception as e:
                 msg = str(e)[:160]
-                if "429" in msg:          # rate limit: esperar y reintentar
+                if "ConcurrentJobLimit" in msg:
+                    limit_hit[0] = time.time()
+                    return               # sin hueco: se reintenta luego
+                if "429" in msg:
                     time.sleep(20 * (intento + 1))
                     continue
                 log(f"ERROR envio {name}: {msg}")
-                time.sleep(5)
-                break
-        else:
-            log(f"ERROR envio {name}: 429 persistente, se reintentara en "
-                f"proxima pasada")
+                to_submit.pop(0)         # celda problematica: no bloquear
+                return
+
+    for _ in range(len(to_submit)):      # llenado inicial hasta el limite
+        n0 = len(to_submit)
+        try_submit_next()
+        if len(to_submit) == n0:         # limite alcanzado o pausa
+            break
 
     # ── HARVEST + PROCESS ────────────────────────────────────────────────
     running = {}
@@ -148,11 +162,12 @@ def main():
 
     while True:
         reap()
+        try_submit_next()                # rellenar huecos del limite de 30
         while pending_local and len(running) < N_WORKERS:
             launch(pending_local.pop(0))
         pend = [n for n, m in manifest.items()
                 if m.get("estado") == "enviado" and not done(n)]
-        if not pend and not pending_local and not running:
+        if not pend and not pending_local and not running and not to_submit:
             break
         for name in pend:
             if len(running) >= N_WORKERS:
