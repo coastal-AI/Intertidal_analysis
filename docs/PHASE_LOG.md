@@ -445,3 +445,23 @@ boca — salinas/esteros con compuerta — quedan fuera por s=NaN):
   donde el retardo crece (41→56 min). 4 de 5 bandas interiores a favor.
 Victoria de cota nº 2 (tras el Tajo, −11 %), esta vez en laguna/ría corta somera; el
 techo absoluto (~0.45 m) lo pone el desfase temporal de la verdad, no el método.
+
+## 2026-08-20 — Aveiro: por qué la banda de tránsito EMPEORA, y el experimento por brazos
+
+Pregunta del usuario: ¿por qué el RMSE sube con el operador en la banda 1 (5–8 km)?
+Diagnóstico por sub-bandas: la degradación no está en el borde de la banda (lo que
+delataría un simple escalón de τ) sino en su centro (−61 mm en 6.2–7.1 km), y Aveiro
+es una laguna RAMIFICADA: a la misma distancia de la boca conviven el canal principal
+(rápido) y las entradas a los brazos (lentos). Un solo τ(s) les fuerza el mismo reloj:
++41 min acierta en parte de la zona y sobrecorrige el canal de tránsito — 41 min mal
+puestos mueven el nivel decenas de cm.
+**Experimento por brazos (PER_ARM=1, pre-anunciado como la solución conceptual)**:
+brazos = componentes conexas más allá del nudo (auto-detectados: 4, nudo a 7.2 km),
+bandas de s dentro de cada brazo. Resultado: relojes por brazo físicamente plausibles
+(Ovar +70..75 min) pero SIN mejora global (0.594→0.597): con 462 escenas, 8 grupos
+dejan cada reloj demasiado ruidoso — la misma limitación de potencia que B5. Queda
+como modo documentado (OFF por defecto) y trabajo futuro con el archivo de 10 años.
+**Veredicto para el paper**: en lagunas ramificadas, τ(s) sobre un eje único es la
+resolución que el archivo actual puede pagar; gana río adentro (+24..+53 mm), pierde
+en la zona de tránsito multi-brazo (−21 mm), y el neto es positivo pero la anatomía
+por bandas debe mostrarse — es la frontera medida del método, no un accidente.

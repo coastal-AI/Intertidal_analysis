@@ -121,8 +121,50 @@ def main():
     print(f"  banco listo, {int(have.sum())} escenas "
           f"({time.time()-t0:.0f} s)", flush=True)
 
+    # ── bandas: por brazo en lagunas ramificadas ─────────────────────────
+    # Un unico perfil tau(s) fuerza el mismo reloj a brazos con fisica
+    # distinta (medido en Aveiro: -61 mm en la banda de transito). Mas alla
+    # del nudo central la laguna se separa en componentes conexas = brazos,
+    # detectados automaticamente; cada brazo lleva sus propias bandas de s.
+    from scipy import ndimage as ndi
     nb = CFG2["n_bandas"]
-    edges, centers, band_of = te.make_bands(s_km, nb)
+    PER_ARM = os.environ.get("PER_ARM", "0") == "1"
+    # modo brazos (PER_ARM=1): probado en Aveiro 2026-08-20 — relojes por
+    # brazo plausibles (hasta +75 min en Ovar) pero SIN mejora global a 462
+    # escenas (0.594->0.597): partir en 8 grupos deja cada reloj ruidoso,
+    # la misma limitacion de potencia que B5. Documentado; por defecto OFF.
+    if not PER_ARM:
+        edges, centers, band_of = te.make_bands(s_km, nb)
+    else:
+      s_map = np.full(H * W, np.nan, np.float32)
+      s_map[keep] = s_km
+      s_map = s_map.reshape(H, W)
+      hub_km = float(np.nanquantile(s_km, 0.25))
+      lab, nlab = ndi.label(np.isfinite(s_map) & (s_map > hub_km),
+                          structure=np.ones((3, 3)))
+      arm_of = lab.ravel()[keep]
+      sizes = np.bincount(arm_of, minlength=nlab + 1)
+      arms = [a for a in range(1, nlab + 1) if sizes[a] >= 20000]
+      band_of = np.zeros(len(s_km), int)      # 0 = nudo/boca (ancla, tau=0)
+      centers = [0.0]                          # el del ancla se fija al final
+      nxt = 1
+      per_arm = max(2, (nb - 1) // max(len(arms), 1))
+      for a in arms:
+        m = arm_of == a
+        qs = np.nanquantile(s_km[m], np.linspace(0, 1, per_arm + 1))
+        qs[0] -= 1e-9
+        for lo_, hi_ in zip(qs, qs[1:]):
+            mm = m & (s_km > lo_) & (s_km <= hi_)
+            if mm.sum() < 2000:
+                continue
+            band_of[mm] = nxt
+            centers.append(float(np.nanmedian(s_km[mm])))
+            nxt += 1
+      centers[0] = float(np.nanmedian(s_km[band_of == 0]))
+      centers = np.asarray(centers)
+      nb = nxt
+      print(f"  brazos detectados: {len(arms)} (nudo a {hub_km:.1f} km) -> "
+          f"{nb} grupos (ancla incluida)", flush=True)
     r2a = te.m2a_rasch(wet, C > 0, bank, band_of, centers, nb,
                        sigma0=CFG2["sigma0_m"],
                        sg_grid=tuple(CFG2["sigma_perfil_m"]),
