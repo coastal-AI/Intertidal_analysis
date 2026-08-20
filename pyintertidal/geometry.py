@@ -107,6 +107,27 @@ def width_profile(mask, s_m, band_m=250.0, s_max=None):
     return np.asarray(centers), np.asarray(widths)
 
 
+def flood_threshold(z_map, sea, valid):
+    """Level at which each pixel first floods, given water needs a PATH.
+
+    Minimax elevation over paths from the sea — exactly what grayscale
+    depression filling returns. A pixel in a pit gets a threshold ABOVE its
+    own elevation; the bathtub model cannot express that. Promoted from the
+    2026-08-18 lamina prototype into the package for phase B6: the spill
+    surface is what the wet/dry archive actually OBSERVES for pit pixels,
+    so the DEM must declare terrain-vs-spill per pixel.
+    """
+    from skimage.morphology import reconstruction
+
+    zz = np.where(valid, np.asarray(z_map, float), np.nan)
+    hi = np.nanmax(zz) + 1.0
+    mask = np.where(np.isfinite(zz), zz, hi)
+    seed = np.full_like(mask, hi)
+    seed[np.asarray(sea, bool)] = mask[np.asarray(sea, bool)]
+    filled = reconstruction(seed, mask, method="erosion")
+    return np.where(valid, filled, np.nan)
+
+
 def convergence(s_centers_m, width_m, smooth=None):
     """γ_c(s) = −d ln(width)/ds via a smoothing spline; e-folding length.
 

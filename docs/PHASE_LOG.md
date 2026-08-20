@@ -307,3 +307,126 @@ operador calibrado con 2 mareógrafos (referencia histórica) 0.3072.
 El operador nuevo recupera el **92 % de lo alcanzable por retardo** (v3 recuperaba
 el 75 %) sin ningún instrumento; lo que queda hasta 0.307 es marejada y ganancia,
 que exigen mareógrafo (y la ganancia es ciega al binario por teorema).
+
+## 2026-08-19 — BATIMETRÍA v4: tres innovaciones pre-registradas (fases B5–B7)
+
+El operador de mareas está validado (P6/P7). La inversión de cotas hereda ahora tres
+piezas propias, cada una nacida de un hallazgo medido, con puertas ANTES de mirar:
+
+**B5 — inversión consciente de histéresis (dos relojes).** Hallazgo origen: la bajante
+llega +41 min tarde donde la subida va a la hora (encharcamiento), un shift único
+falló su puerta en 2018-08, y en Vadehavet el retardo medido no mejoró la cota — la
+firma exacta de que el agua tarda en IRSE, no en llegar. Innovación: cotas invertidas
+con h(t) = reloj de subida en escenas subiendo y reloj de bajada en escenas bajando,
+(τ_up, τ_dn) por banda estimados con la verosimilitud perfilada. Granadeiro declara
+explícitamente no poder separar ramas. PUERTA (sim): plantar Hysteresis (mecanismo ya
+existente) con τ_up=0, τ_dn=+25 río arriba; recuperar ambos relojes (±6 min RMS) y
+batir en RMSE de cota a la inversión de un reloj. PUERTA (real): Vadehavet contra el
+levantamiento EMODnet — si los dos relojes mejoran donde el reloj único empeoraba
+(0.275→0.282), el rechazo se convierte en confirmación. Villaviciosa como segundo
+sitio (la banda clave ya pasó OOS con (0, +20) en el prototipo b2).
+
+**B6 — DEM hidráulicamente consciente (cota óptica vs cota de vertedero).** Hallazgo
+origen: inundarse exige camino; 101/361 puntos RTK jamás se vieron mojados. Para un
+píxel tras una barrera, la secuencia mojado/seco mide la cota del VERTEDERO (el
+umbral minimax de inundación), no su terreno: el terreno por debajo está censurado.
+Innovación: capa de vertedero por llenado de depresiones sobre el propio DEM +
+bandera de censura + profundidad de charco; el DEM declara qué píxeles son cota de
+terreno y cuáles cota de vertedero (cota inferior). PUERTA: en simulación con
+ConnectivityCensoring plantado, la bandera debe recuperar los censurados con
+precisión y exhaustividad > 0.7; en real, los abanderados deben concentrar la firma
+de encharcamiento por píxel (charcos, ya medida) frente a nulo igualado.
+
+**B7 — incertidumbre por píxel calibrada por el simulador.** Hallazgo origen: la
+curva de sesgo por holgura (insesgado en el interior, metros en los bordes) y la
+descomposición σ_topo/σ_nivel. Innovación: σ_z(píxel) tabulada de recuperaciones
+plantadas en el gemelo calibrado, en función de (holgura, n_obs, b, σ_topo) — se
+REPORTA, jamás se usa para corregir (R4 prohíbe invertir la curva de sesgo, y sigue
+prohibido). Ningún DEM intermareal publicado lleva IC por píxel calibrado. PUERTA:
+cobertura en el RTK dev — el intervalo del 68 % debe contener al 68±10 % de los
+errores reales.
+
+## 2026-08-19 — PUERTA B5 v1: ROJA (tercera aparición del mismo teorema) + v2
+
+Con histéresis plantada (up 0, dn 0→25), el estimador de dos relojes por verosimilitud
+binaria se fugó a los bordes EN LOS DOS MUNDOS (up→+60, dn→−30, también sin histéresis
+plantada): patología, no señal. Causa: partir por ramas abre una dirección degenerada
+— separar los niveles de las ramas hasta que "qué rama es" predice el mojado por sí
+solo, y (z, σ) perfilados lo absorben. El reloj único no tiene esa dirección (mueve
+ambas ramas juntas). Es la MISMA física del teorema afín: la verosimilitud binaria
+perfilada solo identifica UN reloj común; todo lo demás (ganancia, ramas) necesita el
+dato CONTINUO y un juez fuera de muestra.
+**v2 pre-registrada**: (τ_up, τ_dn) por banda se seleccionan por RMSE PREDICTIVO de
+NDWI continuo — ajuste en escenas de entrenamiento (65 %), evaluación en test
+intercalado, adopción solo si bate al reloj único con margen (la maquinaria del
+prototipo b2, que ya superó esta puerta en la banda clave con (0, +20)). Criterios:
+(a) recuperar dn−up plantado con RMS ≤ 10 min (paso de la malla); (b) cota mejor que
+el reloj único; (c) control sin histéresis: adopción ~nula y daño ≤ 1 cm.
+
+## 2026-08-19 — PUERTA B7 v1: ROJA (sobre-cobertura) + v2 pre-registrada
+
+Cobertura 83 % con objetivo 68±10: el intervalo es demasiado ancho. Causa: el término
+de muestreo punto-vs-píxel entró como CONSTANTE global (0.214 m, la medida de la
+campaña entera), pero es espacial — donde el RTK vive (marisma llana) el relieve
+sub-píxel es menor. **v2**: σ_muestreo por píxel = σ_topo de ese píxel (la capa B2
+deconvolucionada: el desvío esperado de un punto respecto a la mediana de su píxel ES
+el relieve dentro del píxel). Cero etiquetas, y de paso B2 gana una validación: si la
+cobertura aterriza en 68, la capa σ_topo está bien calibrada. Criterio sin cambios.
+
+## 2026-08-19 — PUERTA B5 v2: ROJA (comparaciones múltiples) + v3 pre-registrada
+
+El juez OOS sin margen adopta el desdoble en 5/5 bandas con histéresis plantada PERO
+también en 3/5 sin ella: con 24 combinaciones contra 6 diagonales, el ruido de
+selección favorece a la familia grande. Además el criterio de cota (mejora MEDIA en
+todas las bandas) estaba mal especificado: el daño del desdoble se concentra donde el
+desdoble plantado es grande (banda 5, split ~21 min: 0.297→0.261; en bandas con split
+de 5-15 min el efecto queda bajo el ruido, como debe).
+**v3 (es la regla R3 aplicada a la SELECCIÓN, que v2 olvidó)**: (a) el desdoble se
+adopta solo si su mejora OOS supera el p95 de las mejoras espurias del MISMO gate en
+el mundo sin histéresis (nulo igualado, ya calculado dentro del experimento — sin
+coste extra); (b) recuperación del desdoble y mejora de cota se exigen SOLO en las
+bandas con desdoble plantado ≥ 15 min (el rango detectable con 465 escenas; por
+debajo, el veredicto correcto es "no adoptar"); (c) control sin histéresis: cero
+adopciones tras el umbral del nulo y daño ≤ 1 cm.
+
+## 2026-08-19 — PUERTA B5 v3: ROJA FINAL (resultado negativo, y se queda así)
+
+Con la regla v3 (umbral de adopción = máxima mejora espuria del nulo igualado), la
+mejora OOS real de la banda fuerte NO supera el ruido de selección: **el desdoble por
+rama no es adoptable con 465 escenas**. Se acabaron las versiones: tres pasadas, tres
+degeneraciones distintas cazadas (fuga de verosimilitud → comparaciones múltiples →
+potencia insuficiente), y el veredicto final es que el producto NO lleva dos relojes.
+La histéresis queda donde está demostrada: mecanismo del simulador (Hysteresis),
+hallazgo de una banda del prototipo b2 (con control especular), y bandera de calidad
+B6. Reabrible con el archivo de 10 años (1379 escenas, ~3× potencia) — anotado como
+trabajo futuro, no como deuda.
+
+## 2026-08-19 — PUERTA B7 v2: ROJA en calibración exacta; el producto es CONSERVADOR
+
+Con σ_muestreo por píxel (= σ_topo de B2), el total predicho en los píxeles dev es
+0.245 m frente a 0.211 m realizados: la predicción sobra un 16 % y la cobertura da
+83 % al nominal 68. Diagnóstico anotado: σ_topo lleva dentro pendiente coherente del
+píxel (no todo es dispersión de muestreo) y el σ_z del gemelo arrastra parte del
+término de nivel que el centrado por mediana ya quita en la evaluación real.
+**Cierre honesto**: el producto SÍ lleva σ_z por píxel — ningún DEM intermareal
+publicado lleva ninguna — con su punto de operación medido y estampado: "intervalos
+conservadores; cobertura medida 83 % al nivel nominal del 68 %". La puerta de
+calibración exacta queda roja y reabrible (la vía: separar en σ_topo la pendiente
+coherente del relieve aleatorio, que exige la campaña de 13 puntos/píxel).
+
+## 2026-08-19 — PUERTA B6: ROJA en exhaustividad, y es el teorema de la censura
+
+Dos pasadas: la primera con un BUG en el mecanismo del simulador (un `- 1e3 * 0`
+dejaba la censura plantada en no-op — cazado por la propia puerta, corregido en
+simulator.py); la segunda, con censura dura real, da precisión 0.66 y exhaustividad
+0.40. La lectura es física, no de código: **la censura se esconde a sí misma** — el
+píxel censurado re-ajusta su cota al vertedero, el pozo se rellena en el mapa
+re-ajustado, y el detector geométrico pierde justo la evidencia que busca (la misma
+conclusión del 2026-08-18: la información no está). El juez REAL sí pasa: los
+abanderados concentran la firma de encharcamiento medida (+0.0453 > p95 del nulo
++0.0388) — la bandera que se enciende es de fiar.
+**Cierre**: el producto lleva las capas vertedero/profundidad/bandera con su punto de
+operación estampado (precisión ~0.7 cuando se enciende; exhaustividad acotada ~0.4-0.5
+contra censura total — la ausencia de bandera NO garantiza terreno). Vía de mejora
+anotada: detector combinado geometría + índice de encharcamiento por rama (charcos),
+que ataca la censura por la señal de asimetría que el relleno no puede borrar.

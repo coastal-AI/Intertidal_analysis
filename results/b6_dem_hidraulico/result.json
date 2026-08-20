@@ -1,0 +1,29 @@
+{
+ "n_px_charco": 5703,
+ "frac_charco": 0.14274986858902156,
+ "profundidad_mediana_m": 1.2167304754257202,
+ "juez_simulacion": {
+  "precision": 0.6557377049180327,
+  "exhaustividad": 0.4024144869215292,
+  "n_plantados": 9463
+ },
+ "juez_real": {
+  "firma_observada": 0.04528213295785221,
+  "nulo_p95": 0.03884311372452991,
+  "nulo_media": 0.037533890414950755
+ },
+ "puerta": {
+  "sim_ok": false,
+  "real_ok": true,
+  "PASA": false
+ },
+ "inputs_sha": {
+  "store": "b23fde89b68d44e643d18a68b99e36d3d136e102d4ed485c064ac46f63277cb2",
+  "base": "221ec086721c73ea44f7b58abef08bf3156316ddcfbf7760c77be55fef57fc47",
+  "bathy": "1b7a5949d577933578a94bec3564faf5b06dae2455c95f9fdaefcf4084ee25ea",
+  "canal": "f7f9fb8415b561ab409272a09a985e09e06b58d3566696918f070d8925bb870d",
+  "charcos": "77b2ca5443aa78c3f3913388d316015be2d0a3b5d6e36888eeea85224672a08c",
+  "geometria": "5d37a2481cbd0303ca77e2ed1ebfa5c9df3452f175ecaf80e3b88df6ea2b82e2"
+ },
+ "duracion_s": 213.7
+}

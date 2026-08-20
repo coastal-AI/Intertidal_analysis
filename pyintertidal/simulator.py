@@ -143,11 +143,14 @@ class ConnectivityCensoring(Mechanism):
 
     def level(self, h, s_km, rising):
         # censoring acts on the EFFECTIVE level: below the sill nothing
-        # arrives, so clamp the felt level to the dry side
+        # arrives — the pixel stays DRY however close h is to its own z.
+        # (Bug caught by the B6 gate on 2026-08-19: the original expression
+        # carried a `- 1e3 * 0` that made the else-branch a no-op, so the
+        # planted censoring barely acted and recall was judged against a
+        # world with no censoring in it.)
         h2 = h if h.ndim == 2 else np.broadcast_to(h[:, None],
                                                    (len(h), len(self.thr)))
-        return np.where(h2 >= self.thr[None, :], h2,
-                        np.minimum(h2, self.thr[None, :] - 1e3 * 0 + h2))
+        return np.where(h2 >= self.thr[None, :], h2, h2 - 10.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,32 @@
+# Fase B5 — inversion consciente de histeresis (dos relojes por banda).
+# Cada umbral con su porqué (contrato anti-caja-negra).
+
+plantado:
+  # la verdad de la puerta: subida a la hora, bajada tardia creciente — la
+  # firma del encharcamiento medida en Villaviciosa (bajada +41 [14, 64]
+  # donde subida ~0); 25 min es el centro conservador de ese intervalo
+  tau_up_boca_a_fondo_min: [0.0, 0.0]
+  tau_dn_boca_a_fondo_min: [0.0, 25.0]
+
+# v2 (PHASE_LOG 2026-08-19): la verosimilitud binaria NO puede juzgar dos
+# relojes (v1: fuga a bordes opuestos en ambos mundos — separar las ramas
+# hasta que la rama predice el mojado). El juez v2 es la prediccion de NDWI
+# CONTINUO fuera de muestra (la maquinaria b2, que ya paso esta prueba):
+malla_tau_up_min: [0, 10, 20, 30]        # la subida puede retrasarse poco
+malla_tau_dn_min: [0, 10, 20, 30, 45, 60] # la bajada es donde vive el charco
+test_cada: 3             # 1 de cada 3 escenas al test, intercalado
+
+puerta:
+  # (a) el desdoble dn-up plantado se recupera con RMS <= el paso de la
+  #     malla (10 min) en las bandas donde se adopta
+  max_rms_desdoble_min: 10.0
+  # (b) la COTA debe mejorar en media donde hay histeresis plantada
+  # (c) control sin histeresis: adopcion espuria en <= 2 de 5 bandas
+  #     interiores y dano de cota <= 1 cm
+  max_adopciones_espurias: 2
+  max_dano_sin_histeresis_m: 0.01
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  geometria: results/m1_geometry/geometry.npz

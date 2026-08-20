@@ -143,6 +143,132 @@ def m2d_flood_ebb(Y, C, bank, rising, band_of, n_bands, tau_grid,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  B5 — hysteresis: one clock per tide limb (flood water arrives, ebb water
+#  LEAVES — and ponding makes leaving slower than arriving)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def hysteresis_oos(Y, C, bank, rising, band_of, n_bands, tau_up_grid,
+                   tau_dn_grid, test_every=3, rng=None, max_px_band=2000,
+                   mu_points=50, min_obs=6, min_b=0.15):
+    """B5 v2: limb clocks selected by OUT-OF-SAMPLE continuous prediction.
+
+    The binary profiled likelihood cannot judge a two-clock model — split
+    the limbs and it rewards separating them until the limb itself predicts
+    wetness (measured: clocks ran to opposite bounds even with no hysteresis
+    planted). The judge that works is the b2 prototype's: fit the per-pixel
+    sigmoids on TRAIN scenes under each candidate clock pair, score the
+    prediction of held-out CONTINUOUS NDWI, adopt the pair only if it beats
+    the best single clock. Pathological separations predict held-out scenes
+    WORSE, so the degeneracy dies at the judge.
+
+    Returns per-band ``tau_up``, ``tau_dn``, ``adopted``, and the OOS RMSE
+    of the winner and of the best single clock.
+    """
+    rng = rng or np.random.default_rng(4)
+    idx = np.arange(Y.shape[0])
+    te_m = (idx % test_every) == 0
+    tr_m = ~te_m
+    tau_up = np.zeros(n_bands)
+    tau_dn = np.zeros(n_bands)
+    tau_single = np.zeros(n_bands)
+    adopted = np.zeros(n_bands, bool)
+    r_two = np.full(n_bands, np.nan)
+    r_one = np.full(n_bands, np.nan)
+
+    singles = sorted(set(tau_up_grid) | set(tau_dn_grid))
+
+    for k in range(n_bands):
+        cols = np.where(band_of == k)[0]
+        if len(cols) < 100:
+            continue
+        if len(cols) > max_px_band:
+            cols = np.sort(rng.choice(cols, max_px_band, replace=False))
+        Yk = Y[:, cols].astype(np.float64)
+        Ck = C[:, cols].astype(np.float64)
+
+        def oos(tu, td):
+            h = np.where(rising, bank.at(tu), bank.at(td))
+            grid = np.linspace(h.min(), h.max(), mu_points)
+            a, b, mu, sg, _, N = _fit_block(Yk[tr_m], Ck[tr_m], h[tr_m],
+                                            grid, SG_GRID)
+            ok = (N >= min_obs) & (b > min_b) & (b < 2.5) & (np.abs(a) < 2.5)
+            pred = np.clip(a[None, :] + b[None, :] * _phi(
+                (h[te_m][:, None] - mu[None, :])
+                / np.maximum(sg[None, :], 1e-3)), -2.0, 2.0)
+            w = (Ck[te_m] > 0) & ok[None, :]
+            if w.sum() < 200:
+                return np.nan
+            return float(np.sqrt(np.mean(
+                (pred[w] - Yk[te_m][w]) ** 2)))
+
+        best1, tau1 = np.inf, 0.0
+        for tv in singles:
+            r = oos(tv, tv)
+            if np.isfinite(r) and r < best1:
+                best1, tau1 = r, float(tv)
+        best2, tu2, td2 = best1, tau1, tau1
+        for tu in tau_up_grid:
+            for td in tau_dn_grid:
+                if tu == td:
+                    continue
+                r = oos(tu, td)
+                if np.isfinite(r) and r < best2:
+                    best2, tu2, td2 = r, float(tu), float(td)
+        adopted[k] = best2 < best1
+        tau_up[k], tau_dn[k] = (tu2, td2) if adopted[k] else (tau1, tau1)
+        tau_single[k] = tau1
+        r_two[k], r_one[k] = best2, best1
+    return {"tau_up": tau_up, "tau_dn": tau_dn, "tau_single": tau_single,
+            "adopted": adopted, "oos_two": r_two, "oos_one": r_one}
+
+
+def m2a_hysteresis(wet, clear, bank, rising, band_of, n_bands,
+                   tau_grid=None, sigma0=0.20, sg_grid=None, z_points=60,
+                   rng=None, max_px_band=1200, n_rounds=2):
+    """DEPRECATED for estimation — kept as the documented failure (B5 v1).
+
+    Splitting scenes by limb opens a degenerate direction the profiled
+    Bernoulli likelihood loves: separate the limbs' levels until the limb
+    itself predicts wetness (measured: clocks ran to opposite bounds with
+    AND without planted hysteresis). Use :func:`hysteresis_oos` — the
+    out-of-sample continuous judge — for anything beyond one clock.
+    """
+    rng = rng or np.random.default_rng(3)
+    tau_grid = np.asarray([-30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0,
+                           45.0, 60.0] if tau_grid is None else tau_grid)
+    h0 = bank.at(0.0)
+    z_grid = np.linspace(h0.min() - 0.3, h0.max() + 0.3, z_points)
+    tau_up = np.zeros(n_bands)
+    tau_dn = np.zeros(n_bands)
+    nll_tot = 0.0
+    for k in range(n_bands):
+        cols = np.where(band_of == k)[0]
+        if len(cols) < 100:
+            tau_up[k] = tau_dn[k] = np.nan
+            continue
+        if len(cols) > max_px_band:
+            cols = np.sort(rng.choice(cols, max_px_band, replace=False))
+        Wk, Ck = wet[:, cols], clear[:, cols]
+
+        def nll_of(tu, td):
+            h = np.where(rising, bank.at(tu), bank.at(td))
+            v, _ = _band_nll(Wk, Ck, h, z_grid, sigma0, sg_grid=sg_grid)
+            return v
+
+        tu = td = 0.0
+        if k > 0:                      # mouth band stays the anchor (0, 0)
+            for _ in range(n_rounds):
+                sc = np.asarray([nll_of(tu, tv) for tv in tau_grid])
+                td = _parabolic_argmax(-sc, tau_grid)   # min NLL en tau_dn
+                sc = np.asarray([nll_of(tv, td) for tv in tau_grid])
+                tu = _parabolic_argmax(-sc, tau_grid)   # min NLL en tau_up
+        tau_up[k], tau_dn[k] = tu, td
+        nll_tot += nll_of(tu, td)
+    return {"tau_up": tau_up, "tau_dn": tau_dn,
+            "nll": float(nll_tot / max(n_bands, 1))}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  M2b — copula/concordance: which clock explains each pixel's wet sequence
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,26 @@
+# Fase B6 — DEM hidraulicamente consciente (terreno vs vertedero).
+
+umbral_charco_m: 0.10   # un pixel se declara "cota de vertedero" si el
+                        # llenado de depresiones lo sube mas de 10 cm sobre
+                        # su cota ajustada: por debajo, la barrera es
+                        # indistinguible del ruido del ajuste (sigma_topo
+                        # mediana 0.177 m; 0.10 ~ su mitad)
+
+puerta:
+  # (a) simulacion: plantando censura por conectividad con los vertederos
+  #     REALES del mapa, la bandera debe recuperar los censurados
+  min_precision: 0.7
+  min_exhaustividad: 0.7
+  # (b) real: los abanderados deben concentrar la firma de encharcamiento
+  #     por pixel (charcos, sellada) frente a un nulo igualado por banda de
+  #     s y quintil de cota — percentil 95 del nulo
+  n_permutaciones: 200
+  seed: 20260819
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  bathy: results/b1_bathymetry/bathy.npz
+  canal: data_v4/store/canal.npz
+  charcos: data_v4/store/charcos.npz
+  geometria: results/m1_geometry/geometry.npz

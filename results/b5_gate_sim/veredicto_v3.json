@@ -1,0 +1,47 @@
+{
+ "version": 3,
+ "umbral_nulo_delta_oos": 0.010089378955604356,
+ "mejoras_oos_con_histeresis": [
+  0.00034748695534486673,
+  0.004115203716580862,
+  0.006074453601586871,
+  0.010660949065472547,
+  0.00021891256658690406
+ ],
+ "adoptado_v3": [
+  false,
+  false,
+  false,
+  true,
+  false
+ ],
+ "bandas_fuertes_split15": [
+  false,
+  false,
+  false,
+  true,
+  true
+ ],
+ "rms_desdoble_fuertes_min": 5.066813381627702,
+ "rmse_z_v3": [
+  0.3178801783721493,
+  0.2592557737310418,
+  0.2851173919306669,
+  0.30034930850467045,
+  0.2971594421834124
+ ],
+ "rmse_z_1reloj": [
+  0.3178801783721493,
+  0.2592557737310418,
+  0.2851173919306669,
+  0.3011568530867514,
+  0.2971594421834124
+ ],
+ "puerta": {
+  "deteccion_ok": false,
+  "desdoble_ok": true,
+  "cota_ok": false,
+  "control_ok": true,
+  "PASA": false
+ }
+}

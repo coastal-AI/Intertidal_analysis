@@ -1,0 +1,26 @@
+# Fase B7 — incertidumbre por pixel calibrada por el simulador.
+
+n_replicas: 3        # replicas plantadas para poblar la tabla de error:
+                     # 3 x 33k pixeles = ~100k errores, sobra para 24 celdas
+bins_holgura: [-9, 0.0, 0.25, 0.5, 1.0, 1.5, 2.5, 9]
+                     # bordes en metros de holgura al borde de la ventana
+                     # mareal: la curva de sesgo medida cambia en esa escala
+                     # (insesgado con >0.5 m, metros fuera de la ventana)
+bins_nobs: [0, 60, 120, 900]   # terciles aproximados de n_obs del archivo
+robusto: true        # sigma por celda = 1.4826*MAD (colas del refit)
+
+puerta:
+  # el intervalo del 68 % debe CUBRIR: contra el RTK dev, el error total
+  # esperado es sqrt(sigma_z^2 + sigma_muestreo^2) con sigma_muestreo =
+  # 0.214 m (punto-vs-pixel, medido por dos rutas el 2026-08-18)
+  # v2: sigma de muestreo POR PIXEL = sigma_topo (capa B2); la constante
+  # global 0.214 sobre-cubria (83 %) porque el relieve sub-pixel es espacial
+  sigma_muestreo: "b2_sigma_topo"
+  cobertura_objetivo: 0.68
+  tolerancia_cobertura: 0.10
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  bathy: results/b1_bathymetry/bathy.npz
+  sigma_decomp: results/b2_sigma/sigma_decomp.npz
