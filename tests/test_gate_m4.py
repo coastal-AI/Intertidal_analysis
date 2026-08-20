@@ -22,21 +22,21 @@ CFG = yaml.safe_load(open("configs/m4.yaml", encoding="utf-8"))
 
 def test_m4_gate():
     p = "results/m4_gate_sim/result.json"
-    assert os.path.exists(p), "ejecuta antes: python -m experiments.m4_gate_sim"
+    assert os.path.exists(p), "run first: python -m experiments.m4_gate_sim"
     r = json.load(open(p, encoding="utf-8"))
     assert r["fraccion_dano_recuperado"] \
         >= CFG["puerta"]["min_fraccion_dano_recuperado"], \
-        f"solo {100*r['fraccion_dano_recuperado']:.0f} % del dano recuperado"
+        f"only {100*r['fraccion_dano_recuperado']:.0f} % of damage recovered"
     mouth_delta = (r["rmse_z"]["operador"][0] - r["rmse_z"]["uniforme"][0])
     assert mouth_delta <= CFG["puerta"]["max_degradacion_boca_m"], \
-        f"la boca empeora {mouth_delta:.3f} m"
+        f"the mouth degrades by {mouth_delta:.3f} m"
     assert r["contraccion"]["max_tau_residual_min"] \
-        <= CFG["puerta"]["max_tau_residual_min"], "no es punto fijo"
+        <= CFG["puerta"]["max_tau_residual_min"], "not a fixed point"
     assert r["puerta"]["PASA"]
     assert os.path.exists("results/m4_gate_sim/figure.png")
 
 
 if __name__ == "__main__":
     test_m4_gate()
-    print("OK  puerta M4: muerde, no dana la boca y contrae")
-    print("PUERTA M4: VERDE")
+    print("OK  gate M4: it bites, does no harm at the mouth, and contracts")
+    print("GATE M4: GREEN")

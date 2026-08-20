@@ -33,25 +33,17 @@ import yaml
 from pyintertidal.net import use_system_certificates
 from pyintertidal import seal, rtk
 from pyintertidal import tide_estimators as te
-from pyintertidal.elevation import _fit_block
+from pyintertidal.marea import invert_series
 from pyintertidal.operator import InteriorTide
 import pyintertidal as pit
 
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
 OUT = os.path.join("results", "b1_bathymetry")
-SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
-MIN_OBS, MIN_B, MU_POINTS, CHUNK = 8, 0.15, 50, 4000
 
 
 def invert(Y, C, h, lo, hi):
-    grid = np.linspace(lo, hi, MU_POINTS)
-    P = Y.shape[1]
-    z = np.full(P, np.nan)
-    for j in range(0, P, CHUNK):
-        s = slice(j, min(j + CHUNK, P))
-        a, b, mu, sg, _, N = _fit_block(Y[:, s], C[:, s], h, grid, SG_GRID)
-        ok = (N >= MIN_OBS) & (b > MIN_B) & (b < 2.5) & (np.abs(a) < 2.5)
-        z[s] = np.where(ok, mu, np.nan)
+    """Thin wrapper over the canonical pyintertidal.marea.invert_series."""
+    z, _ = invert_series(Y, C, h, lo, hi)
     return z
 
 
@@ -92,8 +84,8 @@ def main():
         tide_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
     h0 = bank.at(0.0)
     T = InteriorTide(bank, centers, np.ones_like(tau_used), tau_used,
-                     meta={"boundary": "EOT20 @ hora real (STAC)",
-                           "correction": "M3 segun results/m3_real",
+                     meta={"boundary": "EOT20 @ real overpass hour (STAC)",
+                           "correction": "M3 per results/m3_real",
                            "source": "results/m2_real/result.json",
                            "hashes": mr["inputs_sha"]})
     print(T.describe(), flush=True)
@@ -103,7 +95,7 @@ def main():
     keep = d["keep"]
     Y = np.nan_to_num(d["Y"][have], nan=0.0).astype(np.float64)
     C = (d["C"][have] > 0).astype(np.float64)
-    print(f"{Y.shape[0]} escenas x {Y.shape[1]:,} px "
+    print(f"{Y.shape[0]} scenes x {Y.shape[1]:,} px "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     # bands of the FULL pixel set, from the same quantile edges as m2_real
@@ -118,13 +110,13 @@ def main():
 
     lo, hi = float(h0.min()), float(h0.max())
     z_uni = invert(Y, C, h0, lo, hi)
-    print(f"inversion uniforme lista ({time.time()-t0:.0f} s)", flush=True)
+    print(f"uniform inversion done ({time.time()-t0:.0f} s)", flush=True)
     z_op = np.full_like(z_uni, np.nan)
     for k in range(nb):
         cols = np.where(band_full == k)[0]
         h_k = T.level(float(centers[k]))
         z_op[cols] = invert(Y[:, cols], C[:, cols], h_k, lo, hi)
-        print(f"  banda {k}: tau {tau_used[k]:+.1f} min, "
+        print(f"  band {k}: tau {tau_used[k]:+.1f} min, "
               f"{len(cols):,} px ({time.time()-t0:.0f} s)", flush=True)
 
     # ── declared diagnostic on dev RTK (R2; reserved stays hidden) ───────
@@ -152,8 +144,8 @@ def main():
             sl, rmse = float("nan"), float("nan")
         diag[name] = {"n": int(ok.sum()), "slope_dev": sl,
                       "rmse_dev_centrado": rmse}
-        print(f"diagnostico dev [{name}]: n={int(ok.sum())} "
-              f"pendiente={sl:.3f} RMSE centrado={rmse:.3f}", flush=True)
+        print(f"dev diagnostic [{name}]: n={int(ok.sum())} "
+              f"slope={sl:.3f} centred RMSE={rmse:.3f}", flush=True)
 
     both = np.isfinite(z_uni) & np.isfinite(z_op)
     delta = z_op - z_uni
@@ -187,7 +179,7 @@ def main():
     import rasterio
     from pyintertidal.raster import write_geotiff
     with rasterio.open(rtk.DEFAULT_GRID) as src:
-        assert src.shape == SH, f"rejilla {src.shape} != store {SH}"
+        assert src.shape == SH, f"grid {src.shape} != store {SH}"
         tr, crs = src.transform, src.crs
     for name, zz in (("hsr_v4_operador", z_op),
                      ("hsr_v4_uniforme", z_uni)):
@@ -196,15 +188,15 @@ def main():
         write_geotiff(os.path.join("products_villaviciosa",
                                    f"{name}_2023-2025.tif"),
                       img.reshape(SH), tr, crs)
-    print("productos GeoTIFF escritos en products_villaviciosa/", flush=True)
+    print("GeoTIFF products written to products_villaviciosa/", flush=True)
 
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     SH = tuple(int(x) for x in d["shape"])
     fig, ax = plt.subplots(1, 3, figsize=(15, 4.6))
-    for i, (zz, tt) in enumerate(((z_op, "cota (operador T)"),
-                                  (delta, "operador − uniforme (m)"))):
+    for i, (zz, tt) in enumerate(((z_op, "elevation (operator T)"),
+                                  (delta, "operator − uniform (m)"))):
         img = np.full(SH[0] * SH[1], np.nan, np.float32)
         img.ravel()[keep] = zz
         im = ax[i].imshow(img.reshape(SH),
@@ -214,12 +206,12 @@ def main():
         ax[i].set_title(tt)
         plt.colorbar(im, ax=ax[i], shrink=0.8)
     ax[2].plot(centers, tau_used, "o-", color="C0")
-    ax[2].set_xlabel("s desde la boca (km)")
-    ax[2].set_ylabel("τ del operador (min)")
-    ax[2].set_title("el mareografo distribuido aplicado")
+    ax[2].set_xlabel("s from the mouth (km)")
+    ax[2].set_ylabel("operator τ (min)")
+    ax[2].set_title("the distributed tide gauge, applied")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
-    print("escrito", OUT, flush=True)
+    print("written", OUT, flush=True)
 
 
 if __name__ == "__main__":

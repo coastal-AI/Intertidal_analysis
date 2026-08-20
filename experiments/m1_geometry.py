@@ -46,26 +46,26 @@ def main():
     Yb = np.nan_to_num(Y[ep], nan=-9.0)
     Cb = C[ep] > 0
     t = tide[ep]
-    print(f"{int(ep.sum())} escenas · {len(keep):,} px intermareales")
+    print(f"{int(ep.sum())} scenes · {len(keep):,} intertidal px")
 
-    # ── s desde la BOCA ──────────────────────────────────────────────────
+    # ── s from the MOUTH ─────────────────────────────────────────────────
     seeds = geometry.mouth_seeds(sea)
     s_mouth = geometry.along_distance(reachable, seeds, CFG["pixel_m"])
     thal = geometry.thalweg(sea)
     s_keep = s_mouth.ravel()[keep]
-    print(f"boca: {int(seeds.sum())} px semilla · "
-          f"s hasta {np.nanmax(s_keep)/1000:.2f} km · "
-          f"aislados {int(np.isnan(s_keep).sum())} px")
+    print(f"mouth: {int(seeds.sum())} seed px · "
+          f"s up to {np.nanmax(s_keep)/1000:.2f} km · "
+          f"isolated {int(np.isnan(s_keep).sum())} px")
 
-    # invariante: s monotona a lo largo del thalweg (creciente hacia dentro)
+    # invariant: s monotone along the thalweg (increasing inland)
     st = s_mouth[thal]
     st = st[np.isfinite(st)]
     corr_geo = float(np.corrcoef(
         s_keep[np.isfinite(s_keep) & np.isfinite(ch["s_keep"])],
         ch["s_keep"][np.isfinite(s_keep) & np.isfinite(ch["s_keep"])])[0, 1])
-    print(f"correlacion s_boca vs s_canal(2018-08-18): {corr_geo:.3f}")
+    print(f"correlation s_mouth vs s_channel(2018-08-18): {corr_geo:.3f}")
 
-    # ── mascaras por nivel y ancho(s,h) ──────────────────────────────────
+    # ── per-level masks and width(s,h) ───────────────────────────────────
     qs = np.quantile(t, np.linspace(0, 1, CFG["n_niveles"] + 1))
     qs[0] -= 1e-9
     wet = Cb & (Yb > 0)
@@ -82,7 +82,7 @@ def main():
         c, w = geometry.width_profile(mask, s_mouth, CFG["banda_m"])
         centers = c
         widths.append(w)
-        # bootstrap por ESCENAS
+        # bootstrap by SCENES
         boots = []
         for k in range(CFG["n_boot"]):
             i = rng.choice(sel, len(sel), replace=True)
@@ -94,22 +94,22 @@ def main():
                                             s_max=c[-1] + 1)
             boots.append(w_b[:len(w)])
         widths_ci.append(np.percentile(np.array(boots), [2.5, 97.5], axis=0))
-        print(f"  nivel ({a:+.2f},{b:+.2f}] m: ancho mediano "
-              f"{np.nanmedian(w[w>0]):.0f} m ({len(sel)} escenas)")
+        print(f"  level ({a:+.2f},{b:+.2f}] m: median width "
+              f"{np.nanmedian(w[w>0]):.0f} m ({len(sel)} scenes)")
     widths = np.array(widths)
 
-    # invariante fisico: ancho no decreciente con el nivel
+    # physical invariant: width non-decreasing with level
     valid = widths[0] > 0
     mono = np.mean([np.all(np.diff(widths[:, j]) >= -CFG["tol_mono_m"])
                     for j in np.where(valid)[0]])
-    print(f"bandas con ancho(s,h) no decreciente en h: {100*mono:.0f} %")
+    print(f"bands with width(s,h) non-decreasing in h: {100*mono:.0f} %")
 
-    # ── convergencia del nivel bajo ──────────────────────────────────────
+    # ── convergence at low level ─────────────────────────────────────────
     gamma, efold, _ = geometry.convergence(centers, widths[0])
-    print(f"convergencia (nivel bajo): e-folding mediano "
+    print(f"convergence (low level): median e-folding "
           f"{np.median(efold[np.isfinite(efold)]):.1f} km")
 
-    # ── figura (parte del gate: test visual) ─────────────────────────────
+    # ── figure (part of the gate: visual test) ───────────────────────────
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -118,20 +118,20 @@ def main():
     im = ax[0].imshow(s_show, cmap="viridis")
     ty, tx = np.where(thal)
     ax[0].plot(tx, ty, ".", ms=0.3, color="red")
-    ax[0].set_title("s desde la boca (km) + thalweg")
+    ax[0].set_title("s from the mouth (km) + thalweg")
     plt.colorbar(im, ax=ax[0], shrink=0.8)
     for k, w in enumerate(widths):
-        ax[1].plot(centers / 1000.0, w, label=f"nivel {k+1}")
+        ax[1].plot(centers / 1000.0, w, label=f"level {k+1}")
     ax[1].set_xlabel("s (km)")
-    ax[1].set_ylabel("ancho mojado (m)")
+    ax[1].set_ylabel("wet width (m)")
     ax[1].set_yscale("log")
     ax[1].legend()
-    ax[1].set_title("ancho(s, h)")
+    ax[1].set_title("width(s, h)")
     ok = np.isfinite(efold)
     ax[2].plot(centers[:len(gamma)] / 1000.0, gamma)
     ax[2].set_xlabel("s (km)")
     ax[2].set_ylabel("γ_c (1/km)")
-    ax[2].set_title("convergencia")
+    ax[2].set_title("convergence")
     os.makedirs(OUT, exist_ok=True)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
@@ -152,7 +152,7 @@ def main():
         "seed": CFG["seed"],
     }
     json.dump(result, open(os.path.join(OUT, "result.json"), "w"), indent=1)
-    print(f"escrito {OUT}/(geometry.npz, result.json, figure.png)")
+    print(f"written {OUT}/(geometry.npz, result.json, figure.png)")
 
 
 if __name__ == "__main__":

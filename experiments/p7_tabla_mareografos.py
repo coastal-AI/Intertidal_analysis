@@ -1,4 +1,4 @@
-"""La tabla de Terneuzen, repetida en TODOS los mareografos estudiados.
+"""The Terneuzen table, repeated at ALL the studied tide gauges.
 
 Per INNER station of every gauge pair the project has studied (the interior
 point, where the interior-tide question lives), same recipe as p6: cached
@@ -13,7 +13,6 @@ else, these are the yardsticks any future cube would be scored against.
 
 Run:  python -m experiments.p7_tabla_mareografos   (~4 min)
 """
-import glob
 import json
 import os
 import sys
@@ -27,10 +26,11 @@ import pandas as pd
 
 from pyintertidal.net import use_system_certificates
 from pyintertidal import seal
+from pyintertidal.gauges import load_cached_ioc as load_gauge
 
 OUT = os.path.join("results", "p7_tabla_mareografos")
 MODELS = ["EOT20", "GOT4.10_nc", "GOT4.8_nc"]
-# estaciones INTERIORES de las parejas estudiadas + su etiqueta historica
+# INNER stations of the studied pairs + their historical label
 SITES = [
     ("keehi", "Honolulu - Keehi (control, 2.7 km)", "Honolulu - Keehi"),
     ("barc2", "Barcelona - Port (control, 2.9 km)",
@@ -43,21 +43,6 @@ SITES = [
      "Guadalquivir: Bonanza - Sevilla"),
     ("diep", "Dieppe (costa abierta, 90 km)", "Le Havre - Dieppe"),
 ]
-
-
-def load_gauge(code):
-    raw = []
-    for h in sorted(glob.glob(f"data_v4/gauges/ioc_{code}_*.json")):
-        raw += json.load(open(h))
-    if not raw:
-        return None
-    df = pd.DataFrame(raw)
-    if "sensor" in df:
-        df = df[df["sensor"] == df["sensor"].value_counts().idxmax()]
-    return (pd.DataFrame({"time": pd.to_datetime(df["stime"]),
-                          "level_m": pd.to_numeric(df["slevel"],
-                                                   errors="coerce")})
-            .dropna().sort_values("time").drop_duplicates("time"))
 
 
 def main():
@@ -73,7 +58,7 @@ def main():
     for code, label, hist_label in SITES:
         g = load_gauge(code)
         if g is None or len(g) < 2000:
-            table[label] = {"error": "sin datos cacheados suficientes"}
+            table[label] = {"error": "not enough cached data"}
             continue
         st = stations[code]
         lat, lon = float(st["Lat"]), float(st["Lon"])
@@ -111,17 +96,17 @@ def main():
                     or k == "ensemble_media3"))
         print(f"{label:46s} EOT20 {rows['EOT20']:.3f} · "
               f"GOT4.10 {rows['GOT4.10_nc']:.3f} · "
-              f"ens {rows['ensemble_media3']:.3f} · mejor {best:.3f}",
+              f"ens {rows['ensemble_media3']:.3f} · best {best:.3f}",
               flush=True)
 
     os.makedirs(OUT, exist_ok=True)
     json.dump({"tabla": table,
-               "nota": "operador de imagen solo donde hay cubo (Escalda, "
-                       "p6); estos son los listones para cubos futuros",
+               "nota": "imagery operator only where a cube exists (Scheldt, "
+                       "p6); these are the bars for future cubes",
                "inputs_sha": {"curva_estuarios": seal._sha256(
                    "data_v4/prototypes/results_json/curva_estuarios.json")}},
               open(os.path.join(OUT, "result.json"), "w"), indent=1)
-    print("escrito", OUT, flush=True)
+    print("written", OUT, flush=True)
 
 
 if __name__ == "__main__":

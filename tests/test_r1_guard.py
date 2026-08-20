@@ -37,7 +37,7 @@ def test_static_no_allow_reserved():
                 src = io.open(p, encoding="utf-8", errors="replace").read()
                 if "allow_reserved=True" in src.replace(" ", ""):
                     offenders.append(rel)
-    assert not offenders, f"R1 VIOLADA: {offenders} activan allow_reserved"
+    assert not offenders, f"R1 VIOLATED: {offenders} enable allow_reserved"
 
 
 def test_dynamic_guard_blocks_unauthorised_caller():
@@ -46,8 +46,8 @@ def test_dynamic_guard_blocks_unauthorised_caller():
         load_rtk(allow_reserved=True)
     except PermissionError:
         return
-    raise AssertionError("R1 VIOLADA: load_rtk(allow_reserved=True) no "
-                         "rechazo a un llamante no autorizado")
+    raise AssertionError("R1 VIOLATED: load_rtk(allow_reserved=True) did "
+                         "not reject an unauthorised caller")
 
 
 def test_default_hides_reserved():
@@ -65,8 +65,8 @@ def test_default_hides_reserved():
 
 if __name__ == "__main__":
     test_static_no_allow_reserved()
-    print("OK  estatico: nadie activa allow_reserved")
+    print("OK  static: nobody enables allow_reserved")
     test_dynamic_guard_blocks_unauthorised_caller()
-    print("OK  dinamico: el guard rechaza llamantes no autorizados")
+    print("OK  dynamic: the guard rejects unauthorised callers")
     test_default_hides_reserved()
-    print("OK  por defecto: solo dev, reservado oculto")
+    print("OK  default: dev only, reserved hidden")

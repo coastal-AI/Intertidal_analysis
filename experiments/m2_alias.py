@@ -48,17 +48,17 @@ def main():
     }
     os.makedirs(OUT, exist_ok=True)
     json.dump(result, open(os.path.join(OUT, "result.json"), "w"), indent=1)
-    print(f"{len(hours)} pasadas reales · hora media "
+    print(f"{len(hours)} real overpasses · mean hour "
           f"{result['hora_media_utc']:.2f} UTC")
     for k, v in sorted(table.items(), key=lambda kv: kv[1]["period_h"]):
         al = v["alias_days"]
         print(f"  {k:>3}: alias {'inf' if not np.isfinite(al) else f'{al:6.1f} d'}"
-          f" · {'ESTIMABLE' if v['estimable'] else 'prior del contorno'}"
+          f" · {'ESTIMABLE' if v['estimable'] else 'boundary prior'}"
           f" — {v['reason']}")
-    assert "S2" not in est, "S2 no puede ser estimable en heliosincrono"
+    assert "S2" not in est, "S2 cannot be estimable in sun-synchronous orbit"
     assert {"M2", "N2", "O1"} <= set(est), \
-        "la spec espera M2, N2, O1 estimables"
-    print("OK: la tabla coincide con lo esperado por la spec (M2,N2,O1 si; "
+        "the spec expects M2, N2, O1 estimable"
+    print("OK: the table matches what the spec expects (M2,N2,O1 yes; "
           "S2,K1 no)")
 
 

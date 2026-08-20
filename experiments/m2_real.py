@@ -124,8 +124,8 @@ def main():
     Yr = np.nan_to_num(d["Y"][have][:, cols_store], nan=0.0).astype(np.float32)
     Cr = d["C"][have][:, cols_store] > 0
     wet_r = Cr & (Yr > 0)
-    print(f"archivo real: {Yr.shape[0]} escenas x {Yr.shape[1]:,} px · "
-          f"centros {np.round(centers, 2)} km", flush=True)
+    print(f"real archive: {Yr.shape[0]} scenes x {Yr.shape[1]:,} px · "
+          f"centres {np.round(centers, 2)} km", flush=True)
 
     real = run_all(wet_r, Cr, Yr, bank, rising, band_of, centers, nb,
                    tau_grid, CFG["seed"])
@@ -146,7 +146,7 @@ def main():
         w0 = C0 & (Y0 > 0)
         nulls.append(run_all(w0, C0, Y0, bank, rising, band_of, centers,
                              nb, tau_grid, CFG["seed"] + 100 + i))
-        print(f"nulo {i+1}/{N_NULL}: "
+        print(f"null {i+1}/{N_NULL}: "
               f"tau_a={np.round(nulls[-1]['m2a_tau'], 1)} "
               f"({time.time()-t0:.0f} s)", flush=True)
 
@@ -187,22 +187,22 @@ def main():
         ax[0].plot(centers, v["real"], "o-", color=c, label=lab)
         ax[0].fill_between(centers, v["nulo_min"], v["nulo_max"],
                            color=c, alpha=0.12)
-    ax[0].set_xlabel("s desde la boca (km)")
-    ax[0].set_ylabel("retardo τ (min)")
+    ax[0].set_xlabel("s from the mouth (km)")
+    ax[0].set_ylabel("lag τ (min)")
     ax[0].legend(fontsize=8)
-    ax[0].set_title("archivo real (bandas sombreadas = nulo uniforme)")
+    ax[0].set_title("real archive (shaded bands = uniform null)")
     # right panel: how many estimators agree outside the null, per band —
     # the plain-sight summary of where the interior tide is real
     counts = np.sum([verdict[k]["fuera_del_nulo"]
                      for k in ("m2a_tau", "m2b", "m2c", "m2d")], axis=0)
     ax[1].bar(centers, counts, width=0.35, color="C0")
-    ax[1].set_xlabel("s desde la boca (km)")
-    ax[1].set_ylabel("estimadores fuera del nulo (de 4)")
+    ax[1].set_xlabel("s from the mouth (km)")
+    ax[1].set_ylabel("estimators outside the null (of 4)")
     ax[1].set_ylim(0, 4.2)
-    ax[1].set_title("acuerdo entre estimadores")
+    ax[1].set_title("agreement between estimators")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
-    print("escrito", OUT, flush=True)
+    print("written", OUT, flush=True)
 
 
 if __name__ == "__main__":

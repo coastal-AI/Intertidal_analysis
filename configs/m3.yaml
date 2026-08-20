@@ -1,49 +1,50 @@
-# Fase M3 — contorno intercambiable y corregible. Cada umbral con su porqué.
+# Phase M3 — interchangeable, correctable boundary. Every threshold with
+# its rationale.
 
-# constituyentes que la correccion puede tocar: SOLO los estimables segun la
-# tabla de alias (results/m2_alias). Lo congelado (S2) y lo anual (K1, P1)
-# quedan clavados al prior del contorno — la imagen no puede verlos
+# constituents the correction may touch: ONLY the estimable ones per the
+# alias table (results/m2_alias). The frozen (S2) and annual (K1, P1) ones
+# stay pinned to the boundary prior — imagery cannot see them
 constituyentes_descomposicion: [M2, N2, O1, Q1, M4, MN4, MS4, M6]
-constituyente_corregido: M2   # el que domina la varianza (~80 % en esta
-                              # costa); corregir sobretonos con 465 escenas
-                              # binarias seria sobreajuste
+constituyente_corregido: M2   # the variance-dominant one (~80 % on this
+                              # coast); correcting overtones with 465
+                              # binary scenes would be overfitting
 
-# v2 (PHASE_LOG 2026-08-19): la correccion estimable desde imagen es SOLO DE
-# FASE. La ganancia del constituyente dominante es casi un reescalado global
-# y el teorema afin la tapa (v1: gamma-hat en el borde con signo erroneo);
-# gamma queda clavado al prior del ensemble (su dispersion = incertidumbre)
+# v2 (PHASE_LOG 2026-08-19): the correction estimable from imagery is
+# PHASE-ONLY. The dominant constituent's gain is almost a global rescaling
+# and the affine theorem hides it (v1: gamma-hat at the edge with the wrong
+# sign); gamma stays pinned to the ensemble prior (its spread = uncertainty)
 gamma_malla: [0.0]
 dt_malla_min: [-24, -16, -10, -5, 0, 5, 10, 16, 24]
-# v3: el juez de la boca usa sigma0 FIJA — medido que perfilar sigma absorbe
-# la senal de fase (~0.12 m para 12 min de M2) y el juez pierde sensibilidad
-# (v2: dt=0, no adoptada); con sigma0 fija la recupero (+16, error 4 min).
-# M2a SI mantiene sigma perfilada: alli la comparacion es entre bandas y la
-# robustez gano (4.71 min RMSE en la puerta M2)
+# v3: the mouth judge uses FIXED sigma0 — measured that profiling sigma
+# absorbs the phase signal (~0.12 m for 12 min of M2) and the judge loses
+# sensitivity (v2: dt=0, not adopted); with fixed sigma0 it recovers it
+# (+16, error 4 min). M2a DOES keep profiled sigma: there the comparison is
+# between bands and robustness won (4.71 min RMSE at gate M2)
 juez_boca_perfila_sigma: false
 
-test_cada: 3      # juez fuera de muestra: 1 de cada 3 escenas al test
-                  # (intercalado: ambas mitades ven todas las estaciones)
-sigma0_m: 0.20    # misma escala de item que M2a (configs/m2.yaml)
+test_cada: 3      # out-of-sample judge: 1 of every 3 scenes to test
+                  # (interleaved: both halves see all seasons)
+sigma0_m: 0.20    # same item scale as M2a (configs/m2.yaml)
 seed: 20260819
 
 plantado:
-  # el error de contorno que la puerta planta y exige recuperar
-  gamma_m2: 0.08        # +8 % de ganancia en M2: del orden del desacuerdo
-                        # entre modelos en costa, y visible sobre sigma0
-  dt_m2_min: 12.0       # +12 min de retraso: el error residual de fase
-                        # tipico de EOT20 medido en el Escalda fue +10 min
+  # the boundary error the gate plants and demands recovered
+  gamma_m2: 0.08        # +8 % gain in M2: on the order of inter-model
+                        # disagreement at the coast, and visible over sigma0
+  dt_m2_min: 12.0       # +12 min lag: EOT20's typical residual phase
+                        # error measured on the Scheldt was +10 min
 
 puerta:
-  # v2: tres criterios, todos de fase
-  tol_dt_min: 6.0       # la precision demostrada del metodo de rangos es
-                        # ~4 min; 6 la cubre con margen
-  # corregido el contorno, el operador interior debe quedar plano — y esto
-  # tambien prueba que la GANANCIA plantada (incorregible) no falsea fase.
-  # v3: RMS, no max — el max sobre 5 bandas de un estimador con RMSE
-  # demostrado de 4.7 min (puerta M2) supera 6 por puro ruido
+  # v2: three criteria, all of phase
+  tol_dt_min: 6.0       # the demonstrated precision of the rank method is
+                        # ~4 min; 6 covers it with margin
+  # with the boundary corrected, the interior operator must stay flat — and
+  # this also proves that the planted (uncorrectable) GAIN does not fake
+  # phase. v3: RMS, not max — the max over 5 bands of an estimator with a
+  # demonstrated RMSE of 4.7 min (gate M2) exceeds 6 by pure noise
   max_tau_residual_rms_min: 6.0
-  # la fuga sin corregir DEBE aparecer: si un error de contorno de 12 min no
-  # fabricara transferencia aparente, esta puerta no estaria probando nada
+  # the uncorrected leak MUST appear: if a 12-min boundary error did not
+  # fabricate apparent transfer, this gate would be proving nothing
   min_fuga_sin_corregir_min: 10.0
 
 datos:

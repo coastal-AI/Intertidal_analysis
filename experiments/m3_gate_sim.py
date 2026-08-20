@@ -69,7 +69,7 @@ def main():
                for tv in bank_taus]
     bank_prior = te.ShiftBank(bank_taus, shifted)
     h_prior = bank_prior.at(0.0)
-    print(f"{len(h_prior)} escenas · banco del prior listo "
+    print(f"{len(h_prior)} scenes · prior bank ready "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     # ── plant the boundary error: the TRUE water the pixels felt ─────────
@@ -103,22 +103,23 @@ def main():
                               rising=rising, s_km=s_tpl[rows],
                               C_real=C_real, template_rows=rows)
     wet = C & (Y > 0)
-    print(f"archivo sintetico con error de contorno plantado "
-          f"(γ={g_pl:+.2f}, dt={dt_pl:+.0f} min) · sin transferencia "
-          f"interior ({time.time()-t0:.0f} s)", flush=True)
+    print(f"synthetic archive with planted boundary error "
+          f"(γ={g_pl:+.2f}, dt={dt_pl:+.0f} min) · no interior "
+          f"transfer ({time.time()-t0:.0f} s)", flush=True)
 
     # ── judge 1: the mouth band recovers the planted PHASE error ─────────
     # (gain is not searched: v2, the affine theorem hides it — the planted
     # gamma=+0.08 stays in the world precisely to prove it cannot fake phase)
     mouth = band_of == 0
-    # v3: sigma0 FIJA en el juez — perfilar sigma absorbia la senal de fase
+    # v3: FIXED sigma0 in the judge — profiling sigma absorbed the phase
+    # signal
     fit = bc.fit_correction_from_mouth(
         wet[:, mouth], C[:, mouth], t_real, h_prior, constituent=kc,
         gamma_grid=CFG["gamma_malla"], dt_grid_min=CFG["dt_malla_min"],
         sigma0=CFG["sigma0_m"], test_every=CFG["test_cada"],
         sg_grid=None)
-    print(f"correccion estimada en la boca: γ̂={fit['gamma']:+.3f} "
-          f"dt̂={fit['dt_min']:+.1f} min (adoptada={fit['adopted']}) "
+    print(f"correction estimated at the mouth: γ̂={fit['gamma']:+.3f} "
+          f"dt̂={fit['dt_min']:+.1f} min (adopted={fit['adopted']}) "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     # ── judge 2: with the corrected boundary, T stays flat ───────────────
@@ -151,8 +152,8 @@ def main():
                           z_points=CFG2["z_puntos"],
                           rng=np.random.default_rng(CFG["seed"] + 4),
                           max_px_band=CFG2["max_px_banda"]["m2a"])
-    print(f"T corregido: tau={np.round(r_corr['tau'], 1)}", flush=True)
-    print(f"T SIN corregir (la fuga evitada): "
+    print(f"corrected T: tau={np.round(r_corr['tau'], 1)}", flush=True)
+    print(f"UNcorrected T (the leak prevented): "
           f"tau={np.round(r_leak['tau'], 1)}", flush=True)
 
     inner = slice(1, nb)
@@ -166,8 +167,9 @@ def main():
     result = {
         "version_puerta": 3,
         "plantado": {"gamma_m2": g_pl, "dt_m2_min": dt_pl,
-                     "nota": "gamma se planta pero NO se corrige (teorema "
-                             "afin): la puerta prueba que no falsea fase"},
+                     "nota": "gamma is planted but NOT corrected (affine "
+                             "theorem): the gate proves it cannot fake "
+                             "phase"},
         "recuperado": {k: fit[k] for k in
                        ("gamma", "dt_min", "adopted", "dt_min_raw",
                         "nll_test_zero", "nll_test_win")},
@@ -192,30 +194,30 @@ def main():
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
     ax[0].plot(centers, r_leak["tau"], "x--", color="C3",
-               label="sin corregir (fuga al operador)")
+               label="uncorrected (leak into the operator)")
     ax[0].plot(centers, r_corr["tau"], "o-", color="C0",
-               label="con contorno corregido")
-    ax[0].axhline(0, color="k", lw=1, label="verdad: sin transferencia")
-    ax[0].set_xlabel("s desde la boca (km)")
-    ax[0].set_ylabel("τ aparente (min)")
+               label="with corrected boundary")
+    ax[0].axhline(0, color="k", lw=1, label="truth: no transfer")
+    ax[0].set_xlabel("s from the mouth (km)")
+    ax[0].set_ylabel("apparent τ (min)")
     ax[0].legend(fontsize=8)
-    ax[0].set_title("el error de contorno ya no se disfraza de estuario")
-    sc = np.asarray(fit["grid_scores"])[0]      # gamma fija en 0 (v2)
+    ax[0].set_title("the boundary error no longer masquerades as estuary")
+    sc = np.asarray(fit["grid_scores"])[0]      # gamma fixed at 0 (v2)
     ax[1].plot(CFG["dt_malla_min"], sc, "o-", color="C0")
-    ax[1].axvline(dt_pl, color="k", ls="--", label=f"plantado (+{dt_pl:.0f})")
+    ax[1].axvline(dt_pl, color="k", ls="--", label=f"planted (+{dt_pl:.0f})")
     ax[1].axvline(fit["dt_min_raw"], color="r",
-                  label=f"estimado ({fit['dt_min_raw']:+.0f})")
-    ax[1].set_xlabel("dt de M2 (min)")
-    ax[1].set_ylabel("NLL (boca, σ perfilada)")
+                  label=f"estimated ({fit['dt_min_raw']:+.0f})")
+    ax[1].set_xlabel("M2 dt (min)")
+    ax[1].set_ylabel("NLL (mouth, profiled σ)")
     ax[1].legend(fontsize=8)
-    ax[1].set_title("la verosimilitud de la boca encuentra la FASE del error")
-    fig.suptitle(f"Puerta M3 — "
-                 f"{'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    ax[1].set_title("the mouth likelihood finds the PHASE of the error")
+    fig.suptitle(f"Gate M3 — "
+                 f"{'GREEN' if result['puerta']['PASA'] else 'RED'}",
                  fontweight="bold")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
     print(json.dumps(result["puerta"], indent=1), flush=True)
-    print(f"PUERTA M3: {'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    print(f"GATE M3: {'GREEN' if result['puerta']['PASA'] else 'RED'}",
           flush=True)
 
 

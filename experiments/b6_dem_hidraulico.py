@@ -1,4 +1,4 @@
-"""B6: the hydraulically-aware DEM — terrain cota vs spill cota, declared.
+"""B6: the hydraulically-aware DEM — terrain vs spill elevation, declared.
 
 Flooding needs a path (101 of 361 RTK points never once seen wet). For a
 pixel behind a barrier, the wet/dry archive observes the SPILL level (the
@@ -35,27 +35,17 @@ import yaml
 
 from pyintertidal.net import use_system_certificates
 from pyintertidal import simulator, seal, geometry
-from pyintertidal.elevation import _fit_block
+from pyintertidal.marea import invert_series
 import pyintertidal as pit
 
 CFG = yaml.safe_load(open("configs/b6.yaml", encoding="utf-8"))
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
 OUT = os.path.join("results", "b6_dem_hidraulico")
-SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
-CHUNK = 4000
 
 
 def refit(Y, C, h):
-    grid = np.linspace(h.min(), h.max(), 50)
-    P = Y.shape[1]
-    z = np.full(P, np.nan)
-    for j in range(0, P, CHUNK):
-        s = slice(j, min(j + CHUNK, P))
-        a, b, mu, sg, _, N = _fit_block(Y[:, s].astype(np.float64),
-                                        C[:, s].astype(np.float64), h,
-                                        grid, SG_GRID)
-        ok = (N >= 8) & (b > 0.15) & (b < 2.5) & (np.abs(a) < 2.5)
-        z[s] = np.where(ok, mu, np.nan)
+    """Thin wrapper over the canonical pyintertidal.marea.invert_series."""
+    z, _ = invert_series(Y, C, h)
     return z
 
 
@@ -86,8 +76,8 @@ def main():
     spill = spill_of(z_op, keep, SH, sea)
     depth = spill - z_op
     flag = np.isfinite(depth) & (depth > CFG["umbral_charco_m"])
-    print(f"vertedero calculado: {int(flag.sum()):,} px de charco "
-          f"({100*np.nanmean(flag):.1f} %) · profundidad mediana "
+    print(f"spill computed: {int(flag.sum()):,} ponded px "
+          f"({100*np.nanmean(flag):.1f} %) · median depth "
           f"{np.nanmedian(depth[flag]):.2f} m ({time.time()-t0:.0f} s)",
           flush=True)
 
@@ -128,8 +118,8 @@ def main():
     rec = tp / max(int((planted & both).sum()), 1)
     ok_sim = (prec >= CFG["puerta"]["min_precision"]
               and rec >= CFG["puerta"]["min_exhaustividad"])
-    print(f"juez (a) simulacion: precision {prec:.2f} exhaustividad "
-          f"{rec:.2f} (plantados {int(planted.sum()):,}) "
+    print(f"judge (a) simulation: precision {prec:.2f} recall "
+          f"{rec:.2f} (planted {int(planted.sum()):,}) "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     # ── judge (b): the real ponding signature, against a matched null ────
@@ -159,8 +149,8 @@ def main():
     null = np.asarray(null)
     p95 = float(np.percentile(null, 95))
     ok_real = obs > p95
-    print(f"juez (b) real: firma de charco {obs:+.4f} vs nulo p95 "
-          f"{p95:+.4f} (media nulo {null.mean():+.4f})", flush=True)
+    print(f"judge (b) real: ponding signature {obs:+.4f} vs null p95 "
+          f"{p95:+.4f} (null mean {null.mean():+.4f})", flush=True)
 
     result = {
         "n_px_charco": int(flag.sum()),
@@ -190,19 +180,19 @@ def main():
     img = np.full(SH[0] * SH[1], np.nan, np.float32)
     img[keep] = np.where(flag, depth, np.nan)
     im = ax[0].imshow(img.reshape(SH), cmap="Blues", vmax=1.0)
-    ax[0].set_title("profundidad de charco (m): cota de vertedero − terreno")
+    ax[0].set_title("ponding depth (m): spill elevation − terrain")
     plt.colorbar(im, ax=ax[0], shrink=0.8)
-    ax[1].hist(null, bins=30, alpha=0.6, label="nulo igualado")
-    ax[1].axvline(obs, color="r", lw=2, label=f"observado {obs:+.3f}")
-    ax[1].set_xlabel("firma de encharcamiento (charco − no charco)")
+    ax[1].hist(null, bins=30, alpha=0.6, label="matched null")
+    ax[1].axvline(obs, color="r", lw=2, label=f"observed {obs:+.3f}")
+    ax[1].set_xlabel("ponding signature (ponded − not ponded)")
     ax[1].legend(fontsize=8)
-    ax[1].set_title("la bandera sabe algo que cota y posicion no saben")
-    fig.suptitle(f"Puerta B6 — "
-                 f"{'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    ax[1].set_title("the flag knows something elevation and position do not")
+    fig.suptitle(f"Gate B6 — "
+                 f"{'GREEN' if result['puerta']['PASA'] else 'RED'}",
                  fontweight="bold")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
-    print(f"PUERTA B6: {'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    print(f"GATE B6: {'GREEN' if result['puerta']['PASA'] else 'RED'}",
           flush=True)
 
 

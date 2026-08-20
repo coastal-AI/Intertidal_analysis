@@ -32,21 +32,20 @@ import yaml
 from pyintertidal.net import use_system_certificates
 from pyintertidal import simulator, seal
 from pyintertidal import tide_estimators as te
-from pyintertidal.elevation import _fit_block
+from pyintertidal.marea import invert_series
 from pyintertidal.operator import InteriorTide
 import pyintertidal as pit
 
 CFG = yaml.safe_load(open("configs/m4.yaml", encoding="utf-8"))
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
 OUT = os.path.join("results", "m4_gate_sim")
-SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
 
 
 def fit_z(Y, C, h, mu_points, min_obs, min_b):
-    grid = np.linspace(h.min(), h.max(), mu_points)
-    a, b, mu, sg, _, N = _fit_block(Y, C, h, grid, SG_GRID)
-    ok = (N >= min_obs) & (b > min_b) & (b < 2.5) & (np.abs(a) < 2.5)
-    return np.where(ok, mu, np.nan)
+    """Thin wrapper over the canonical pyintertidal.marea.invert_series."""
+    z, _ = invert_series(Y, C, h, mu_points=mu_points, min_obs=min_obs,
+                         min_b=min_b)
+    return z
 
 
 def main():
@@ -79,7 +78,7 @@ def main():
     h0 = bank.at(0.0)
     rising = (tide_at(t_real + pd.Timedelta(minutes=30))
               - tide_at(t_real - pd.Timedelta(minutes=30))) > 0
-    print(f"banco listo ({time.time()-t0:.0f} s)", flush=True)
+    print(f"bank ready ({time.time()-t0:.0f} s)", flush=True)
 
     # ── the exact M2-gate synthetic archive (same seed => same world) ────
     tpl = simulator.calibrate(CFG["datos"]["store"], CFG["datos"]["base"],
@@ -110,7 +109,7 @@ def main():
                               mechanisms=(mech,), rising=rising,
                               s_km=s_px, C_real=C_real, template_rows=rows)
     wet = C & (Y > 0)
-    print(f"mundo del gate M2 reconstruido ({time.time()-t0:.0f} s)",
+    print(f"M2-gate world rebuilt ({time.time()-t0:.0f} s)",
           flush=True)
 
     # ── build T as production would: M2a measures the transfer ───────────
@@ -122,9 +121,9 @@ def main():
                        rng=np.random.default_rng(CFG2["seed"] + 3),
                        max_px_band=CFG2["max_px_banda"]["m2a"])
     T = InteriorTide(bank, centers, r2a["alpha"], r2a["tau"],
-                     meta={"boundary": "EOT20 (banco de la puerta)",
-                           "correction": "ninguna (mundo sin error de "
-                                         "contorno)",
+                     meta={"boundary": "EOT20 (the gate's bank)",
+                           "correction": "none (world without boundary "
+                                         "error)",
                            "source": "experiments/m4_gate_sim"})
     print(T.describe(), flush=True)
 
@@ -142,8 +141,8 @@ def main():
         both = np.isfinite(z_uni) & np.isfinite(z_op)
         rmse_uni.append(float(np.sqrt(np.mean((z_uni[both] - zt[both]) ** 2))))
         rmse_op.append(float(np.sqrt(np.mean((z_op[both] - zt[both]) ** 2))))
-        print(f"  banda {k} (s={centers[k]:.2f} km, n={int(both.sum())}): "
-              f"RMSE uniforme {rmse_uni[-1]:.3f} -> operador "
+        print(f"  band {k} (s={centers[k]:.2f} km, n={int(both.sum())}): "
+              f"uniform RMSE {rmse_uni[-1]:.3f} -> operator "
               f"{rmse_op[-1]:.3f} m", flush=True)
 
     # the oracle: inversion with the TRUE planted level (the damage floor)
@@ -206,32 +205,32 @@ def main():
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
     ax[0].plot(centers, rmse_uni, "x--", color="C3",
-               label="contorno uniforme (el dano)")
-    ax[0].plot(centers, rmse_op, "o-", color="C0", label="con operador T")
+               label="uniform boundary (the damage)")
+    ax[0].plot(centers, rmse_op, "o-", color="C0", label="with operator T")
     ax[0].plot(centers, rmse_oracle, ":", color="k",
-               label="oraculo (nivel verdadero)")
-    ax[0].set_xlabel("s desde la boca (km)")
-    ax[0].set_ylabel("RMSE de cota (m)")
+               label="oracle (true level)")
+    ax[0].set_xlabel("s from the mouth (km)")
+    ax[0].set_ylabel("elevation RMSE (m)")
     ax[0].legend(fontsize=8)
-    ax[0].set_title(f"beneficio: {100*frac_rec:.0f} % del dano recuperado")
-    ax[1].plot(centers, r_fix["tau"], "o-", color="C0", label="τ residual")
+    ax[0].set_title(f"benefit: {100*frac_rec:.0f} % of damage recovered")
+    ax[1].plot(centers, r_fix["tau"], "o-", color="C0", label="residual τ")
     ax[1].axhline(0, color="k", lw=1)
     ax[1].axhspan(-CFG["puerta"]["max_tau_residual_min"],
                   CFG["puerta"]["max_tau_residual_min"],
-                  color="C0", alpha=0.08, label="tolerancia")
-    ax[1].set_xlabel("s desde la boca (km)")
-    ax[1].set_ylabel("τ residual (min)")
+                  color="C0", alpha=0.08, label="tolerance")
+    ax[1].set_xlabel("s from the mouth (km)")
+    ax[1].set_ylabel("residual τ (min)")
     ax[1].legend(fontsize=8)
-    ax[1].set_title("contraccion: el operador es punto fijo")
-    fig.suptitle(f"Puerta M4 — "
-                 f"{'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    ax[1].set_title("contraction: the operator is a fixed point")
+    fig.suptitle(f"Gate M4 — "
+                 f"{'GREEN' if result['puerta']['PASA'] else 'RED'}",
                  fontweight="bold")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
     print(json.dumps({k: result[k] for k in
                       ("fraccion_dano_recuperado", "puerta")}, indent=1),
           flush=True)
-    print(f"PUERTA M4: {'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    print(f"GATE M4: {'GREEN' if result['puerta']['PASA'] else 'RED'}",
           flush=True)
 
 

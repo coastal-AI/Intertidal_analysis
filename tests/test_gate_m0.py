@@ -32,19 +32,20 @@ CFG = yaml.safe_load(open("configs/m0.yaml", encoding="utf-8"))
 
 def test_baseline_structure():
     p = "results/m0_baseline/result.json"
-    assert os.path.exists(p), "ejecuta antes: python -m experiments.m0_baseline"
+    assert os.path.exists(p), "run first: python -m experiments.m0_baseline"
     r = json.load(open(p, encoding="utf-8"))
     cfg = CFG["baseline"]
     lo, hi = cfg["ci_historico"]
     s = r["pooled_dev_slope"]
-    assert lo <= s <= hi, f"pendiente dev {s:.3f} fuera del IC historico"
+    assert lo <= s <= hi, f"dev slope {s:.3f} outside the historical CI"
     ref = cfg["pooled_dev_slope_adopcion"]
     assert abs(s - ref) <= cfg["tolerancia_autoconsistencia"], \
-        f"pendiente dev {s:.3f} se aparto de la referencia {ref:.3f}"
+        f"dev slope {s:.3f} drifted from the reference {ref:.3f}"
     assert len(r["blocks"]) >= cfg["min_bloques_con_8pts"]
     assert r["spread"] >= cfg["min_recorrido_pendientes"], \
-        "la ESTRUCTURA por bloques (objetivo del plan) no aparece"
-    assert r["n_reserved_hidden"] > 0, "el reservado debe existir y no leerse"
+        "the per-block STRUCTURE (the plan's target) does not appear"
+    assert r["n_reserved_hidden"] > 0, \
+        "the reserved set must exist and never be read"
 
 
 def test_simulator_null_marginals():
@@ -70,7 +71,7 @@ def test_simulator_null_marginals():
     # (see simulator.calibrate) and shrank fitted sigma by ~30 %
     C_real = (d["C"][ep][:, tpl["idx"][sub]] > 0)
     Y, C = simulate(tpl, z_true, t, seed=cfg["seed"], C_real=C_real,
-                    template_rows=sub)                  # mecanismos OFF
+                    template_rows=sub)                  # mechanisms OFF
 
     grid = np.linspace(t.min(), t.max(), 50)
     a, b, mu, sg, rm, N = _fit_block(Y.astype(np.float64),
@@ -84,7 +85,7 @@ def test_simulator_null_marginals():
         s_ = np.percentile(b[ok], q)
         r_ = np.percentile(tpl["b"], q)
         assert abs(s_ - r_) <= tol * max(abs(r_), 0.05), \
-            f"marginal b p{q}: sim {s_:.3f} vs archivo {r_:.3f}"
+            f"marginal b p{q}: sim {s_:.3f} vs archive {r_:.3f}"
     # sigma lives on an 8-value GRID, so sample quantiles are quantised and
     # teeter between neighbouring atoms (0.15 vs 0.22 is a 32 % jump with
     # nothing in between — the first gate version failed on exactly that).
@@ -97,7 +98,7 @@ def test_simulator_null_marginals():
 
     tv = 0.5 * np.abs(atom_fracs(sg[ok]) - atom_fracs(tpl["sg"])).sum()
     tol_sg = cfg.get("tolerancia_tv_sigma", tol)
-    assert tv <= tol_sg, f"distribucion de sigma: TV {tv:.3f} > {tol_sg}"
+    assert tv <= tol_sg, f"sigma distribution: TV {tv:.3f} > {tol_sg}"
     # usable-observation rate
     rate_sim = float((C > 0).mean())
     assert abs(rate_sim - tpl["obs_frac"]) <= 0.02
@@ -113,13 +114,13 @@ def test_simulator_null_marginals():
     g = ok & np.isfinite(mu) & inner
     sl = np.polyfit(z_true[g], mu[g], 1)[0]
     assert 0.93 <= sl <= 1.07, \
-        f"el nulo en el INTERIOR devuelve pendiente {sl:.3f} != 1"
+        f"the null in the INTERIOR returns slope {sl:.3f} != 1"
 
 
 if __name__ == "__main__":
     test_baseline_structure()
-    print("OK  puerta M0.1: estructura del baseline reproducida (solo dev)")
+    print("OK  gate M0.1: baseline structure reproduced (dev only)")
     test_simulator_null_marginals()
-    print("OK  puerta M0.2: el nulo del simulador reproduce las marginales y "
-          "devuelve pendiente ~1")
-    print("PUERTA M0: VERDE")
+    print("OK  gate M0.2: the simulator null reproduces the marginals and "
+          "returns slope ~1")
+    print("GATE M0: GREEN")

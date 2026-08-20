@@ -1,22 +1,23 @@
-"""V3 — abrir el RTK reservado. SOLO LO EJECUTA EL HUMANO. UNA VEZ.
+"""V3 — open the reserved RTK. ONLY THE HUMAN RUNS THIS. ONCE.
 
-Este es el único módulo del repositorio autorizado a pasar
-``allow_reserved=True`` (regla R1; el guard dinámico de rtk.py verifica el
-nombre de este archivo y tests/test_r1_guard.py escanea que nadie más lo
-haga). Correrlo consume el conjunto reservado para siempre: después de mirar,
-ningún número sacado de él vuelve a ser una validación.
+This is the only module in the repository authorised to pass
+``allow_reserved=True`` (rule R1; the dynamic guard in rtk.py verifies this
+file's name and tests/test_r1_guard.py scans that nobody else does it).
+Running it consumes the reserved set forever: after looking, no number
+drawn from it can ever again count as validation.
 
-ACTA VIGENTE (rtk.py, 2026-08-18): la partición reservada actual fue abierta
-varias veces ese día ANTES de adoptarse la spec v4, de modo que está QUEMADA
-para afirmaciones de nivel publicación. Los veredictos V3 de esta campaña se
-trasladan a los bloques de una campaña futura. Este script queda como la
-herramienta correcta para ese día.
+STANDING RECORD (rtk.py, 2026-08-18): the current reserved partition was
+opened several times that day BEFORE the v4 spec was adopted, so it is
+BURNED for publication-grade claims. The V3 verdicts of this campaign move
+to the blocks of a future campaign. This script remains the correct tool
+for that day.
 
-Uso (humano, deliberado):
+Usage (human, deliberate):
 
-    V3_CONFIRMO=SI python -m experiments.v3_open_reserved <producto.tif>
+    V3_CONFIRMO=SI python -m experiments.v3_open_reserved <product.tif>
 
-Sin la variable de entorno, imprime el acta y sale sin tocar nada.
+Without the environment variable, it prints the record and exits without
+touching anything.
 """
 import json
 import os
@@ -33,8 +34,8 @@ import numpy as np
 def main():
     if os.environ.get("V3_CONFIRMO") != "SI":
         print(__doc__)
-        print("V3_CONFIRMO no es 'SI': no se abre nada. (Correcto por "
-              "defecto.)")
+        print("V3_CONFIRMO is not 'SI': nothing is opened. (Correct by "
+              "default.)")
         return
 
     import rasterio
@@ -51,7 +52,7 @@ def main():
     rec = {"fecha": datetime.datetime.now().isoformat(timespec="seconds"),
            "producto": product, "n": int(ok.sum()),
            "pendiente": slope, "rmse": rmse,
-           "nota": "apertura V3 registrada; el reservado queda consumido"}
+           "nota": "V3 opening recorded; the reserved set is consumed"}
     log = os.path.join("results", "v3_aperturas.jsonl")
     os.makedirs("results", exist_ok=True)
     with open(log, "a", encoding="utf-8") as f:

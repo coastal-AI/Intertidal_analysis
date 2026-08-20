@@ -1,19 +1,19 @@
-# Fase B6 — DEM hidraulicamente consciente (terreno vs vertedero).
+# Phase B6 — hydraulically aware DEM (terrain vs spill).
 
-umbral_charco_m: 0.10   # un pixel se declara "cota de vertedero" si el
-                        # llenado de depresiones lo sube mas de 10 cm sobre
-                        # su cota ajustada: por debajo, la barrera es
-                        # indistinguible del ruido del ajuste (sigma_topo
-                        # mediana 0.177 m; 0.10 ~ su mitad)
+umbral_charco_m: 0.10   # a pixel is declared "spill elevation" if
+                        # depression filling raises it more than 10 cm over
+                        # its fitted elevation: below that, the barrier is
+                        # indistinguishable from fit noise (median
+                        # sigma_topo 0.177 m; 0.10 ~ half of it)
 
 puerta:
-  # (a) simulacion: plantando censura por conectividad con los vertederos
-  #     REALES del mapa, la bandera debe recuperar los censurados
+  # (a) simulation: planting connectivity censoring with the map's REAL
+  #     sills, the flag must recover the censored ones
   min_precision: 0.7
   min_exhaustividad: 0.7
-  # (b) real: los abanderados deben concentrar la firma de encharcamiento
-  #     por pixel (charcos, sellada) frente a un nulo igualado por banda de
-  #     s y quintil de cota — percentil 95 del nulo
+  # (b) real: the flagged pixels must concentrate the per-pixel ponding
+  #     signature (charcos, sealed) against a null matched by s-band and
+  #     elevation quintile — 95th percentile of the null
   n_permutaciones: 200
   seed: 20260819
 

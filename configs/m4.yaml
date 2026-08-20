@@ -1,28 +1,30 @@
-# Fase M4 — el operador T y su puerta de contraccion. Umbrales con su porqué.
+# Phase M4 — the operator T and its contraction gate. Thresholds with
+# their rationale.
 
 puerta:
-  # 1) BENEFICIO: invertir cotas con el operador debe reducir el RMSE contra
-  #    la verdad plantada en las bandas interiores (donde el retardo plantado
-  #    llega a 40 min => ~0.3 m de nivel mal asignado en marea viva). Se exige
-  #    recuperar al menos la mitad de ese dano — menos seria un operador que
-  #    "funciona" sin morder
+  # 1) BENEFIT: inverting elevations with the operator must reduce the RMSE
+  #    against the planted truth in the interior bands (where the planted
+  #    lag reaches 40 min => ~0.3 m of misassigned level at spring tide).
+  #    At least half of that damage must be recovered — less would be an
+  #    operator that "works" without biting
   min_fraccion_dano_recuperado: 0.5
-  # 2) NO DANO en la boca: alli la transferencia es ~identidad por
-  #    construccion; tolerancia = ruido de refit entre dos nulos (~1 cm)
+  # 2) NO HARM at the mouth: there the transfer is ~identity by
+  #    construction; tolerance = refit noise between two nulls (~1 cm)
   max_degradacion_boca_m: 0.015
-  # 3) CONTRACCION (punto fijo): alimentar a M2a el nivel del propio operador
-  #    debe devolver identidad — misma tolerancia que la fuga M3
+  # 3) CONTRACTION (fixed point): feeding M2a the operator's own level
+  #    must return identity — same tolerance as the M3 leak
   max_tau_residual_min: 6.0
 
-# mundo plantado de esta puerta: SOLO fase (tau 0->40 min, alpha=1). Tras la
-# puerta M2 v2, el operador T v1 corrige fase; la amplitud por banda es
-# inidentificable en binario (teorema afin) y su estimacion vive en el juez
-# OOS sobre NDWI continuo — se juzga al operador por lo que declara corregir
+# this gate's planted world: phase ONLY (tau 0->40 min, alpha=1). After
+# gate M2 v2, operator T v1 corrects phase; per-band amplitude is
+# unidentifiable in binary (affine theorem) and its estimation lives in the
+# OOS judge over continuous NDWI — the operator is judged on what it
+# declares it corrects
 plantado:
   tau_boca_a_fondo_min: [0.0, 40.0]
 
-# la inversion de cotas usa la maquinaria estandar (_fit_block) con los
-# mismos guardas de siempre (adoptados en la epoca del prototipo, R4-safe)
+# elevation inversion uses the standard machinery (_fit_block) with the
+# usual guards (adopted in the prototype era, R4-safe)
 min_obs: 8
 min_b: 0.15
 mu_puntos: 50

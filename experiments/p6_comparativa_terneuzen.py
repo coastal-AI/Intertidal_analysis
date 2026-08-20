@@ -1,5 +1,5 @@
-"""La tabla final: modelos de marea vs metodos, contra el mareografo de
-Terneuzen — el unico juez externo de NIVEL que este proyecto tiene.
+"""The final table: tide models vs methods, against the Terneuzen tide
+gauge — the only external judge of LEVEL this project has.
 
 Same recipe as the 2026-08-18 validation (escalda_valida prototype), so the
 numbers are directly comparable: test window = last 35 % of the cached gauge
@@ -18,7 +18,6 @@ record, 10-min grid, median-centred RMSE (datum-free). Rows:
 
 Run:  python -m experiments.p6_comparativa_terneuzen   (~3 min)
 """
-import glob
 import json
 import os
 import sys
@@ -32,29 +31,18 @@ import pandas as pd
 
 from pyintertidal.net import use_system_certificates
 from pyintertidal import seal
+from pyintertidal.gauges import load_cached_ioc as load_gauge
 
 OUT = os.path.join("results", "p6_comparativa")
 INNER = (51.336, 3.820)              # Terneuzen (lat, lon)
-S_INNER_KM = 15.63                   # posicion en el eje este de Vlissingen
-MODELS = ["EOT20", "GOT4.10_nc", "GOT4.8_nc"]   # los realmente servibles
-# (GOT5.6 esta a medias en disco y GOT4.10_SAL es la carga, no la marea)
-TAU_V3 = 5.2                         # el adaptador v3 (historico, resellado)
+S_INNER_KM = 15.63                   # position on the axis east of
+                                     # Vlissingen
+MODELS = ["EOT20", "GOT4.10_nc", "GOT4.8_nc"]   # the actually servable ones
+# (GOT5.6 is half on disk and GOT4.10_SAL is the load tide, not the tide)
+TAU_V3 = 5.2                         # the v3 adapter (historical, resealed)
 TAU_CEIL_GRID = np.arange(-20.0, 31.0, 2.5)
-# referencia historica (necesita DOS mareografos; 2026-08-18):
+# historical reference (needs TWO tide gauges; 2026-08-18):
 GAUGE_OP = {"solo_armonicos": 0.4051, "con_operador": 0.3072}
-
-
-def load_gauge(code):
-    raw = []
-    for h in sorted(glob.glob(f"data_v4/gauges/ioc_{code}_*.json")):
-        raw += json.load(open(h))
-    df = pd.DataFrame(raw)
-    if "sensor" in df:
-        df = df[df["sensor"] == df["sensor"].value_counts().idxmax()]
-    return (pd.DataFrame({"time": pd.to_datetime(df["stime"]),
-                          "level_m": pd.to_numeric(df["slevel"],
-                                                   errors="coerce")})
-            .dropna().sort_values("time").drop_duplicates("time"))
 
 
 def main():
@@ -117,7 +105,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     json.dump(result, open(os.path.join(OUT, "result.json"), "w"), indent=1)
     print(json.dumps(rows, indent=1))
-    print("escrito", OUT, flush=True)
+    print("written", OUT, flush=True)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
-"""RMSE de cota por AOI contra verdad EXTERNA (EMODnet), con y sin operador.
+"""Elevation RMSE per AOI against EXTERNAL truth (EMODnet), with and
+without the operator.
 
 Usage:  SITE=tejo python -m experiments.p5_rmse_aoi
         SITE=vadehavet python -m experiments.p5_rmse_aoi
@@ -43,16 +44,14 @@ import yaml
 from pyintertidal.net import use_system_certificates
 from pyintertidal import geometry, seal
 from pyintertidal import tide_estimators as te
-from pyintertidal.elevation import _fit_block
+from pyintertidal.marea import invert_series
 import pyintertidal as pit
 from experiments.p4_sitio import extract
 
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
-SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
-MIN_OBS, MIN_B, MU_POINTS, CHUNK = 8, 0.15, 50, 4000
-TAU_APLICA_MIN = 5.0     # el nivel de ruido demostrado de M2a (puerta M2):
-                         # por debajo, el "retardo" no se distingue de cero
-                         # y el operador se queda en identidad
+TAU_APLICA_MIN = 5.0     # the demonstrated noise level of M2a (gate M2):
+                         # below it, the "lag" cannot be told from zero and
+                         # the operator stays at identity
 
 SITES = {
     "tejo": {"cube": "ndwi_cube_tejo_2019_2021.nc", "pixel_m": 10.0,
@@ -66,13 +65,8 @@ SITES = {
 
 
 def invert(Y, C, h, lo, hi):
-    z = np.full(Y.shape[1], np.nan)
-    grid = np.linspace(lo, hi, MU_POINTS)
-    for j in range(0, Y.shape[1], CHUNK):
-        s = slice(j, min(j + CHUNK, Y.shape[1]))
-        a, b, mu, sg, _, N = _fit_block(Y[:, s], C[:, s], h, grid, SG_GRID)
-        ok = (N >= MIN_OBS) & (b > MIN_B) & (b < 2.5) & (np.abs(a) < 2.5)
-        z[s] = np.where(ok, mu, np.nan)
+    """Thin wrapper over the canonical pyintertidal.marea.invert_series."""
+    z, _ = invert_series(Y, C, h, lo, hi)
     return z
 
 
@@ -86,13 +80,13 @@ def main():
     from eo_tides.model import model_tides
     import xarray as xr
 
-    print(f"[{site}] extrayendo {cfg['cube']}...", flush=True)
+    print(f"[{site}] extracting {cfg['cube']}...", flush=True)
     Y, C, keep, dates, SH, sea, inter, bbox = extract(cfg["cube"], out_dir)
     H, W = SH
     seeds = geometry.mouth_seeds(sea)
     s_m = geometry.along_distance(sea | inter, seeds, cfg["pixel_m"])
     s_km = s_m.ravel()[keep] / 1000.0
-    print(f"  {len(keep):,} px · s hasta {np.nanmax(s_km):.1f} km "
+    print(f"  {len(keep):,} px · s up to {np.nanmax(s_km):.1f} km "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     times = pit.overpass.get_overpass_times(
@@ -114,25 +108,26 @@ def main():
             "time")["tide_height"].to_numpy(float)
 
     bank_taus = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0,
-                 75.0, 90.0, 105.0, 120.0]   # el Tajo saturo el borde a +45
+                 75.0, 90.0, 105.0, 120.0]   # the Tagus saturated the edge
+                                             # at +45
     bank = te.ShiftBank(bank_taus, [
         tide_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
     h0 = bank.at(0.0)
-    print(f"  banco listo, {int(have.sum())} escenas "
+    print(f"  bank ready, {int(have.sum())} scenes "
           f"({time.time()-t0:.0f} s)", flush=True)
 
-    # ── bandas: por brazo en lagunas ramificadas ─────────────────────────
-    # Un unico perfil tau(s) fuerza el mismo reloj a brazos con fisica
-    # distinta (medido en Aveiro: -61 mm en la banda de transito). Mas alla
-    # del nudo central la laguna se separa en componentes conexas = brazos,
-    # detectados automaticamente; cada brazo lleva sus propias bandas de s.
+    # ── bands: per arm in branched lagoons ───────────────────────────────
+    # A single tau(s) profile forces the same clock onto arms with distinct
+    # physics (measured in Aveiro: -61 mm in the transit band). Beyond the
+    # central hub the lagoon splits into connected components = arms,
+    # detected automatically; each arm carries its own bands of s.
     from scipy import ndimage as ndi
     nb = CFG2["n_bandas"]
     PER_ARM = os.environ.get("PER_ARM", "0") == "1"
-    # modo brazos (PER_ARM=1): probado en Aveiro 2026-08-20 — relojes por
-    # brazo plausibles (hasta +75 min en Ovar) pero SIN mejora global a 462
-    # escenas (0.594->0.597): partir en 8 grupos deja cada reloj ruidoso,
-    # la misma limitacion de potencia que B5. Documentado; por defecto OFF.
+    # arm mode (PER_ARM=1): tried in Aveiro 2026-08-20 — per-arm clocks
+    # plausible (up to +75 min in Ovar) but NO global improvement at 462
+    # scenes (0.594->0.597): splitting into 8 groups leaves each clock
+    # noisy, the same power limitation as B5. Documented; OFF by default.
     if not PER_ARM:
         edges, centers, band_of = te.make_bands(s_km, nb)
     else:
@@ -145,8 +140,8 @@ def main():
       arm_of = lab.ravel()[keep]
       sizes = np.bincount(arm_of, minlength=nlab + 1)
       arms = [a for a in range(1, nlab + 1) if sizes[a] >= 20000]
-      band_of = np.zeros(len(s_km), int)      # 0 = nudo/boca (ancla, tau=0)
-      centers = [0.0]                          # el del ancla se fija al final
+      band_of = np.zeros(len(s_km), int)      # 0 = hub/mouth (anchor, tau=0)
+      centers = [0.0]                          # anchor centre set at the end
       nxt = 1
       per_arm = max(2, (nb - 1) // max(len(arms), 1))
       for a in arms:
@@ -163,8 +158,8 @@ def main():
       centers[0] = float(np.nanmedian(s_km[band_of == 0]))
       centers = np.asarray(centers)
       nb = nxt
-      print(f"  brazos detectados: {len(arms)} (nudo a {hub_km:.1f} km) -> "
-          f"{nb} grupos (ancla incluida)", flush=True)
+      print(f"  arms detected: {len(arms)} (hub at {hub_km:.1f} km) -> "
+          f"{nb} groups (anchor included)", flush=True)
     r2a = te.m2a_rasch(wet, C > 0, bank, band_of, centers, nb,
                        sigma0=CFG2["sigma0_m"],
                        sg_grid=tuple(CFG2["sigma_perfil_m"]),
@@ -173,7 +168,7 @@ def main():
                        max_px_band=CFG2["max_px_banda"]["m2a"])
     tau = np.asarray(r2a["tau"], float)
     tau_used = np.where(np.abs(tau) > TAU_APLICA_MIN, tau, 0.0)
-    print(f"  tau_a={np.round(tau, 1)} -> aplicado "
+    print(f"  tau_a={np.round(tau, 1)} -> applied "
           f"{np.round(tau_used, 1)}", flush=True)
 
     lo, hi = float(h0.min()), float(h0.max())
@@ -183,7 +178,7 @@ def main():
         cols = np.where(band_of == k)[0]
         z_op[cols] = invert(Y[:, cols], C[:, cols], bank.at(tau_used[k]),
                             lo, hi)
-    print(f"  inversiones listas ({time.time()-t0:.0f} s)", flush=True)
+    print(f"  inversions done ({time.time()-t0:.0f} s)", flush=True)
 
     # ── sample the survey at each pixel ──────────────────────────────────
     import pyproj
@@ -200,12 +195,12 @@ def main():
         method="nearest").values
 
     both = np.isfinite(z_ref) & np.isfinite(z_uni) & np.isfinite(z_op)
-    # dominio hidraulicamente CONECTADO: un recinto sin camino navegable a
-    # la boca (salinas, esteros con compuerta) tiene s = NaN — se moja sin
-    # obedecer a la marea y no debe puntuar a un metodo mareal
-    conectado = both & np.isfinite(s_km)
+    # hydraulically CONNECTED domain: an enclosure with no navigable path to
+    # the mouth (salt pans, gated creeks) has s = NaN — it wets without
+    # obeying the tide and must not score a tidal method
+    connected = both & np.isfinite(s_km)
     res = {}
-    for dom_name, dom in (("todos", both), ("conectados", conectado)):
+    for dom_name, dom in (("todos", both), ("conectados", connected)):
         res[dom_name] = {}
         for name, zz in (("uniforme", z_uni), ("operador", z_op)):
             e = zz[dom] - z_ref[dom]
@@ -218,8 +213,8 @@ def main():
             }
             r = res[dom_name][name]
             print(f"  [{dom_name}/{name}] n={r['n']:,} "
-                  f"pendiente={r['pendiente']:.3f} "
-                  f"RMSE centrado={r['rmse_centrado']:.3f} m", flush=True)
+                  f"slope={r['pendiente']:.3f} "
+                  f"centred RMSE={r['rmse_centrado']:.3f} m", flush=True)
     np.savez_compressed(os.path.join(out_dir, "z_scores.npz"),
                         z_uni=z_uni.astype(np.float32),
                         z_op=z_op.astype(np.float32),
@@ -250,21 +245,21 @@ def main():
                       gridsize=60, cmap="viridis", mincnt=1)
     lim = [np.nanpercentile(z_ref[both], 1), np.nanpercentile(z_ref[both], 99)]
     ax[0].plot(lim, lim, "r--", lw=1)
-    ax[0].set_xlabel("levantamiento EMODnet (m)")
-    ax[0].set_ylabel("satelite (operador, datum alineado)")
-    ax[0].set_title(f"{site}: pendiente "
+    ax[0].set_xlabel("EMODnet survey (m)")
+    ax[0].set_ylabel("satellite (operator, datum aligned)")
+    ax[0].set_title(f"{site}: slope "
                     f"{res['operador']['pendiente']:.2f}, RMSE "
                     f"{res['operador']['rmse_centrado']:.2f} m")
     plt.colorbar(hb, ax=ax[0], shrink=0.8)
     ax[1].plot(centers, tau, "o-", color="C0", label="τ M2a")
-    ax[1].plot(centers, tau_used, "s--", color="C2", label="τ aplicado")
+    ax[1].plot(centers, tau_used, "s--", color="C2", label="τ applied")
     ax[1].axhline(0, color="k", lw=0.5)
-    ax[1].set_xlabel("s desde el borde marino (km)")
-    ax[1].set_ylabel("retardo (min)")
+    ax[1].set_xlabel("s from the seaward edge (km)")
+    ax[1].set_ylabel("lag (min)")
     ax[1].legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "figure.png"), dpi=130)
-    print(f"escrito {out_dir} ({time.time()-t0:.0f} s)", flush=True)
+    print(f"written {out_dir} ({time.time()-t0:.0f} s)", flush=True)
 
 
 if __name__ == "__main__":

@@ -31,27 +31,17 @@ import yaml
 
 from pyintertidal.net import use_system_certificates
 from pyintertidal import simulator, seal, rtk
-from pyintertidal.elevation import _fit_block
+from pyintertidal.marea import invert_series
 import pyintertidal as pit
 
 CFG = yaml.safe_load(open("configs/b7.yaml", encoding="utf-8"))
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
 OUT = os.path.join("results", "b7_incertidumbre")
-SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
-CHUNK = 4000
 
 
 def refit(Y, C, h):
-    grid = np.linspace(h.min(), h.max(), 50)
-    P = Y.shape[1]
-    z = np.full(P, np.nan)
-    for j in range(0, P, CHUNK):
-        s = slice(j, min(j + CHUNK, P))
-        a, b, mu, sg, _, N = _fit_block(Y[:, s].astype(np.float64),
-                                        C[:, s].astype(np.float64), h,
-                                        grid, SG_GRID)
-        ok = (N >= 8) & (b > 0.15) & (b < 2.5) & (np.abs(a) < 2.5)
-        z[s] = np.where(ok, mu, np.nan)
+    """Thin wrapper over the canonical pyintertidal.marea.invert_series."""
+    z, _ = invert_series(Y, C, h)
     return z
 
 
@@ -92,7 +82,7 @@ def main():
                                   template_rows=np.arange(P))
         z_hat = refit(Y, C, h0)
         errs.append(z_hat - z_true)
-        print(f"replica {i+1}/{CFG['n_replicas']} "
+        print(f"replicate {i+1}/{CFG['n_replicas']} "
               f"({time.time()-t0:.0f} s)", flush=True)
     E = np.concatenate(errs)
     HH = np.tile(head, CFG["n_replicas"])
@@ -112,7 +102,7 @@ def main():
             if len(e) >= 100:
                 sig[a, b] = (1.4826 * np.median(np.abs(e - np.median(e)))
                              if CFG["robusto"] else float(np.std(e)))
-    print("tabla sigma_z (holgura x n_obs):", flush=True)
+    print("sigma_z table (headroom x n_obs):", flush=True)
     print(np.round(sig, 3), flush=True)
 
     # ── attach to the shipped product ────────────────────────────────────
@@ -138,20 +128,20 @@ def main():
     zi = np.where(valid, z_prod[np.minimum(pp, len(z_prod) - 1)], np.nan)
     si = np.where(valid, sigma_px[np.minimum(pp, len(sigma_px) - 1)],
                   np.nan)
-    # v2: el termino de muestreo punto-vs-pixel es ESPACIAL — el relieve
-    # dentro del pixel (sigma_topo, capa B2) es exactamente la desviacion
-    # esperada de un punto respecto a la mediana de su pixel
+    # v2: the point-vs-pixel sampling term is SPATIAL — the relief inside
+    # the pixel (sigma_topo, layer B2) is exactly the expected deviation of
+    # a point from the median of its pixel
     st_all = np.load(CFG["datos"]["sigma_decomp"])["sg_topo"]
     se = np.where(valid, st_all[np.minimum(pp, len(st_all) - 1)], np.nan)
     ok = np.isfinite(zi) & np.isfinite(si) & np.isfinite(se)
     e = zi[ok] - rk["elev"][ok]
-    e = e - np.median(e)                      # datum, como siempre
+    e = e - np.median(e)                      # datum, as always
     s_tot = np.sqrt(si[ok] ** 2 + se[ok] ** 2)
     cover = float(np.mean(np.abs(e) <= s_tot))
     obj = CFG["puerta"]["cobertura_objetivo"]
     tol = CFG["puerta"]["tolerancia_cobertura"]
     ok_gate = abs(cover - obj) <= tol
-    print(f"cobertura 68% en RTK dev: {100*cover:.0f} % (objetivo "
+    print(f"68% coverage on dev RTK: {100*cover:.0f} % (target "
           f"{100*obj:.0f} ± {100*tol:.0f}) · n={int(ok.sum())}", flush=True)
 
     result = {
@@ -176,7 +166,7 @@ def main():
     img = np.full(SH[0] * SH[1], np.nan, np.float32)
     img.ravel()[keep] = sigma_px
     im = ax[0].imshow(img.reshape(SH), cmap="magma", vmax=0.6)
-    ax[0].set_title("σ_z por pixel (m) — calibrada en el gemelo")
+    ax[0].set_title("per-pixel σ_z (m) — calibrated in the twin")
     plt.colorbar(im, ax=ax[0], shrink=0.8)
     im2 = ax[1].imshow(sig, aspect="auto", cmap="viridis")
     ax[1].set_xticks(range(len(bn) - 1))
@@ -184,12 +174,12 @@ def main():
     ax[1].set_yticks(range(len(bh) - 1))
     ax[1].set_yticklabels([f"{a:g}..{b:g}" for a, b in zip(bh, bh[1:])])
     ax[1].set_xlabel("n_obs")
-    ax[1].set_ylabel("holgura (m)")
-    ax[1].set_title(f"tabla σ_z · cobertura dev {100*cover:.0f} %")
+    ax[1].set_ylabel("headroom (m)")
+    ax[1].set_title(f"σ_z table · dev coverage {100*cover:.0f} %")
     plt.colorbar(im2, ax=ax[1], shrink=0.8)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
-    print(f"PUERTA B7: {'VERDE' if ok_gate else 'ROJA'}", flush=True)
+    print(f"GATE B7: {'GREEN' if ok_gate else 'RED'}", flush=True)
 
 
 if __name__ == "__main__":

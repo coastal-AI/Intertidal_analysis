@@ -1,4 +1,4 @@
-"""Parte IV, sitio generico: perfil de fase interior desde un cubo en disco.
+"""Part IV, generic site: interior phase profile from an on-disk cube.
 
 Usage:  SITE=stmalo python -m experiments.p4_sitio
         SITE=sheerness python -m experiments.p4_sitio
@@ -33,11 +33,10 @@ import yaml
 from pyintertidal.net import use_system_certificates
 from pyintertidal import geometry, seal
 from pyintertidal import tide_estimators as te
+from pyintertidal.marea import extract as _marea_extract
 import pyintertidal as pit
 
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
-CLEAR = (4, 5, 6, 7)
-T_CHUNK = 40
 
 SITES = {
     "stmalo": {"cube": "ndwi_cube_stmalo_2023-2025_20m.nc", "pixel_m": 20.0},
@@ -46,61 +45,18 @@ SITES = {
 }
 
 
-def extract(cube, out_npz):
-    """Streaming intertidal extraction + M1 geometry from a raw-band cube."""
-    import xarray as xr
+def extract(cube, out_npz=None):
+    """Streaming intertidal extraction + M1 geometry from a raw-band cube.
 
-    ds = xr.open_dataset(cube)
-    t_dim = [k for k in ds["B03"].dims if k not in ("x", "y")][0]
-    T = ds.sizes[t_dim]
-    H, W = ds.sizes["y"], ds.sizes["x"]
-    dates = np.array([str(np.datetime64(v, "D")) for v in ds[t_dim].values])
-
-    wet_n = np.zeros((H, W), np.int32)
-    clr_n = np.zeros((H, W), np.int32)
-    for i0 in range(0, T, T_CHUNK):
-        sl = {t_dim: slice(i0, min(i0 + T_CHUNK, T))}
-        g = ds["B03"].isel(**sl).values.astype(np.float32)
-        n = ds["B08"].isel(**sl).values.astype(np.float32)
-        scl = ds["SCL"].isel(**sl).values
-        clear = np.isin(scl, CLEAR)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            wet = clear & ((g - n) / np.maximum(g + n, 1) > 0)
-        wet_n += wet.sum(axis=0, dtype=np.int32)
-        clr_n += clear.sum(axis=0, dtype=np.int32)
-    wf = np.where(clr_n > 30, wet_n / np.maximum(clr_n, 1), np.nan)
-    inter = np.isfinite(wf) & (wf > 0.10) & (wf < 0.90)
-    sea = np.isfinite(wf) & (wf >= 0.90)
-    keep = np.where(inter.ravel())[0]
-    rows, cols = keep // W, keep % W
-    print(f"  {len(keep):,} px intermareales, "
-          f"{int(sea.sum()):,} px de mar", flush=True)
-
-    Y = np.full((T, len(keep)), np.nan, np.float32)
-    C = np.zeros((T, len(keep)), bool)
-    for i0 in range(0, T, T_CHUNK):
-        i1 = min(i0 + T_CHUNK, T)
-        sl = {t_dim: slice(i0, i1)}
-        g = ds["B03"].isel(**sl).values.astype(np.float32)
-        n = ds["B08"].isel(**sl).values.astype(np.float32)
-        scl = ds["SCL"].isel(**sl).values
-        clear = np.isin(scl, CLEAR)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            ndwi = np.where(g + n != 0, (g - n) / (g + n), np.nan)
-        Y[i0:i1] = ndwi[:, rows, cols]
-        C[i0:i1] = clear[:, rows, cols]
-
-    # bbox in lon/lat for STAC overpass times
-    import pyproj
-    crs_cube = pyproj.CRS.from_wkt(ds["crs"].attrs.get("crs_wkt")
-                                   or ds["crs"].attrs.get("spatial_ref"))
-    tr = pyproj.Transformer.from_crs(crs_cube, 4326, always_xy=True)
-    xs, ys = ds["x"].values, ds["y"].values
-    lons, lats = tr.transform([xs.min(), xs.max()], [ys.min(), ys.max()])
-    bbox = {"west": float(min(lons)), "south": float(min(lats)),
-            "east": float(max(lons)), "north": float(max(lats)),
-            "crs": "EPSG:4326"}
-    return Y, C, keep, dates, (H, W), sea, inter, bbox
+    Thin wrapper over the canonical :func:`pyintertidal.marea.extract`,
+    kept because experiments.p5_rmse_aoi imports this exact tuple shape:
+    (Y, C, keep, dates, SH, sea, inter, bbox).
+    """
+    d = _marea_extract(cube)
+    print(f"  {len(d['keep']):,} intertidal px, "
+          f"{int(d['sea'].sum()):,} sea px", flush=True)
+    return (d["Y"], d["C"], d["keep"], d["dates"], tuple(d["shape"]),
+            d["sea"], d["inter"], d["bbox"])
 
 
 def main():
@@ -112,7 +68,7 @@ def main():
     use_system_certificates()
     from eo_tides.model import model_tides
 
-    print(f"[{site}] extrayendo {cfg['cube']}...", flush=True)
+    print(f"[{site}] extracting {cfg['cube']}...", flush=True)
     Y, C, keep, dates, SH, sea, inter, bbox = extract(cfg["cube"],
                                                       out_dir)
     H, W = SH
@@ -120,7 +76,7 @@ def main():
     seeds = geometry.mouth_seeds(sea)
     s_m = geometry.along_distance(sea | inter, seeds, cfg["pixel_m"])
     s_km = s_m.ravel()[keep] / 1000.0
-    print(f"  s hasta {np.nanmax(s_km):.1f} km "
+    print(f"  s up to {np.nanmax(s_km):.1f} km "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     times = pit.overpass.get_overpass_times(
@@ -145,7 +101,7 @@ def main():
         tide_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
     rising = (tide_at(t_real + pd.Timedelta(minutes=30))
               - tide_at(t_real - pd.Timedelta(minutes=30))) > 0
-    print(f"  banco listo, {int(have.sum())} escenas "
+    print(f"  bank ready, {int(have.sum())} scenes "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     nb = CFG2["n_bandas"]
@@ -175,8 +131,8 @@ def main():
         "centros_km": centers.tolist(),
         "tau_m2a_min": tau_a.tolist(),
         "tau_m2d_min": np.asarray(tau_d, float).tolist(),
-        "nota": "EXPLORATORIO: sin par de mareografos no hay verdad externa "
-                "del gradiente; ancla en la abertura al mar",
+        "nota": "EXPLORATORY: without a gauge pair there is no external "
+                "truth for the gradient; anchored at the opening to the sea",
         "inputs_sha": {"cube": seal._sha256(cfg["cube"])},
         "duracion_s": round(time.time() - t0, 1),
     }
@@ -190,18 +146,18 @@ def main():
     s_show = np.full(H * W, np.nan, np.float32)
     s_show[keep] = s_km
     im = ax[0].imshow(s_show.reshape(H, W), cmap="viridis")
-    ax[0].set_title(f"{site}: s desde la abertura (km)")
+    ax[0].set_title(f"{site}: s from the opening (km)")
     plt.colorbar(im, ax=ax[0], shrink=0.8)
     ax[1].plot(centers, tau_a, "o-", color="C0", label="M2a")
     ax[1].plot(centers, tau_d, "x--", color="C3", label="M2d")
     ax[1].axhline(0, color="k", lw=0.5)
     ax[1].set_xlabel("s (km)")
-    ax[1].set_ylabel("retardo vs EOT20 (min)")
+    ax[1].set_ylabel("lag vs EOT20 (min)")
     ax[1].legend(fontsize=8)
-    ax[1].set_title("perfil de fase interior (exploratorio)")
+    ax[1].set_title("interior phase profile (exploratory)")
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "figure.png"), dpi=130)
-    print(f"escrito {out_dir} ({time.time()-t0:.0f} s)", flush=True)
+    print(f"written {out_dir} ({time.time()-t0:.0f} s)", flush=True)
 
 
 if __name__ == "__main__":

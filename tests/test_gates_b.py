@@ -18,47 +18,48 @@ import numpy as np
 
 
 def _load(path):
-    assert os.path.exists(path), f"falta {path}"
+    assert os.path.exists(path), f"missing {path}"
     return json.load(open(path, encoding="utf-8"))
 
 
 def test_b5_negative_result_recorded():
     r = _load("results/b5_gate_sim/veredicto_v3.json")
     assert r["version"] == 3
-    # el veredicto final es NEGATIVO y debe seguir siendolo salvo re-run
-    # documentado (p.ej. archivo de 10 anos): el desdoble por rama no es
-    # adoptable con 465 escenas bajo el umbral del nulo igualado
+    # the final verdict is NEGATIVE and must stay so barring a documented
+    # re-run (e.g. a 10-year archive): the per-limb clock split is not
+    # adoptable with 465 scenes under the matched-null threshold
     assert r["puerta"]["PASA"] is False
     assert r["puerta"]["control_ok"] is True, \
-        "el control del nulo debe estar limpio para que el negativo valga"
+        "the null control must be clean for the negative to count"
     assert r["umbral_nulo_delta_oos"] > 0
 
 
 def test_b6_operating_point_recorded():
     r = _load("results/b6_dem_hidraulico/result.json")
-    # la bandera que se enciende es de fiar (juez real contra nulo igualado)
+    # the flag that lights up is trustworthy (real judge vs matched null)
     assert r["juez_real"]["firma_observada"] > r["juez_real"]["nulo_p95"]
-    # y la exhaustividad acotada queda declarada (censura auto-oculta)
+    # and the bounded recall is declared (self-hiding censoring)
     assert r["juez_simulacion"]["exhaustividad"] < 0.7
     assert os.path.exists("results/b6_dem_hidraulico/capas.npz")
 
 
 def test_b7_conservative_intervals_recorded():
     r = _load("results/b7_incertidumbre/result.json")
-    # el intervalo cubre AL MENOS el nominal (conservador, nunca optimista)
+    # the interval covers AT LEAST the nominal (conservative, never
+    # optimistic)
     assert r["cobertura_dev"] >= 0.68
-    # y no es absurdo (cubrirlo todo seria no informar nada)
+    # and is not absurd (covering everything would inform nothing)
     assert r["cobertura_dev"] <= 0.95
     tab = np.asarray(r["tabla_sigma_z"], float)
-    assert np.isfinite(tab).sum() >= 8, "tabla sigma_z vacia"
+    assert np.isfinite(tab).sum() >= 8, "empty sigma_z table"
     assert os.path.exists("results/b7_incertidumbre/sigma_z.npz")
 
 
 if __name__ == "__main__":
     test_b5_negative_result_recorded()
-    print("OK  B5: resultado negativo registrado con control limpio")
+    print("OK  B5: negative result recorded with a clean control")
     test_b6_operating_point_recorded()
-    print("OK  B6: bandera validada en real; exhaustividad acotada declarada")
+    print("OK  B6: flag validated on real data; bounded recall declared")
     test_b7_conservative_intervals_recorded()
-    print("OK  B7: intervalos conservadores, nunca optimistas")
-    print("FASES B: estado registrado y consistente")
+    print("OK  B7: conservative intervals, never optimistic")
+    print("B PHASES: recorded state is consistent")

@@ -21,11 +21,12 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
 OUT = os.path.join("results", "p1_swot")
-# bbox de la ria (el confirmado; el AOI ampliado de descarga no cambia esto)
+# bbox of the ria (the confirmed one; the enlarged download AOI does not
+# change this)
 BBOX = (-5.47, 43.46, -5.33, 43.56)      # W, S, E, N
 COLLECTIONS = [
-    "SWOT_L2_HR_Raster_2.0",             # rejilla de alturas 100/250 m
-    "SWOT_L2_HR_PIXC_2.0",               # nube de puntos (pixel cloud)
+    "SWOT_L2_HR_Raster_2.0",             # 100/250 m height grid
+    "SWOT_L2_HR_PIXC_2.0",               # point cloud (pixel cloud)
 ]
 
 
@@ -36,8 +37,8 @@ def main():
 
     auth = earthaccess.login(strategy="netrc")
     if not auth.authenticated:
-        raise SystemExit("Earthdata: el login con ~/.netrc fallo — revisa "
-                         "usuario/contrasena")
+        raise SystemExit("Earthdata: login via ~/.netrc failed — check "
+                         "username/password")
     report = {"bbox": BBOX, "colecciones": {}}
     for short_name in COLLECTIONS:
         try:
@@ -56,13 +57,13 @@ def main():
             "n_dias_distintos": len(dates),
             "fechas_muestra": dates[:10],
         }
-        print(f"{short_name}: {len(grans)} granulos, "
-              f"{len(dates)} dias distintos "
+        print(f"{short_name}: {len(grans)} granules, "
+              f"{len(dates)} distinct days "
               f"({dates[0] if dates else '-'}..{dates[-1] if dates else '-'})",
               flush=True)
     os.makedirs(OUT, exist_ok=True)
     json.dump(report, open(os.path.join(OUT, "result.json"), "w"), indent=1)
-    print("escrito", OUT)
+    print("written", OUT)
 
 
 if __name__ == "__main__":

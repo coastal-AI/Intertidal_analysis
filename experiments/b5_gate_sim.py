@@ -100,7 +100,7 @@ def main():
     h0 = bank.at(0.0)
     rising = (tide_at(t_real + pd.Timedelta(minutes=30))
               - tide_at(t_real - pd.Timedelta(minutes=30))) > 0
-    print(f"banco listo ({time.time()-t0:.0f} s)", flush=True)
+    print(f"bank ready ({time.time()-t0:.0f} s)", flush=True)
 
     tpl = simulator.calibrate(CFG["datos"]["store"], CFG["datos"]["base"],
                               h0, epoch_years=CFG2["epoca_min"],
@@ -152,7 +152,7 @@ def main():
         for k in range(nb):
             cols = band_of == k
             zt = z_true[cols]
-            # 1 reloj: el mejor reloj UNICO del mismo juez (la diagonal)
+            # 1 clock: the best SINGLE clock of the same judge (diagonal)
             h1 = bank.at(float(r["tau_single"][k]))
             z1 = fit_z(Y64[:, cols], C64[:, cols], h1, lo, hi)
             h2 = np.where(rising, bank.at(float(r["tau_up"][k])),
@@ -171,9 +171,9 @@ def main():
         }
         print(f"[{world}] up={np.round(r['tau_up'], 1)} "
               f"dn={np.round(r['tau_dn'], 1)} "
-              f"adoptado={r['adopted'].astype(int)}\n"
-              f"  z 1reloj {np.round(rm1, 3)}\n"
-              f"  z 2relojes {np.round(rm2, 3)} "
+              f"adopted={r['adopted'].astype(int)}\n"
+              f"  z 1-clock {np.round(rm1, 3)}\n"
+              f"  z 2-clock {np.round(rm2, 3)} "
               f"({time.time()-t0:.0f} s)", flush=True)
 
     vh = verdict["con_histeresis"]
@@ -216,31 +216,31 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
-    ax[0].plot(centers, td_true, "k-", lw=2, label="bajada plantada")
+    ax[0].plot(centers, td_true, "k-", lw=2, label="planted falling")
     ax[0].plot(centers, vh["tau_dn_hat"], "o-", color="C3",
-               label="bajada estimada")
-    ax[0].plot(centers, tu_true, "k--", lw=1, label="subida plantada")
+               label="estimated falling")
+    ax[0].plot(centers, tu_true, "k--", lw=1, label="planted rising")
     ax[0].plot(centers, vh["tau_up_hat"], "s-", color="C0",
-               label="subida estimada")
+               label="estimated rising")
     ax[0].set_xlabel("s (km)")
     ax[0].set_ylabel("τ (min)")
     ax[0].legend(fontsize=8)
-    ax[0].set_title("dos relojes, recuperados por separado")
+    ax[0].set_title("two clocks, recovered separately")
     ax[1].plot(centers, vh["rmse_z_1reloj"], "x--", color="C3",
-               label="1 reloj")
+               label="1 clock")
     ax[1].plot(centers, vh["rmse_z_2relojes"], "o-", color="C0",
-               label="2 relojes")
+               label="2 clocks")
     ax[1].set_xlabel("s (km)")
-    ax[1].set_ylabel("RMSE de cota (m)")
+    ax[1].set_ylabel("elevation RMSE (m)")
     ax[1].legend(fontsize=8)
-    ax[1].set_title("y la cota mejora donde hay encharcamiento")
-    fig.suptitle(f"Puerta B5 — "
-                 f"{'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    ax[1].set_title("and elevation improves where ponding exists")
+    fig.suptitle(f"Gate B5 — "
+                 f"{'GREEN' if result['puerta']['PASA'] else 'RED'}",
                  fontweight="bold")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
     print(json.dumps(result["puerta"], indent=1), flush=True)
-    print(f"PUERTA B5: {'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    print(f"GATE B5: {'GREEN' if result['puerta']['PASA'] else 'RED'}",
           flush=True)
 
 

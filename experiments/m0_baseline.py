@@ -58,13 +58,13 @@ def main():
         zhat = s.read(1)[dev["row"], dev["col"]]
     m = np.isfinite(zhat) & np.isfinite(dev["elev"])
     y, v, blk = dev["elev"][m], zhat[m], dev["block"][m]
-    print(f"dev: {len(y)} puntos emparejados al producto · "
-          f"{dev['n_reserved_hidden']} reservados NUNCA leidos")
+    print(f"dev: {len(y)} points matched to the product · "
+          f"{dev['n_reserved_hidden']} reserved NEVER read")
 
     rng = np.random.default_rng(SEED_BOOT)
     pooled, ci = boot_slope(y, v, rng)
-    print(f"pendiente agrupada dev: {pooled:.3f}  "
-          f"IC95 [{ci[0]:.3f}, {ci[1]:.3f}]")
+    print(f"pooled dev slope: {pooled:.3f}  "
+          f"95% CI [{ci[0]:.3f}, {ci[1]:.3f}]")
 
     rows = []
     for b in np.unique(blk):
@@ -74,12 +74,12 @@ def main():
         sl, cib = boot_slope(y[s_], v[s_], rng, 1500)
         rows.append({"block": int(b), "n": int(s_.sum()),
                      "slope": sl, "ci": cib.tolist()})
-        print(f"  bloque {b:5d}  n={s_.sum():3d}  pendiente {sl:+.3f} "
+        print(f"  block {b:5d}  n={s_.sum():3d}  slope {sl:+.3f} "
               f"[{cib[0]:+.3f}, {cib[1]:+.3f}]")
     spread = (max(r["slope"] for r in rows) - min(r["slope"] for r in rows)
               if len(rows) >= 2 else 0.0)
-    print(f"bloques con {MIN_PER_BLOCK}+ puntos: {len(rows)} · "
-          f"recorrido de pendientes {spread:.3f}")
+    print(f"blocks with {MIN_PER_BLOCK}+ points: {len(rows)} · "
+          f"slope spread {spread:.3f}")
 
     os.makedirs(OUT, exist_ok=True)
     result = {
@@ -96,7 +96,7 @@ def main():
     }
     with open(os.path.join(OUT, "result.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, indent=1)
-    print(f"escrito {OUT}/result.json")
+    print(f"written {OUT}/result.json")
 
 
 if __name__ == "__main__":

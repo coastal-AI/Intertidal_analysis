@@ -40,8 +40,8 @@ NPZ = "data_v4/store/escalda_intermareal.npz"
 MOUTH = (51.443, 3.597)               # Vlissingen side, as in the prototype
 BBOX = {"west": 3.55, "south": 51.33, "east": 3.85, "north": 51.46,
         "crs": "EPSG:4326"}
-GAUGE_GRADIENT = 0.9                  # min/km, medido con mareografos
-TOL_GRADIENT = 0.5                    # min/km (ruido demostrado + margen)
+GAUGE_GRADIENT = 0.9                  # min/km, measured with tide gauges
+TOL_GRADIENT = 0.5                    # min/km (demonstrated noise + margin)
 
 
 def main():
@@ -61,7 +61,7 @@ def main():
     Y = np.nan_to_num(Y[have], nan=0.0).astype(np.float32)
     Cb = C[have] > 0
     wet = Cb & (Y > 0)
-    print(f"Escalda: {Y.shape[0]} escenas x {Y.shape[1]:,} px", flush=True)
+    print(f"Scheldt: {Y.shape[0]} scenes x {Y.shape[1]:,} px", flush=True)
 
     lat_c, lon_c = MOUTH
 
@@ -78,7 +78,7 @@ def main():
         tide_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
     rising = (tide_at(t_real + pd.Timedelta(minutes=30))
               - tide_at(t_real - pd.Timedelta(minutes=30))) > 0
-    print(f"banco listo ({time.time()-t0:.0f} s)", flush=True)
+    print(f"bank ready ({time.time()-t0:.0f} s)", flush=True)
 
     nb = CFG2["n_bandas"]
     edges, centers, band_of = te.make_bands(s_km, nb)
@@ -130,17 +130,17 @@ def main():
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(7, 4.4))
     ax.plot(centers, tau_a, "o-", color="C0",
-            label=f"M2a (gradiente {grad_a:.2f} min/km)")
+            label=f"M2a (gradient {grad_a:.2f} min/km)")
     ax.plot(centers, tau_d, "x--", color="C3",
-            label=f"M2d (gradiente {grad_d:.2f})")
+            label=f"M2d (gradient {grad_d:.2f})")
     xs = np.array([centers[0], centers[-1]])
     ax.plot(xs, tau_a[0] + GAUGE_GRADIENT * (xs - centers[0]), "k:",
-            label="mareografos: 0.9 min/km")
-    ax.set_xlabel("s a lo largo del eje (km)")
-    ax.set_ylabel("retardo respecto a EOT20 (min)")
+            label="tide gauges: 0.9 min/km")
+    ax.set_xlabel("s along the axis (km)")
+    ax.set_ylabel("lag vs EOT20 (min)")
     ax.legend(fontsize=8)
-    ax.set_title(f"Escalda: validacion externa — "
-                 f"{'PASA' if result['validacion']['PASA'] else 'NO PASA'}")
+    ax.set_title(f"Scheldt: external validation — "
+                 f"{'PASS' if result['validacion']['PASA'] else 'FAIL'}")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
     print(json.dumps(result["validacion"], indent=1), flush=True)

@@ -1,4 +1,5 @@
-"""Campana MAREA v2: encolar TODO en openEO, cosechar y procesar en paralelo.
+"""MAREA campaign v2: queue EVERYTHING on openEO, harvest and process in
+parallel.
 
 The v1 runner serialized download->process per cell (~days). The insight the
 user pushed for: openEO batch jobs run SERVER-side, so all cells can be
@@ -59,8 +60,8 @@ def main():
     manifest = (json.load(open(MANIFEST, encoding="utf-8"))
                 if os.path.exists(MANIFEST) else {})
     conn = connect(interactive=False)
-    log(f"CAMPANA v2: {len(cells)} celdas, {N_WORKERS} workers, "
-        f"purga={'no' if KEEP_CUBES else 'si'}")
+    log(f"CAMPAIGN v2: {len(cells)} cells, {N_WORKERS} workers, "
+        f"purge={'no' if KEEP_CUBES else 'yes'}")
 
     def done(name):
         return os.path.exists(f"runs/{name}/marea/result.json")
@@ -68,14 +69,14 @@ def main():
     def cube_path(name):
         return f"ndwi_cube_{name}.nc"
 
-    # ── SUBMIT continuo: CDSE limita a 30 jobs concurrentes por cuenta ───
-    # (medido: [400] ConcurrentJobLimit). La cola de envio se vacia desde el
-    # bucle de cosecha: cada job terminado libera un hueco.
+    # ── continuous SUBMIT: CDSE caps 30 concurrent jobs per account ──────
+    # (measured: [400] ConcurrentJobLimit). The submit queue is drained
+    # from the harvest loop: each finished job frees a slot.
     to_submit = [n for n, c in cells.items()
                  if not done(n) and not os.path.exists(cube_path(n))
                  and manifest.get(n, {}).get("estado")
                  not in ("enviado", "descargado")]
-    limit_hit = [0.0]        # instante del ultimo ConcurrentJobLimit
+    limit_hit = [0.0]        # instant of the last ConcurrentJobLimit
 
     def try_submit_next():
         if not to_submit or time.time() - limit_hit[0] < 120:
@@ -98,8 +99,8 @@ def main():
                 job.start()
                 manifest[name] = {"job": job.job_id, "estado": "enviado"}
                 save_manifest(manifest)
-                log(f"ENVIADO {name} -> {job.job_id} "
-                    f"(quedan {len(to_submit)-1} por encolar)")
+                log(f"SUBMITTED {name} -> {job.job_id} "
+                    f"({len(to_submit)-1} left to queue)")
                 to_submit.pop(0)
                 time.sleep(2.0)
                 return
@@ -107,18 +108,18 @@ def main():
                 msg = str(e)[:160]
                 if "ConcurrentJobLimit" in msg:
                     limit_hit[0] = time.time()
-                    return               # sin hueco: se reintenta luego
+                    return               # no slot: retried later
                 if "429" in msg:
                     time.sleep(20 * (intento + 1))
                     continue
-                log(f"ERROR envio {name}: {msg}")
-                to_submit.pop(0)         # celda problematica: no bloquear
+                log(f"ERROR submit {name}: {msg}")
+                to_submit.pop(0)         # problem cell: do not block
                 return
 
-    for _ in range(len(to_submit)):      # llenado inicial hasta el limite
+    for _ in range(len(to_submit)):      # initial fill up to the limit
         n0 = len(to_submit)
         try_submit_next()
-        if len(to_submit) == n0:         # limite alcanzado o pausa
+        if len(to_submit) == n0:         # limit reached or paused
             break
 
     # ── HARVEST + PROCESS ────────────────────────────────────────────────
@@ -134,15 +135,15 @@ def main():
                     r = json.load(open(res, encoding="utf-8"))
                     estado = r.get("estado", "?")
                     if estado == "ok":
-                        estado += (" OPERADOR" if r.get("con_operador")
-                                   else " identidad")
+                        estado += (" OPERATOR" if r.get("con_operador")
+                                   else " identity")
                 except Exception:
                     pass
-            log(f"FIN {n}: rc={rc} {estado}")
+            log(f"DONE {n}: rc={rc} {estado}")
             if rc == 0 and estado.startswith("ok") and not KEEP_CUBES:
                 try:
                     os.remove(cube_path(n))
-                    log(f"PURGADO cubo {n}")
+                    log(f"PURGED cube {n}")
                 except OSError:
                     pass
 
@@ -154,15 +155,15 @@ def main():
         running[name] = subprocess.Popen(
             [PY, "-c", code], stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL)
-        log(f"PROCESANDO {name}")
+        log(f"PROCESSING {name}")
 
-    # cubos ya en disco entran directos al pool
+    # cubes already on disk go straight into the pool
     pending_local = [n for n in cells
                      if os.path.exists(cube_path(n)) and not done(n)]
 
     while True:
         reap()
-        try_submit_next()                # rellenar huecos del limite de 30
+        try_submit_next()                # refill slots under the 30 limit
         while pending_local and len(running) < N_WORKERS:
             launch(pending_local.pop(0))
         pend = [n for n, m in manifest.items()
@@ -176,7 +177,7 @@ def main():
                 job = conn.job(manifest[name]["job"])
                 st = job.status()
             except Exception as e:
-                log(f"ERROR estado {name}: {str(e)[:120]}")
+                log(f"ERROR status {name}: {str(e)[:120]}")
                 try:
                     conn = connect(interactive=False)
                 except Exception:
@@ -184,19 +185,19 @@ def main():
                 break
             if st == "finished":
                 try:
-                    log(f"DESCARGANDO {name}...")
+                    log(f"DOWNLOADING {name}...")
                     job.get_results().download_file(cube_path(name))
                     manifest[name]["estado"] = "descargado"
                     save_manifest(manifest)
                     launch(name)
                 except Exception as e:
-                    log(f"ERROR descarga {name}: {str(e)[:160]}")
+                    log(f"ERROR download {name}: {str(e)[:160]}")
             elif st in ("error", "canceled"):
-                log(f"JOB FALLIDO {name}: {st}")
+                log(f"JOB FAILED {name}: {st}")
                 manifest[name]["estado"] = f"job_{st}"
                 save_manifest(manifest)
         time.sleep(45)
-    log("CAMPANA v2 COMPLETA")
+    log("CAMPAIGN v2 COMPLETE")
 
 
 if __name__ == "__main__":

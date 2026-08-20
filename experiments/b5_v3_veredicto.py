@@ -59,10 +59,10 @@ def main():
         if (strong & adopt).any() else float("inf")
     ok_split = rms_split <= 10.0
     ok_cota = bool((z_v3[strong] < z1[strong]).all())
-    esp = int((imp0 > delta).sum())          # por construccion 0 con el max
+    esp = int((imp0 > delta).sum())          # by construction 0 with the max
     dano = float(np.nanmax(np.asarray(v0["rmse_z_2relojes"])[inner]
                            - np.asarray(v0["rmse_z_1reloj"])[inner]))
-    # el dano del control se evalua con la regla v3: sin adopciones, sin dano
+    # the control's harm is judged by the v3 rule: no adoptions, no harm
     ok_ctrl = esp == 0
 
     out = {
@@ -81,7 +81,7 @@ def main():
     json.dump(out, open("results/b5_gate_sim/veredicto_v3.json", "w"),
               indent=1)
     print(json.dumps(out, indent=1))
-    print(f"PUERTA B5 (v3): {'VERDE' if out['puerta']['PASA'] else 'ROJA'}")
+    print(f"GATE B5 (v3): {'GREEN' if out['puerta']['PASA'] else 'RED'}")
 
 
 if __name__ == "__main__":

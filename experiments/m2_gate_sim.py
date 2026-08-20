@@ -95,7 +95,7 @@ def main():
                      for s in dates])
     t_real = pd.DatetimeIndex(pd.to_datetime(
         [times[s] for s in dates[have]])).tz_localize(None)
-    print(f"{int(have.sum())} escenas con hora real "
+    print(f"{int(have.sum())} scenes with real overpass hour "
           f"({dates[have][0]}..{dates[have][-1]})", flush=True)
 
     def tide_at(t):
@@ -115,11 +115,11 @@ def main():
     common = np.isin(dates[have], ds_hr)
     ref = hr["tide"][np.searchsorted(ds_hr, dates[have][common])]
     dmax = float(np.max(np.abs(h0[common] - ref)))
-    assert dmax < 0.02, f"banco vs serie sellada difieren {dmax:.3f} m"
+    assert dmax < 0.02, f"bank vs sealed series differ by {dmax:.3f} m"
     rising = (tide_at(t_real + pd.Timedelta(minutes=30))
               - tide_at(t_real - pd.Timedelta(minutes=30))) > 0
-    print(f"banco de {len(bank_taus)} desplazamientos listo · "
-          f"{int(rising.sum())} subiendo / {int((~rising).sum())} bajando "
+    print(f"bank of {len(bank_taus)} shifts ready · "
+          f"{int(rising.sum())} rising / {int((~rising).sum())} falling "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     # ── template + geometry ──────────────────────────────────────────────
@@ -143,7 +143,7 @@ def main():
     s_px = s_km_all[rows]
     band_of = band_all[rows]
     z_true = tpl["z"][rows]
-    print(f"{len(rows):,} px plantados en {nb} bandas · centros "
+    print(f"{len(rows):,} px planted in {nb} bands · centres "
           f"{np.round(centers, 2)} km", flush=True)
 
     # ── the planted truth ────────────────────────────────────────────────
@@ -162,7 +162,7 @@ def main():
                               mechanisms=(mech,), rising=rising,
                               s_km=s_px, C_real=C_real, template_rows=rows)
     wet = C & (Y > 0)
-    print(f"archivo sintetico {Y.shape[0]}x{Y.shape[1]:,} listo "
+    print(f"synthetic archive {Y.shape[0]}x{Y.shape[1]:,} ready "
           f"({time.time()-t0:.0f} s)", flush=True)
 
     # ── the four estimators, blind to the truth ──────────────────────────
@@ -171,7 +171,7 @@ def main():
     mx = CFG["max_px_banda"]
 
     est = {}
-    print("M2d (Granadeiro, el liston)...", flush=True)
+    print("M2d (Granadeiro, the bar)...", flush=True)
     est["m2d"] = {"tau": te.m2d_flood_ebb(
         Y.astype(np.float64), C.astype(np.float64), bank, rising, band_of,
         nb, tau_grid, rng=np.random.default_rng(CFG["seed"] + 1),
@@ -179,19 +179,19 @@ def main():
     print(f"  tau_d = {np.round(est['m2d']['tau'], 1)} "
           f"({time.time()-t0:.0f} s)", flush=True)
 
-    print("M2b (concordancia por pixel)...", flush=True)
+    print("M2b (per-pixel concordance)...", flush=True)
     est["m2b"] = {"tau": te.m2b_concordance(
         wet, C, bank, band_of, nb, tau_grid,
         rng=np.random.default_rng(CFG["seed"] + 2), max_px_band=mx["m2b"])}
     print(f"  tau_b = {np.round(est['m2b']['tau'], 1)}", flush=True)
 
-    print("M2c (waterline por rangos)...", flush=True)
+    print("M2c (rank-based waterline)...", flush=True)
     est["m2c"] = {"tau": te.m2c_waterline(
         wet, C, bank, band_of, nb, tau_grid,
         min_cover=CFG["m2c_min_cobertura"])}
     print(f"  tau_c = {np.round(est['m2c']['tau'], 1)}", flush=True)
 
-    print("M2a (Rasch/IRT, solo-fase, sigma perfilada)...", flush=True)
+    print("M2a (Rasch/IRT, phase-only, profiled sigma)...", flush=True)
     sg_prof = tuple(CFG["sigma_perfil_m"])
     r2a = te.m2a_rasch(wet, C, bank, band_of, centers, nb,
                        sigma0=CFG["sigma0_m"], sg_grid=sg_prof,
@@ -214,7 +214,7 @@ def main():
                                 float(r2a["tau"][-1]), a_grid, z_grid,
                                 sg_prof)
     nll_range = float(prof.max() - prof.min())
-    print(f"  perfil NLL(alpha) banda alta: recorrido {nll_range:.5f}",
+    print(f"  NLL(alpha) profile, upper band: range {nll_range:.5f}",
           flush=True)
 
     # ── verdict against the planted truth ────────────────────────────────
@@ -261,27 +261,27 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
-    ax[0].plot(centers, tau_true, "k-", lw=2, label="plantado")
+    ax[0].plot(centers, tau_true, "k-", lw=2, label="planted")
     style = {"m2a": ("C0", "o", "M2a Rasch"), "m2b": ("C2", "s", "M2b copulas"),
              "m2c": ("C4", "^", "M2c waterline"),
-             "m2d": ("C3", "x", "M2d Granadeiro (liston)")}
+             "m2d": ("C3", "x", "M2d Granadeiro (bar)")}
     for k, (c, m, lab) in style.items():
         ax[0].plot(centers, est[k]["tau"], m + "-", color=c, alpha=0.8,
                    label=f"{lab} (RMSE {rmse[k]:.1f} min)")
-    ax[0].set_xlabel("s desde la boca (km)")
-    ax[0].set_ylabel("retardo τ (min)")
+    ax[0].set_xlabel("s from the mouth (km)")
+    ax[0].set_ylabel("lag τ (min)")
     ax[0].legend(fontsize=8)
-    ax[0].set_title("fase: plantada vs recuperada")
+    ax[0].set_title("phase: planted vs recovered")
     ax[1].plot(a_grid, prof, "o-", color="C0")
     ax[1].axvline(alpha_true[-1], color="k", lw=1, ls="--",
-                  label=f"α plantado ({alpha_true[-1]:.2f})")
-    ax[1].set_xlabel("ganancia α impuesta")
-    ax[1].set_ylabel("NLL media (banda alta, z y σ perfilados)")
+                  label=f"planted α ({alpha_true[-1]:.2f})")
+    ax[1].set_xlabel("imposed gain α")
+    ax[1].set_ylabel("mean NLL (upper band, z and σ profiled)")
     ax[1].legend(fontsize=8)
-    ax[1].set_title(f"el teorema afin, visible: recorrido "
-                    f"{nll_range:.4f} (umbral "
+    ax[1].set_title(f"the affine theorem, visible: range "
+                    f"{nll_range:.4f} (threshold "
                     f"{CFG['puerta']['max_recorrido_nll_alpha']})")
-    fig.suptitle(f"Puerta M2 — {'VERDE' if result['puerta']['PASA'] else 'ROJA'}",
+    fig.suptitle(f"Gate M2 — {'GREEN' if result['puerta']['PASA'] else 'RED'}",
                  fontweight="bold")
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure.png"), dpi=130)
@@ -289,8 +289,8 @@ def main():
     print(json.dumps({k: result[k] for k in
                       ("rmse_fase_min", "perfil_nll_alpha", "puerta")},
                      indent=1), flush=True)
-    print(f"PUERTA M2 (simulacion): "
-          f"{'VERDE' if result['puerta']['PASA'] else 'ROJA — STOP'}",
+    print(f"GATE M2 (simulation): "
+          f"{'GREEN' if result['puerta']['PASA'] else 'RED — STOP'}",
           flush=True)
 
 

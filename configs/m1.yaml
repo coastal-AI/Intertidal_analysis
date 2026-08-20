@@ -1,22 +1,23 @@
-# Fase M1 — geometría. Nada cableado: cada umbral con su porqué.
+# Phase M1 — geometry. Nothing hardwired: every threshold with its rationale.
 
 pixel_m: 10.0
-epoca_min: 2023        # la época validada; el 10y queda para identificabilidad M2
-n_niveles: 4           # cuartiles de marea -> 4 máscaras de nivel
-min_obs_bin: 3         # un píxel vota en un bin si lo vieron >=3 escenas claras
-banda_m: 250.0         # ancho de banda en s para medir el ancho mojado
-n_boot: 30             # réplicas de bootstrap POR ESCENAS (unidad independiente)
-tol_mono_m: 30.0       # tolerancia de no-monotonía de ancho(s,h): ~3 px de ruido
+epoca_min: 2023        # the validated epoch; the 10y one is left for M2
+                       # identifiability
+n_niveles: 4           # tide quartiles -> 4 level masks
+min_obs_bin: 3         # a pixel votes in a bin if >=3 clear scenes saw it
+banda_m: 250.0         # band width in s for measuring the wet width
+n_boot: 30             # bootstrap replicates BY SCENE (independent unit)
+tol_mono_m: 30.0       # width(s,h) non-monotonicity tolerance: ~3 px noise
 seed: 20260818
 
 puerta:
-  # 0.85 fue una conjetura a ciegas; medido 0.788 en la adopción. Las dos
-  # coordenadas tienen DEFINICIONES distintas (distancia desde la boca vs
-  # distancia al agua permanente): 0.79 confirma consistencia sin exigir
-  # identidad. Recalibrado con causa, registrado en PHASE_LOG.
+  # 0.85 was a blind guess; measured 0.788 at adoption. The two
+  # coordinates have distinct DEFINITIONS (distance from the mouth vs
+  # distance to permanent water): 0.79 confirms consistency without
+  # demanding identity. Recalibrated with cause, recorded in PHASE_LOG.
   min_corr_s_canal: 0.75
   min_frac_bandas_monotonas: 0.85
-  max_aislados_frac: 0.05      # >5 % de píxeles inalcanzables = máscara rota
+  max_aislados_frac: 0.05      # >5 % unreachable pixels = broken mask
 
 datos:
   canal: data_v4/store/canal.npz
