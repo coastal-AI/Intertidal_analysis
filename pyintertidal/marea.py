@@ -96,17 +96,73 @@ def extract(cube_path):
                 inter=inter, bbox=bbox, crs_wkt=str(crs_cube.to_wkt()))
 
 
-def _invert(Y, C, h, lo, hi, mu_points=50, chunk=4000):
+def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
+                  min_obs=8, min_b=0.15, max_b=2.5, max_a=2.5):
+    """Per-pixel elevation from NDWI series under a level series ``h``.
+
+    THE canonical inversion of the package: closed-form (a, b) sweep over a
+    mu grid with the standard guards (adopted at prototype time; unbounded
+    amplitudes exploded in frozen prediction). Every experiment and the
+    campaign call this one function — five near-copies were folded into it
+    at delivery time. Returns ``(z, sigma)``, NaN where the guards reject.
+    """
+    lo = float(np.min(h)) if lo is None else lo
+    hi = float(np.max(h)) if hi is None else hi
     z = np.full(Y.shape[1], np.nan)
     sg_out = np.full(Y.shape[1], np.nan)
     grid = np.linspace(lo, hi, mu_points)
     for j in range(0, Y.shape[1], chunk):
         s = slice(j, min(j + chunk, Y.shape[1]))
-        a, b, mu, sg, _, N = _fit_block(Y[:, s], C[:, s], h, grid, SG_GRID)
-        ok = (N >= 8) & (b > 0.15) & (b < 2.5) & (np.abs(a) < 2.5)
+        a, b, mu, sg, _, N = _fit_block(np.asarray(Y[:, s], np.float64),
+                                        np.asarray(C[:, s], np.float64),
+                                        h, grid, SG_GRID)
+        ok = ((N >= min_obs) & (b > min_b) & (b < max_b)
+              & (np.abs(a) < max_a))
         z[s] = np.where(ok, mu, np.nan)
         sg_out[s] = np.where(ok, sg, np.nan)
     return z, sg_out
+
+
+_invert = invert_series          # backward-compatible internal alias
+
+
+def build_bank(lat, lon, times, bank_taus=None, model="EOT20",
+               tide_dir="tide_models"):
+    """Shift bank + limb flags in ONE tide-model call.
+
+    Every consumer used to make one ``model_tides`` call per shift (13+),
+    each re-reading the constituent grids from disk — measured as ~80 % of
+    a cell's wall time. All shifted instants go into a single prediction
+    over the sorted unique times; each series is then a positional lookup.
+    Returns ``(bank, rising)``.
+    """
+    import pandas as pd
+    from eo_tides.model import model_tides
+    from . import tide_estimators as te
+
+    bank_taus = list(BANK_TAUS if bank_taus is None else bank_taus)
+    shifted = [times - pd.Timedelta(minutes=float(tv)) for tv in bank_taus]
+    limb = [times - pd.Timedelta(minutes=30),
+            times + pd.Timedelta(minutes=30)]
+    all_t = pd.DatetimeIndex(np.unique(np.concatenate(
+        [s.values for s in shifted + limb])))
+    h_all = model_tides(x=[lon], y=[lat], time=all_t, model=model,
+                        directory=tide_dir, crs="EPSG:4326",
+                        extrapolate=True, cutoff=np.inf,
+                        parallel=False).reset_index().sort_values(
+        "time")["tide_height"].to_numpy(float)
+
+    def at(tt):
+        pos = np.searchsorted(all_t.values, tt.values)
+        return h_all[np.minimum(pos, len(h_all) - 1)]
+
+    bank = te.ShiftBank(bank_taus, [at(s) for s in shifted])
+    rising = (at(limb[1]) - at(limb[0])) > 0
+    return bank, rising
+
+
+BANK_TAUS = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0,
+             75.0, 90.0, 105.0, 120.0]
 
 
 def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
@@ -122,7 +178,6 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     name = name or os.path.splitext(os.path.basename(cube_path))[0]
     os.makedirs(out_dir, exist_ok=True)
     use_system_certificates()
-    from eo_tides.model import model_tides
 
     ex = extract(cube_path)
     H, W = ex["shape"]
@@ -159,27 +214,8 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     lat_c = 0.5 * (ex["bbox"]["south"] + ex["bbox"]["north"])
     lon_c = 0.5 * (ex["bbox"]["west"] + ex["bbox"]["east"])
 
-    # ONE model call for the whole shift bank: the naive version made 13
-    # (one per shift) and each re-reads the constituent grids from disk —
-    # measured as ~80 % of a cell's wall time. Here every shifted instant
-    # goes into a single prediction over the sorted unique times, and each
-    # shifted series is then looked up by position.
-    bank_taus = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0,
-                 75.0, 90.0, 105.0, 120.0]
-    all_t = pd.DatetimeIndex(np.unique(np.concatenate(
-        [(t_real - pd.Timedelta(minutes=tv)).values for tv in bank_taus])))
-    h_all = model_tides(x=[lon_c], y=[lat_c], time=all_t, model=model,
-                        directory=tide_dir, crs="EPSG:4326",
-                        extrapolate=True, cutoff=np.inf,
-                        parallel=False).reset_index().sort_values(
-        "time")["tide_height"].to_numpy(float)
-
-    def series_at(times):
-        pos = np.searchsorted(all_t.values, times.values)
-        return h_all[np.minimum(pos, len(h_all) - 1)]
-
-    bank = te.ShiftBank(bank_taus, [
-        series_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
+    bank, _rising = build_bank(lat_c, lon_c, t_real, model=model,
+                               tide_dir=tide_dir)
     h0 = bank.at(0.0)
 
     # interior tide (only with a usable mouth anchor)
