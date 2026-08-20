@@ -159,17 +159,27 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     lat_c = 0.5 * (ex["bbox"]["south"] + ex["bbox"]["north"])
     lon_c = 0.5 * (ex["bbox"]["west"] + ex["bbox"]["east"])
 
-    def tide_at(t):
-        return model_tides(x=[lon_c], y=[lat_c], time=t, model=model,
-                           directory=tide_dir, crs="EPSG:4326",
-                           extrapolate=True, cutoff=np.inf,
-                           parallel=False).reset_index().sort_values(
-            "time")["tide_height"].to_numpy(float)
-
+    # ONE model call for the whole shift bank: the naive version made 13
+    # (one per shift) and each re-reads the constituent grids from disk —
+    # measured as ~80 % of a cell's wall time. Here every shifted instant
+    # goes into a single prediction over the sorted unique times, and each
+    # shifted series is then looked up by position.
     bank_taus = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0,
                  75.0, 90.0, 105.0, 120.0]
+    all_t = pd.DatetimeIndex(np.unique(np.concatenate(
+        [(t_real - pd.Timedelta(minutes=tv)).values for tv in bank_taus])))
+    h_all = model_tides(x=[lon_c], y=[lat_c], time=all_t, model=model,
+                        directory=tide_dir, crs="EPSG:4326",
+                        extrapolate=True, cutoff=np.inf,
+                        parallel=False).reset_index().sort_values(
+        "time")["tide_height"].to_numpy(float)
+
+    def series_at(times):
+        pos = np.searchsorted(all_t.values, times.values)
+        return h_all[np.minimum(pos, len(h_all) - 1)]
+
     bank = te.ShiftBank(bank_taus, [
-        tide_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
+        series_at(t_real - pd.Timedelta(minutes=tv)) for tv in bank_taus])
     h0 = bank.at(0.0)
 
     # interior tide (only with a usable mouth anchor)
