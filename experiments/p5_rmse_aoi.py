@@ -60,6 +60,8 @@ SITES = {
     "vadehavet": {"cube": "ndwi_cube_vadehavet_2019_2021.nc",
                   "pixel_m": 10.0,
                   "ref": "bathy_candidatos/1528_IB_Danske_Vadden_2020_64.nc"},
+    "aveiro": {"cube": "ndwi_cube_aveiro_2023-2025.nc", "pixel_m": 10.0,
+               "ref": "bathy_candidatos/590_HR_Lidar_Norte.nc"},
 }
 
 
@@ -156,20 +158,33 @@ def main():
         method="nearest").values
 
     both = np.isfinite(z_ref) & np.isfinite(z_uni) & np.isfinite(z_op)
+    # dominio hidraulicamente CONECTADO: un recinto sin camino navegable a
+    # la boca (salinas, esteros con compuerta) tiene s = NaN — se moja sin
+    # obedecer a la marea y no debe puntuar a un metodo mareal
+    conectado = both & np.isfinite(s_km)
     res = {}
-    for name, zz in (("uniforme", z_uni), ("operador", z_op)):
-        e = zz[both] - z_ref[both]
-        res[name] = {
-            "n": int(both.sum()),
-            "pendiente": float(np.polyfit(z_ref[both], zz[both], 1)[0]),
-            "rmse_centrado": float(np.sqrt(np.mean(
-                (e - np.median(e)) ** 2))),
-            "offset_datum_mediano": float(np.median(e)),
-        }
-        print(f"  [{name}] n={res[name]['n']:,} "
-              f"pendiente={res[name]['pendiente']:.3f} "
-              f"RMSE centrado={res[name]['rmse_centrado']:.3f} m",
-              flush=True)
+    for dom_name, dom in (("todos", both), ("conectados", conectado)):
+        res[dom_name] = {}
+        for name, zz in (("uniforme", z_uni), ("operador", z_op)):
+            e = zz[dom] - z_ref[dom]
+            res[dom_name][name] = {
+                "n": int(dom.sum()),
+                "pendiente": float(np.polyfit(z_ref[dom], zz[dom], 1)[0]),
+                "rmse_centrado": float(np.sqrt(np.mean(
+                    (e - np.median(e)) ** 2))),
+                "offset_datum_mediano": float(np.median(e)),
+            }
+            r = res[dom_name][name]
+            print(f"  [{dom_name}/{name}] n={r['n']:,} "
+                  f"pendiente={r['pendiente']:.3f} "
+                  f"RMSE centrado={r['rmse_centrado']:.3f} m", flush=True)
+    np.savez_compressed(os.path.join(out_dir, "z_scores.npz"),
+                        z_uni=z_uni.astype(np.float32),
+                        z_op=z_op.astype(np.float32),
+                        z_ref=z_ref.astype(np.float32),
+                        s_km=s_km.astype(np.float32), keep=keep,
+                        shape=np.array(SH))
+    res = res["conectados"] | {"todos": res["todos"]}
 
     result = {
         "sitio": site, "n_escenas": int(have.sum()),

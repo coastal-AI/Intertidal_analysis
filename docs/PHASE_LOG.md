@@ -430,3 +430,18 @@ operación estampado (precisión ~0.7 cuando se enciende; exhaustividad acotada 
 contra censura total — la ausencia de bandera NO garantiza terreno). Vía de mejora
 anotada: detector combinado geometría + índice de encharcamiento por rama (charcos),
 que ataca la censura por la señal de asimetría que el relleno no puede borrar.
+
+## 2026-08-20 — Aveiro: segunda victoria de cota, con su anatomía honesta
+
+Cubo nuevo de la Ría de Aveiro (462 escenas, 485.928 px intermareales, s hasta 17 km)
+contra el LiDAR EMODnet (590_HR_Lidar_Norte). El detector mide un retardo interior
+fuerte y monótono: τ = [0, 41, 41, 45, 52, 56] min — la laguna somera confinada que la
+física prometía. Cota, dominio hidráulicamente conectado (los recintos sin camino a la
+boca — salinas/esteros con compuerta — quedan fuera por s=NaN):
+- global: 0.590 → 0.580 m y pendiente 0.455 → 0.479 con el operador;
+- POR BANDAS, la firma física: la boca (τ=0) empata en 0.97 m — es el canal de entrada
+  migrando contra una verdad con años, ruido morfodinámico que golpea igual a ambos y
+  diluye el global —, y las bandas interiores ganan +30, **+53, +46, +24 mm** justo
+  donde el retardo crece (41→56 min). 4 de 5 bandas interiores a favor.
+Victoria de cota nº 2 (tras el Tajo, −11 %), esta vez en laguna/ría corta somera; el
+techo absoluto (~0.45 m) lo pone el desfase temporal de la verdad, no el método.
