@@ -1,131 +1,132 @@
-# STORY — el hilo narrativo del método (para paper, póster y repo)
+# STORY — the narrative thread of the method (for paper, poster and repo)
 
-Este documento es el argumento científico en orden lógico, no cronológico. Cada
-afirmación lleva su evidencia y su artefacto reproducible. El texto final de los papers
-lo escribe el humano; esto es el esqueleto que no debe perderse.
+This document is the scientific argument in logical, not chronological, order. Every
+claim carries its evidence and its reproducible artifact. The final text of the papers
+is written by the human; this is the skeleton that must not be lost.
 
-## 1. El problema, en una frase
+## 1. The problem, in one sentence
 
-Un archivo de satélite óptico convierte la marea en un escáner del relieve intermareal:
-cada píxel se moja cuando el agua supera su cota, así que 465 fotos fechadas son 465
-preguntas de sí/no sobre cada punto del fango. El método estándar (sigmoide por píxel
-contra la marea de un modelo oceánico) es *prior art* — Catalão & Nico 2017, Bué 2020,
-Granadeiro 2021, Chen & Wang 2025 — y este proyecto NO reclama su invención.
+An optical satellite archive turns the tide into a scanner of the intertidal relief:
+each pixel gets wet when the water rises above its elevation, so 465 dated photos are 465
+yes/no questions about every point of the mudflat. The standard method (per-pixel sigmoid
+against the tide of an ocean model) is *prior art* — Catalão & Nico 2017, Bué 2020,
+Granadeiro 2021, Chen & Wang 2025 — and this project does NOT claim its invention.
 
-## 2. Lo que la literatura reporta y nadie explicaba: la compresión
+## 2. What the literature reports and nobody explained: the compression
 
-Todos los métodos recuperan el relieve *comprimido* (pendiente contra terreno < 1;
-aquí: 0.73–0.78 según partición). La sospecha universal es «la marea dentro del
-estuario no es la del modelo». Este proyecto la persiguió con disciplina de nulos y el
-resultado es la columna vertebral del paper:
+All methods recover the relief *compressed* (slope against terrain < 1;
+here: 0.73–0.78 depending on the partition). The universal suspicion is "the tide inside
+the estuary is not the model's". This project chased it with null discipline and the
+result is the backbone of the paper:
 
-| hipótesis sobre la compresión | veredicto | evidencia |
+| hypothesis about the compression | verdict | evidence |
 |---|---|---|
-| lámina inclinada (3 variantes) | muerta | nulos sintéticos; explica ≤1.5 % |
-| marejada (barómetro inverso) | muerta | no supera a marejada barajada |
-| censura del techo de marea | retractada | análisis circular (holgura ≡ −cota) |
-| deriva morfológica (2 años imagen-campaña) | muerta | 3 épocas de igual n, IC cruza 0 |
-| dilución por regresión | muerta | el ruido está en la respuesta; nulo maestro: pendiente 1.019 |
-| **muestreo punto-contra-píxel de la validación** | **CONFIRMADA** | emparejado k=1 vs k=2: c = 1.041 [0.79, 1.58]; σ_e = 0.214 m por 2 rutas independientes |
+| tilted water surface (3 variants) | dead | synthetic nulls; explains ≤1.5% |
+| surge (inverse barometer) | dead | does not beat shuffled surge |
+| tide-ceiling censoring | retracted | circular analysis (clearance ≡ −elevation) |
+| morphological drift (2 years imagery-campaign) | dead | 3 epochs of equal n, CI crosses 0 |
+| regression dilution | dead | the noise is in the response; master null: slope 1.019 |
+| **point-vs-pixel sampling of the validation** | **CONFIRMED** | matched k=1 vs k=2: c = 1.041 [0.79, 1.58]; σ_e = 0.214 m by 2 independent routes |
 
-**Tesis 1 (paper de validación):** buena parte de la «compresión» que reporta esta
-literatura es un artefacto de comparar un punto de GNSS con la mediana de un píxel de
-10 m. Del error reportado contra RTK, el 61–88 % era la referencia, no el método.
-Herramienta citable: `pyintertidal.validation.point_sampling_error`. Receta de campaña
-que lo arregla: ~18 puntos por píxel.
+**Thesis 1 (validation paper):** a good part of the "compression" this
+literature reports is an artifact of comparing a GNSS point with the median of a 10 m
+pixel. Of the error reported against RTK, 61–88% was the reference, not the method.
+Citable tool: `pyintertidal.validation.point_sampling_error`. Campaign recipe
+that fixes it: ~18 points per pixel.
 
-## 3. El mareógrafo distribuido: la marea interior desde el propio archivo
+## 3. The distributed tide gauge: the interior tide from the archive itself
 
-Aun así la marea interior difiere de la oceánica, y es medible SIN instrumentos
-tratando los píxeles como mareógrafos binarios (la senda que abrió Granadeiro 2021 con
-retardos cotidales; tabla ellos/nosotros en `docs/prior_art_granadeiro.md`).
+Even so the interior tide differs from the oceanic one, and it is measurable WITHOUT
+instruments by treating the pixels as binary tide gauges (the path opened by Granadeiro
+2021 with cotidal lags; them/us table in `docs/prior_art_granadeiro.md`).
 
-Nuestros deltas sobre ese listón, cada uno con puerta pre-registrada:
+Our deltas over that bar, each with a pre-registered gate:
 
-1. **Histéresis por ramas** (τ_subida ≠ τ_bajada por tramo): el encharcamiento se mide,
-   no se asume. En Villaviciosa la banda alta pasa la puerta fuera de muestra con
-   (τ_s=0, τ_b=+20 min) y control especular en contra.
-2. **Amplitud juzgada por el dato**: A=0.85 (amortiguación) aporta donde hay física y
-   es dirección plana donde no — el juez es la verosimilitud en escenas retenidas.
-3. **Validación externa con mareógrafos que el método nunca ve**: Escalda — gradiente
-   de retardo de la imagen 0.9 min/km = el de los mareógrafos; recupera el 75 % de la
-   corrección de nivel alcanzable en Terneuzen con cero instrumentos.
-4. **Tabla de alias explícita**: S2 (constituyente solar) es invisible por construcción
-   para un sensor heliosíncrono; M2/N2/O1/Q1/M4/M6 estimables. Límite duro del campo.
-5. **Batimetría del canal de regalo**: h̄(s) = c²/g desde la celeridad del retardo, con
-   test de variedad hidráulica (Escalda: 35 m, plausible; donde da valores imposibles,
-   eso ES el mapa de charco, y se reporta como tal).
+1. **Per-limb hysteresis** (τ_subida ≠ τ_bajada per reach): ponding is measured,
+   not assumed. In Villaviciosa the high band passes the out-of-sample gate with
+   (τ_s=0, τ_b=+20 min) and the specular control against it.
+2. **Amplitude judged by the data**: A=0.85 (damping) contributes where there is physics
+   and is a flat direction where there is not — the judge is the likelihood on held-out
+   scenes.
+3. **External validation with tide gauges the method never sees**: Scheldt — imagery lag
+   gradient 0.9 min/km = the tide gauges'; recovers 75% of the achievable
+   level correction at Terneuzen with zero instruments.
+4. **Explicit alias table**: S2 (solar constituent) is invisible by construction
+   for a sun-synchronous sensor; M2/N2/O1/Q1/M4/M6 estimable. A hard limit of the field.
+5. **Channel bathymetry for free**: h̄(s) = c²/g from the celerity of the lag, with a
+   hydraulic plausibility test (Scheldt: 35 m, plausible; where it gives impossible
+   values, that IS the puddle map, and it is reported as such).
 
-## 4. El tribunal: por qué esto es creíble
+## 4. The tribunal: why this is credible
 
-Nada se afirma contra cero; todo se afirma contra un **nulo igualado** fabricado por un
-simulador calibrado desde el archivo (marea real, píxeles remuestreados enteros, ruido
-por píxel + sistemático de escena + incertidumbre de nivel deconvuelta). El nulo
-reproduce las marginales del archivo (puerta M0.2) y es insesgado en el interior de la
-ventana de marea — y reproduce el sesgo de borde real del estimador, que es exactamente
-lo que un tribunal debe hacer. Dos resultados con p≈1e-37 murieron hoy contra nulos
-bien igualados: esa es la razón de existir de esta arquitectura.
+Nothing is claimed against zero; everything is claimed against a **matched null**
+manufactured by a simulator calibrated from the archive (real tide, pixels resampled
+whole, per-pixel noise + scene-wide systematic + deconvolved level uncertainty). The null
+reproduces the archive's marginals (gate M0.2) and is unbiased in the interior of the
+tidal window — and reproduces the estimator's real edge bias, which is exactly
+what a tribunal must do. Two results with p≈1e-37 died today against well-matched
+nulls: that is this architecture's reason to exist.
 
-**Tesis 2 (paper del método):** corrección por mecanismo del nivel interior + el marco
-de validación (puertas fuera de muestra, controles especulares, sellado de predicciones,
-reservado intocable) como contribución metodológica reutilizable.
+**Thesis 2 (method paper):** mechanism-based correction of the interior level + the
+validation framework (out-of-sample gates, specular controls, sealed predictions,
+untouchable holdout) as a reusable methodological contribution.
 
-## 5. Cero etiquetas, y por qué
+## 5. Zero labels, and why
 
-Entrenar un corrector con 64 etiquetas RTK es significativamente PEOR (−0.038 m,
-IC95 [−0.065, −0.014]) que entrenarlo con cero etiquetas sobre el simulador calibrado.
-El diseño entero es transferible a costas sin campañas: ese es el argumento de escala
-(116 celdas de la costa norte, Parte IV).
+Training a corrector with 64 RTK labels is significantly WORSE (−0.038 m,
+CI95 [−0.065, −0.014]) than training it with zero labels on the calibrated simulator.
+The whole design is transferable to coasts without campaigns: that is the scaling
+argument (116 cells of the northern coast, Part IV).
 
-## 6. Reproducibilidad práctica
+## 6. Practical reproducibility
 
-- datos sellados (`sealed/registry.jsonl`, SHA256+fecha, append-only);
-- particiones deterministas (semillas en `configs/`), reservado con guard R1;
-- cada puerta es un test (`tests/test_gate_*.py`); cada experimento un script con
-  config y resultados versionados por hash;
-- sin nada cableado: umbrales y tolerancias viven en `configs/*.yaml` con su porqué.
+- sealed data (`sealed/registry.jsonl`, SHA256+date, append-only);
+- deterministic partitions (seeds in `configs/`), holdout with guard R1;
+- every gate is a test (`tests/test_gate_*.py`); every experiment a script with
+  config and results versioned by hash;
+- nothing hard-wired: thresholds and tolerances live in `configs/*.yaml` with their why.
 
-## Tesis 3 (fase M2): la marea interior se puede FECHAR desde el archivo, pero no ESCALAR
+## Thesis 3 (phase M2): the interior tide can be TIMED from the archive, but not SCALED
 
-Lo que un archivo binario de mojado/seco puede y no puede medir de la marea interior,
-demostrado con verdad plantada (no argumentado):
+What a binary wet/dry archive can and cannot measure of the interior tide,
+demonstrated with planted truth (not argued):
 
-- **La fase sí.** Cuatro estimadores independientes — verosimilitud Rasch (M2a),
-  concordancia por píxel (M2b), rangos de área inundada (M2c) y el método de
-  literatura de discrepancia flujo/reflujo (M2d, Granadeiro 2021) — recuperan un
-  perfil de retardo plantado de 0→40 min con errores de 5–13 min, bajo muestreo
-  temporal real, nubes reales y ruido calibrado del archivo.
-- **La amplitud no, y es un teorema, no una limitación de implementación.** La
-  verosimilitud de respuestas binarias es exactamente invariante bajo
-  (α, z_p, σ_p) → (c·α, c·z_p, c·σ_p): la ganancia por banda es indistinguible de un
-  reescalado de las cotas y anchuras locales. La puerta v1 lo hizo visible del modo
-  más instructivo: el optimizador gastó α en compensar σ mal especificada y devolvió
-  el límite de la caja. La puerta v2 exige exponer la curva NLL(α) plana en vez de
-  reportar un número inventado.
-- **Consecuencia de diseño**: el operador T corrige fase (identificable, validada
-  externamente en el Escalda); la amplitud solo entra donde el dato CONTINUO la
-  respalda fuera de muestra (el juez OOS del método b2: A=0.85 en la única banda
-  donde añade poder predictivo). Los métodos publicados que reportan ganancias
-  mareales desde waterlines binarias deberían pasar por esta misma puerta.
+- **Phase, yes.** Four independent estimators — Rasch likelihood (M2a),
+  per-pixel concordance (M2b), flooded-area ranks (M2c) and the literature
+  method of flood/ebb discrepancy (M2d, Granadeiro 2021) — recover a
+  planted lag profile of 0→40 min with errors of 5–13 min, under real temporal
+  sampling, real clouds and calibrated archive noise.
+- **Amplitude, no, and it is a theorem, not an implementation limitation.** The
+  likelihood of binary responses is exactly invariant under
+  (α, z_p, σ_p) → (c·α, c·z_p, c·σ_p): per-band gain is indistinguishable from a
+  rescaling of the local elevations and widths. Gate v1 made it visible in the most
+  instructive way: the optimizer spent α compensating a misspecified σ and returned
+  the bound of the box. Gate v2 requires exposing the flat NLL(α) curve instead of
+  reporting an invented number.
+- **Design consequence**: the operator T corrects phase (identifiable, validated
+  externally on the Scheldt); the amplitude only enters where the CONTINUOUS data
+  backs it out of sample (the OOS judge of method b2: A=0.85 in the only band
+  where it adds predictive power). Published methods that report tidal gains
+  from binary waterlines should pass through this same gate.
 
-## Tesis 4 (fases M3–M4): el error del contorno se corrige en fase, se acota en ganancia, y el operador muerde
+## Thesis 4 (phases M3–M4): the boundary error is corrected in phase, bounded in gain, and the operator bites
 
-- **La fuga, demostrada antes de evitada**: +12 min de error de fase en el modelo
-  oceánico de la boca se disfrazan de "transferencia estuarina" distribuida (hasta
-  +21 min aparentes con verdad plana). Cualquier trabajo que mida transferencias
-  contra un modelo global sin auditar su fase en la boca puede estar publicando el
-  error del modelo como física del estuario.
-- **La auditoría es asimétrica, y eso es un resultado**: la FASE del contorno se
-  recupera desde la propia imagen (dt̂ con error de 4 min, juez OOS en la boca); la
-  GANANCIA no puede auditarse desde binario (teorema afín, medido dos veces) y queda
-  acotada por el prior del ensemble (la dispersión entre modelos oceánicos
-  independientes). Imagen audita fase; ensemble audita ganancia.
-- **El operador final es una composición inspeccionable** (`InteriorTide.describe()`):
-  contorno (cualquier proveedor) + corrección de fase de la boca + perfil τ(s) medido
-  por verosimilitud con ancla en la boca — y solo lleva señal donde 5 réplicas del
-  nulo uniforme no la explican. En la puerta M4 recupera el daño plantado (RMSE de
-  cota 0.44→0.37 m en la banda alta) sin tocar la boca y siendo punto fijo.
-- **En Villaviciosa real**: el interior va a la hora de EOT20 hasta ~5.4 km (τ dentro
-  del nulo, donde vive el RTK) y llega +26 min tarde a 7.7 km — decenas de cm de
-  nivel mal asignado por escena en la cabecera, ahora corregidos por un operador que
-  no vio ni un mareógrafo ni una etiqueta.
+- **The leak, demonstrated before being prevented**: +12 min of phase error in the
+  ocean model at the mouth masquerades as distributed "estuarine transfer" (up to
+  +21 apparent min with flat truth). Any work that measures transfers
+  against a global model without auditing its phase at the mouth may be publishing the
+  model's error as estuary physics.
+- **The audit is asymmetric, and that is a result**: the boundary's PHASE is
+  recovered from the imagery itself (dt̂ with 4-min error, OOS judge at the mouth); the
+  GAIN cannot be audited from binary (affine theorem, measured twice) and stays
+  bounded by the ensemble prior (the spread between independent ocean
+  models). Imagery audits phase; the ensemble audits gain.
+- **The final operator is an inspectable composition** (`InteriorTide.describe()`):
+  boundary (any provider) + mouth phase correction + τ(s) profile measured
+  by likelihood with anchor at the mouth — and it only carries signal where 5 replicates
+  of the uniform null do not explain it. In gate M4 it recovers the planted damage (elevation
+  RMSE 0.44→0.37 m in the high band) without touching the mouth and being a fixed point.
+- **In real Villaviciosa**: the interior runs on EOT20 time up to ~5.4 km (τ within
+  the null, where the RTK lives) and arrives +26 min late at 7.7 km — tens of cm of
+  level misassigned per scene at the head, now corrected by an operator that
+  never saw a tide gauge or a label.

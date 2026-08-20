@@ -3,36 +3,37 @@
 Paper: *Using Sentinel-2 Images to Estimate Topography, Tidal-Stage Lags and Exposure
 Periods over Large Intertidal Areas*, Remote Sensing 13(2):320, doi:10.3390/rs13020320.
 
-Rellenada el 2026-08-19 leyendo el PDF completo (no de memoria). Donde el paper no
-trata algo se escribe «no lo trata» — esas filas son la lista de nuestros deltas.
+Filled in on 2026-08-19 by reading the full PDF (not from memory). Where the paper does
+not address something, "does not address it" is written — those rows are the list of our
+deltas.
 
-| campo | ellos (Granadeiro 2021) | nosotros (v4) |
+| field | them (Granadeiro 2021) | us (v4) |
 |---|---|---|
-| Sitio(s) y extensión | Archipiélago de Bijagós (Guinea-Bissau), ~1200 km² de intermareal repartidos en ~100 km; régimen semidiurno, vivas 0.3–4.8 m | Villaviciosa (ría de 3.5 km, caso confinado) + Escalda (validación con mareógrafos) + celdas costa norte definidas |
-| Nº de escenas y preprocesado | 35 escenas L1C (2017–18 y 2019–20, nubes <10 %), corrección atmosférica ACOLITE, e inter-calibración radiométrica entre escenas por regresión de eje mayor sobre píxeles estables (agua NIR<0.05, tierra >0.2) | 465–1379 escenas L2A por sitio (todo el archivo útil, no una selección); el sistemático de escena entera se mide y entra en el nulo (sd_scene), no se corrige por regresión |
-| Qué estima exactamente | Topografía 10 m (logística de 4 parámetros sobre NIR), retardos cotidales, y mapas de periodo de exposición (Ec. 5 sinusoidal) | Topografía 10 m + perfil de fase τ(s) del interior + corrección de fase del contorno + descomposición σ_topo/σ_nivel; la exposición no es objetivo |
-| Cómo estima el retardo | Ajustes logísticos SEPARADOS con escenas de subida y de bajada; barrido de retardos −90..+90 min (paso 5); se elige el que minimiza la diferencia de cotas subida-vs-bajada; en 50.000 píxeles aleatorios de cota media (2.47±0.25 m); luego un GAM (splines, lon/lat) suaviza el campo | Reimplementado como listón (M2d). Nuestro motor (M2a) es distinto: verosimilitud Bernoulli con cotas y anchuras PERFILADAS por píxel, ancla en la boca, todos los píxeles (no solo cota media) — bate a M2d en la puerta con verdad plantada (4.71 vs 5.42 min) |
-| ¿Retardo simétrico entre ramas o histéresis? | Simétrico por construcción (un solo retardo que iguala ambas ramas); admiten como limitación no poder separar subida/bajada ni vivas/muertas | Histéresis medida por separado (bajada +41 min donde subida ~0 en el prototipo; mecanismo Hysteresis en el simulador); el operador admite dos relojes |
-| ¿Estima amplificación/ganancia A(s)? | No lo trata (asume la amplitud del punto de referencia en todo el archipiélago) | Demostramos que de mojado/seco NO puede estimarse (teorema afín, puerta M2 v2 con NLL(α) plano) — tampoco ellos podrían; solo el dato continuo la respalda fuera de muestra donde hay física (A=0.85 en la banda clave) |
-| Nivel de agua de referencia | Tablas de marea del puerto de Bubaque (un único punto, del Instituto Hidrográfico portugués, base de los 60) + interpolación cosenoidal entre pleamar y bajamar (Ec. 1) | BoundaryProvider intercambiable (modelo global pyTMD, mareógrafo, ensemble, climatología armónica) + corrección de fase auditada desde la propia imagen (M3) |
-| ¿Tratan hora real de paso vs nominal? | Usan la hora exacta de adquisición en la interpolación, pero no lo discuten como fuente de error | Medido: 0.134 m de error por usar la hora nominal; horas reales vía STAC para todo |
-| ¿Alias de constituyentes (S2 invisible)? | No lo trata (con tablas de marea no hay armónicos que estimar) | Tabla de alias explícita con las horas reales: S2 congelado, K1/P1 anuales, M2/N2/O1/Q1/M4/M6 estimables |
-| Resolución espacial del retardo | 50.000 píxeles muestreados → campo suave lon/lat por GAM (líneas cotidales) | Bandas por cuantiles de la coordenada geodésica desde la boca (la geometría del estuario, no lon/lat); el confinamiento de una ría es justo el caso donde lon/lat no sirve |
-| Precisión declarada del retardo y contra qué verdad | Diferencia media absoluta 6.6 min contra 4 puntos del Instituto Hidrográfico (máx 15 min en Abú); referencia posiblemente desactualizada (obs. de los 60) | Con verdad PLANTADA y muestreo real: 4.71 min (M2a); externa: gradiente 0.72 min/km contra 0.9 de los mareógrafos del Escalda |
-| Validación fuera de muestra (train/test) | No lo trata (sin partición temporal; validan el producto final de exposición contra 66 cámaras time-lapse, r²=0.94) | Sí: OOS temporal 65/35 en el juez de amplitud; juez OOS intercalado en M3; test abierto una vez |
-| Nulos / controles estadísticos | No lo trata (sin nulos; la validación de campo es directa) | Todo veredicto contra nulo igualado: simulador calibrado (píxeles enteros + sistemático de escena + jitter de nivel), banda nula de 5 réplicas, controles de signo/especulares |
-| Umbral mojado/seco y sensor de agua | Logística continua sobre reflectancia NIR; el NDWI solo para DELIMITAR el intermareal (sd temporal > 0.2) | NDWI continuo para el sigmoide (con σ en metros interpretable como relieve sub-píxel) y binario NDWI>0 para los estimadores de fase |
-| ¿Censura por conectividad / encharcamiento? | Lo observan como sesgo (película de agua y charcos en fango bajo inflan la exposición a cotas <2.2 m) pero no lo modelan | Mecanismo ConnectivityCensoring en el simulador; el encharcamiento es parte del modelo de histéresis, no solo una disculpa |
-| ¿Batimetría del canal desde celeridad? | No lo trata | h̄(s) = c²/g como subproducto del perfil de fase; test de variedad hidráulica (Escalda 18.5 m/s → canal dragado plausible) |
-| ¿Validación punto-vs-píxel del terreno? | No lo trata (sus cámaras van por GPS de ~4 m y validan exposición, no cotas) | Sí: σ_muestreo=0.214 m medido por dos rutas independientes; c=1.041 — la "compresión" de esta literatura es artefacto de comparar punto con mediana de píxel; `point_sampling_error` en el paquete |
-| Qué NO estima / limitaciones que admiten | Rango de cotas limitado por las mareas observadas (1.04–4.69 m); no ve lo más bajo; sesgo por fango húmedo; retardo promedia ramas y vivas/muertas; referencia de marea antigua | Ganancia no estimable de binario (teorema, expuesto); amplitud solo donde el OOS continuo la respalde; reservado RTK actual quemado para el veredicto sellado final |
+| Site(s) and extent | Bijagós Archipelago (Guinea-Bissau), ~1200 km² of intertidal spread over ~100 km; semidiurnal regime, springs 0.3–4.8 m | Villaviciosa (3.5 km ría, the confined case) + Scheldt (validation with tide gauges) + northern-coast cells defined |
+| Number of scenes and preprocessing | 35 L1C scenes (2017–18 and 2019–20, clouds <10%), ACOLITE atmospheric correction, and radiometric inter-calibration between scenes by major-axis regression on stable pixels (water NIR<0.05, land >0.2) | 465–1379 L2A scenes per site (the whole usable archive, not a selection); the whole-scene systematic is measured and enters the null (sd_scene), not corrected by regression |
+| What exactly it estimates | 10 m topography (4-parameter logistic on NIR), cotidal lags, and exposure-period maps (sinusoidal Eq. 5) | 10 m topography + interior phase profile τ(s) + boundary phase correction + σ_topo/σ_nivel decomposition; exposure is not a goal |
+| How it estimates the lag | SEPARATE logistic fits with rising and falling scenes; lag sweep −90..+90 min (step 5); the one minimizing the rise-vs-fall elevation difference is chosen; on 50,000 random mid-elevation pixels (2.47±0.25 m); then a GAM (splines, lon/lat) smooths the field | Reimplemented as the bar (M2d). Our engine (M2a) is different: Bernoulli likelihood with per-pixel PROFILED elevations and widths, anchor at the mouth, all pixels (not just mid-elevation) — beats M2d in the planted-truth gate (4.71 vs 5.42 min) |
+| Lag symmetric between limbs, or hysteresis? | Symmetric by construction (a single lag that equalizes both limbs); they admit as a limitation not being able to separate rise/fall or springs/neaps | Hysteresis measured separately (fall +41 min where rise ~0 in the prototype; Hysteresis mechanism in the simulator); the operator admits two clocks |
+| Does it estimate amplification/gain A(s)? | Does not address it (assumes the reference point's amplitude across the whole archipelago) | We prove it CANNOT be estimated from wet/dry (affine theorem, gate M2 v2 with flat NLL(α)) — they could not either; only the continuous data backs it out of sample (A=0.85 in the key band) |
+| Reference water level | Tide tables of the port of Bubaque (a single point, from the Portuguese Hydrographic Institute, 1960s base) + cosine interpolation between high and low water (Eq. 1) | Interchangeable BoundaryProvider (global model pyTMD, tide gauge, ensemble, harmonic climatology) + phase correction audited from the imagery itself (M3) |
+| Do they handle real vs nominal overpass time? | They use the exact acquisition time in the interpolation, but do not discuss it as an error source | Measured: 0.134 m of error from using the nominal time; real times via STAC for everything |
+| Constituent aliasing (S2 invisible)? | Does not address it (with tide tables there are no harmonics to estimate) | Explicit alias table with the real times: S2 frozen, K1/P1 annual, M2/N2/O1/Q1/M4/M6 estimable |
+| Spatial resolution of the lag | 50,000 sampled pixels → smooth lon/lat field by GAM (cotidal lines) | Quantile bands of the geodesic coordinate from the mouth (the estuary's geometry, not lon/lat); the confinement of a ría is exactly the case where lon/lat does not work |
+| Declared lag precision, and against what truth | Mean absolute difference 6.6 min against 4 points of the Hydrographic Institute (max 15 min at Abú); reference possibly outdated (1960s obs.) | With PLANTED truth and real sampling: 4.71 min (M2a); external: gradient 0.72 min/km against 0.9 of the Scheldt tide gauges |
+| Out-of-sample validation (train/test)? | Does not address it (no temporal partition; they validate the final exposure product against 66 time-lapse cameras, r²=0.94) | Yes: temporal OOS 65/35 in the amplitude judge; interleaved OOS judge in M3; test opened once |
+| Nulls / statistical controls | Does not address it (no nulls; the field validation is direct) | Every verdict against a matched null: calibrated simulator (whole pixels + scene systematic + level jitter), 5-replicate null band, sign/specular controls |
+| Wet/dry threshold and water sensor | Continuous logistic on NIR reflectance; NDWI only to DELIMIT the intertidal (temporal sd > 0.2) | Continuous NDWI for the sigmoid (with σ in meters interpretable as sub-pixel relief) and binary NDWI>0 for the phase estimators |
+| Connectivity censoring / ponding? | They observe it as a bias (water film and puddles on low mudflat inflate exposure at elevations <2.2 m) but do not model it | ConnectivityCensoring mechanism in the simulator; ponding is part of the hysteresis model, not just an apology |
+| Channel bathymetry from celerity? | Does not address it | h̄(s) = c²/g as a by-product of the phase profile; hydraulic plausibility test (Scheldt 18.5 m/s → plausible dredged channel) |
+| Point-vs-pixel validation of the terrain? | Does not address it (their cameras use ~4 m GPS and validate exposure, not elevations) | Yes: σ_muestreo=0.214 m measured by two independent routes; c=1.041 — this literature's "compression" is an artifact of comparing a point with a pixel median; `point_sampling_error` in the package |
+| What it does NOT estimate / limitations they admit | Elevation range limited by the observed tides (1.04–4.69 m); does not see the lowest; wet-mud bias; the lag averages limbs and springs/neaps; old tide reference | Gain not estimable from binary (theorem, exposed); amplitude only where the continuous OOS backs it; current RTK holdout burned for the final sealed verdict |
 
-**Síntesis para la introducción del paper**: Granadeiro et al. demostraron que el
-archivo S2 contiene los retardos cotidales y los extrajeron con un método
-simétrico, suavizado en lon/lat y validado contra tablas antiguas. Nuestros deltas:
-(1) motor de verosimilitud que bate al suyo con verdad plantada y muestreo real;
-(2) histéresis (dos relojes) en vez de retardo único; (3) geometría de estuario
-(s desde la boca) en vez de lon/lat; (4) teorema de qué NO puede estimarse
-(ganancia) y su demostración; (5) nulos igualados y puertas pre-registradas para
-cada afirmación; (6) contorno intercambiable con corrección de fase auditada;
-(7) marco de validación punto-vs-píxel que explica la "compresión" publicada.
+**Synthesis for the paper's introduction**: Granadeiro et al. demonstrated that the
+S2 archive contains the cotidal lags and extracted them with a symmetric method,
+smoothed in lon/lat and validated against old tables. Our deltas:
+(1) a likelihood engine that beats theirs with planted truth and real sampling;
+(2) hysteresis (two clocks) instead of a single lag; (3) estuary geometry
+(s from the mouth) instead of lon/lat; (4) a theorem of what CANNOT be estimated
+(gain) and its proof; (5) matched nulls and pre-registered gates for
+every claim; (6) an interchangeable boundary with audited phase correction;
+(7) a point-vs-pixel validation framework that explains the published "compression".
