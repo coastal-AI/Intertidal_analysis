@@ -75,26 +75,37 @@ def main():
         st = manifest.get(name, {}).get("estado")
         if st in ("enviado", "descargado"):
             continue
-        try:
-            aoi = AOI.from_polygon(cell["polygon"], name=name)
-            cube = conn.load_collection(
-                "SENTINEL2_L2A", spatial_extent=aoi.bbox,
-                temporal_extent=["2023-01-01", "2025-12-31"],
-                bands=["B03", "B08", "SCL"], max_cloud_cover=100)
+        for intento in range(6):
             try:
-                cube = cube.resample_spatial(resolution=10, method="near")
-            except Exception:
-                pass
-            job = cube.save_result(format="netCDF").create_job(
-                title=f"marea_{name}")
-            job.start()
-            manifest[name] = {"job": job.job_id, "estado": "enviado"}
-            save_manifest(manifest)
-            log(f"ENVIADO {name} -> {job.job_id}")
-            time.sleep(1.0)
-        except Exception as e:
-            log(f"ERROR envio {name}: {str(e)[:160]}")
-            time.sleep(5)
+                aoi = AOI.from_polygon(cell["polygon"], name=name)
+                cube = conn.load_collection(
+                    "SENTINEL2_L2A", spatial_extent=aoi.bbox,
+                    temporal_extent=["2023-01-01", "2025-12-31"],
+                    bands=["B03", "B08", "SCL"], max_cloud_cover=100)
+                try:
+                    cube = cube.resample_spatial(resolution=10,
+                                                 method="near")
+                except Exception:
+                    pass
+                job = cube.save_result(format="netCDF").create_job(
+                    title=f"marea_{name}")
+                job.start()
+                manifest[name] = {"job": job.job_id, "estado": "enviado"}
+                save_manifest(manifest)
+                log(f"ENVIADO {name} -> {job.job_id}")
+                time.sleep(2.0)
+                break
+            except Exception as e:
+                msg = str(e)[:160]
+                if "429" in msg:          # rate limit: esperar y reintentar
+                    time.sleep(20 * (intento + 1))
+                    continue
+                log(f"ERROR envio {name}: {msg}")
+                time.sleep(5)
+                break
+        else:
+            log(f"ERROR envio {name}: 429 persistente, se reintentara en "
+                f"proxima pasada")
 
     # ── HARVEST + PROCESS ────────────────────────────────────────────────
     running = {}
