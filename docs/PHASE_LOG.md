@@ -465,3 +465,17 @@ como modo documentado (OFF por defecto) y trabajo futuro con el archivo de 10 a�
 resolución que el archivo actual puede pagar; gana río adentro (+24..+53 mm), pierde
 en la zona de tránsito multi-brazo (−21 mm), y el neto es positivo pero la anatomía
 por bandas debe mostrarse — es la frontera medida del método, no un accidente.
+
+## 2026-08-20 — Campaña del norte con MAREA: lanzada
+
+- `pyintertidal/marea.py`: `reconstruct()` — el metodo v4 completo para un cubo
+  cualquiera (extraccion, geometria, τ por bandas con umbral de deteccion de 10 min
+  declarado en modo campaña, inversion con operador, hipsometria con banda de
+  incertidumbre via σ por pixel). `hypsometry.curve_with_uncertainty` nueva.
+- `final_notebook.ipynb`: celda MAREA insertada tras el HSR (misma entrada, cero
+  descargas nuevas).
+- `experiments/campana_norte.py`: corredor resumible — descargas EN SERIE (CDSE = 1
+  conexion, incidente en memoria institucional), procesado con 2 workers, log en
+  runs/campana_marea.log, un fallo por celda no tumba la campaña.
+- Humo en cell004: 23.002 px, 342 s, y el detector encontro marea interior real
+  (+26 y +20-23 min en tres bandas) — primera celda del norte con operador activo.
