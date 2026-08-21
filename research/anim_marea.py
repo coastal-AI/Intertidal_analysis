@@ -128,8 +128,19 @@ hh = np.linspace(h0.min(), h0.max(), 200)
 from scipy.special import erf
 PHI = lambda x: 0.5 * (1 + erf(x / np.sqrt(2)))
 
+# scene 3 extras: 14 real head-band pixels, spread in elevation
+ok_h = L["good"][head] & np.isfinite(L["z"][head])
+cand = head[ok_h]
+order = np.argsort(L["z"][cand])
+SEL = cand[order[np.linspace(5, len(order) - 6, 14).astype(int)]]
+SEL_Z = L["z"][SEL]
+Ysel = np.nan_to_num(d["Y"][have][:, SEL], nan=np.nan)[mask_t]
+Csel = (d["C"][have][:, SEL] > 0)[mask_t]
+WETSEL = Csel & (Ysel > 0)
+DRYSEL = Csel & ~(Ysel > 0)
+
 # ── timeline ─────────────────────────────────────────────────────────────
-SCENES = [("s1", 13), ("s2", 19), ("s3", 19), ("s4", 15), ("s5", 19)]
+SCENES = [("s1", 13), ("s2", 27), ("s3", 29), ("s4", 15), ("s5", 19)]
 TOTAL = sum(n for _, n in SCENES) * FPS
 starts = np.cumsum([0] + [n * FPS for _, n in SCENES])
 
@@ -185,29 +196,63 @@ def s1(u):
 def s2(u):
     ax = fig.add_axes([0.09, 0.12, 0.86, 0.72])
     title(ax, "2 · Every pixel is a threshold sensor",
-          "one REAL Villaviciosa pixel: its NDWI against the water level, "
-          "465 scenes")
+          "one REAL Villaviciosa pixel: its NDWI in 465 scenes, against the "
+          "water level h at each overpass (from the tide model)")
     ok = c_pix & np.isfinite(y_pix)
-    n = max(3, int(ease(min(u * 1.8, 1)) * ok.sum()))
+    n = max(3, int(ease(min(u / 0.28, 1)) * ok.sum()))
     idx = np.where(ok)[0][:n]
-    ax.scatter(h0[idx], y_pix[idx], s=14, color=BLUE, alpha=0.6)
-    if u > 0.4:
-        v = ease(min((u - 0.4) / 0.35, 1))
-        m = int(v * len(hh))
-        ax.plot(hh[:m], a_p + b_p * PHI((hh[:m] - z_p) / sg_p),
-                color=YELLOW, lw=3)
-        ax.text(0.03, 0.86,
+    ax.scatter(h0[idx], y_pix[idx], s=16,
+               c=[BLUE if w else "#b08046" for w in (y_pix[idx] > 0)],
+               alpha=0.65)
+    # phase A: the two states of the sensor
+    if u > 0.10:
+        ax.axhline(a_p, color="#b08046", ls=":", lw=1.5)
+        ax.text(h0.min() + 0.06, a_p - 0.10,
+                "seen DRY  ->  NDWI = a   (its bare sediment)",
+                color="#c89b5f", fontsize=12)
+        ax.axhline(a_p + b_p, color=BLUE, ls=":", lw=1.5)
+        ax.text(h0.min() + 0.06, a_p + b_p + 0.05,
+                "seen WET  ->  NDWI = a + b   (water)",
+                color=BLUE, fontsize=12)
+    # phase B: slide a candidate step z and watch the residuals
+    if 0.32 < u <= 0.66:
+        v = ease((u - 0.32) / 0.34)
+        z_try = (h0.min() + 0.5) + v * (z_p - (h0.min() + 0.5))
+        ax.plot(hh, a_p + b_p * PHI((hh - z_try) / sg_p), color=YELLOW, lw=3)
+        for j in idx[::6]:
+            pj = a_p + b_p * PHI((h0[j] - z_try) / sg_p)
+            ax.plot([h0[j], h0[j]], [y_pix[j], pj], color=RED, lw=0.9,
+                    alpha=0.8)
+        ax.text(0.03, 0.90, "THE FIT: slide the step z until the residuals "
+                            "(red) shrink", transform=ax.transAxes,
+                fontsize=13, color=RED)
+        ax.text(0.03, 0.83, f"trying   z = {z_try:+.2f} m",
+                transform=ax.transAxes, fontsize=14, color=YELLOW)
+    # phase C: the fitted sigmoid, annotated
+    if u > 0.66:
+        ax.plot(hh, a_p + b_p * PHI((hh - z_p) / sg_p), color=YELLOW, lw=3)
+        ax.text(0.03, 0.87,
                 r"$\mathrm{NDWI}(h) = a + b\,\Phi\!\left(\frac{h - z}"
                 r"{\sigma}\right)$",
                 transform=ax.transAxes, fontsize=19, color=YELLOW)
-    if u > 0.72:
         ax.axvline(z_p, color=GREEN, ls="--", lw=2)
-        ax.text(z_p + 0.05, -0.55, r"inflection  $\Rightarrow$  elevation $z$",
-                color=GREEN, fontsize=14)
-        ax.annotate("", xy=(z_p - sg_p, 0.55), xytext=(z_p + sg_p, 0.55),
-                    arrowprops=dict(arrowstyle="<->", color=RED, lw=2))
-        ax.text(z_p, 0.62, r"width $\sigma$ = sub-pixel relief",
-                color=RED, ha="center", fontsize=13)
+        ax.text(z_p + 0.06, -0.66,
+                f"the step sits at h = z = {z_p:+.2f} m:\n"
+                "the water level at which THIS pixel floods\n"
+                "=  its ELEVATION",
+                color=GREEN, fontsize=13)
+        if u > 0.84:
+            ax.annotate("", xy=(z_p - sg_p, 0.55),
+                        xytext=(z_p + sg_p, 0.55),
+                        arrowprops=dict(arrowstyle="<->", color=RED, lw=2))
+            ax.text(z_p, 0.62,
+                    rf"width $\sigma$ = {100*sg_p:.0f} cm of relief INSIDE "
+                    "the 10 m pixel", color=RED, ha="center", fontsize=13)
+            ax.text(0.5, -0.135,
+                    "a flat pixel flips like a switch (small σ); a rough one "
+                    "floods bit by bit (large σ)",
+                    transform=ax.transAxes, ha="center", color=GREY,
+                    fontsize=12)
     ax.set_xlabel("water level h at overpass (m)")
     ax.set_ylabel("NDWI")
     ax.set_xlim(h0.min(), h0.max())
@@ -215,35 +260,53 @@ def s2(u):
 
 
 def s3(u):
-    axL = fig.add_axes([0.07, 0.12, 0.40, 0.68])
-    axR = fig.add_axes([0.56, 0.12, 0.40, 0.68])
-    title(axL, "3 · Thousands of sensors share the same water: "
-               "try clocks, keep the likeliest",
-          r"score of a clock $\tau$: "
-          r"$\;\mathcal{L}(\tau)=\sum_p \max_{z_p,\sigma_p}\sum_t "
-          r"\log\,\mathrm{Bernoulli}\!\left(y_{pt}\,|\,"
-          r"\Phi\!\left(\frac{h_B(t-\tau)-z_p}{\sigma_p}\right)\right)$"
-          "   (z, σ profiled out)")
-    v = ease(min(u * 1.25, 1))
+    axL = fig.add_axes([0.07, 0.13, 0.42, 0.62])
+    axR = fig.add_axes([0.58, 0.13, 0.38, 0.62])
+    title(axL, "3 · The clock: ONE lag must explain the whole band",
+          "left: 14 real head-band pixels (rows, sorted by elevation); "
+          "each dot = one scene placed at the level the candidate clock "
+          "claims  ·  blue = seen wet, brown = seen dry")
+    # tau sweeps -20 -> tau_best over the first 70 % of the scene
+    v = ease(min(u / 0.70, 1))
     tau_now = -20 + v * (tau_best + 20)
-    i0 = slice(0, len(t_h) // 2)
-    axL.plot(t_h[i0], h_dense[i0], color=GREY, lw=1.5, label="mouth clock")
-    axL.plot(t_h[i0] + tau_now / 60, h_dense[i0], color=YELLOW, lw=2.5,
-             label=r"candidate  $h_B(t-\tau)$")
-    axL.set_xlabel("time (h)")
-    axL.set_ylabel("level (m)")
-    axL.set_ylim(-2.4, 2.6)
-    axL.legend(loc="upper right", fontsize=10, framealpha=0.1)
-    axL.text(0.05, 0.05, rf"$\tau$ = {tau_now:+.0f} min", color=YELLOW,
-             fontsize=16, transform=axL.transAxes)
+    hs = bank.at(tau_now)
+    for row in range(len(SEL)):
+        w, dr = WETSEL[:, row], DRYSEL[:, row]
+        axL.scatter(hs[w], np.full(int(w.sum()), row), s=9, color=BLUE,
+                    alpha=0.7)
+        axL.scatter(hs[dr], np.full(int(dr.sum()), row), s=9,
+                    color="#b08046", alpha=0.55)
+        axL.plot(SEL_Z[row], row, marker="|", color=GREEN, ms=15, mew=2.5)
+    axL.text(0.03, 1.005, rf"$\tau$ = {tau_now:+.0f} min", color=YELLOW,
+             fontsize=16, transform=axL.transAxes, va="bottom")
+    axL.text(0.0, -0.185,
+             "right clock -> every row splits cleanly at its green z;  "
+             "wrong clock -> wet and dry mix",
+             transform=axL.transAxes, fontsize=12, color=GREY)
+    axL.set_xlabel(r"level under the candidate clock  $h_B(t-\tau)$  (m)")
+    axL.set_ylabel("pixel (sorted by elevation)")
+    axL.set_xlim(h0.min() - 0.2, h0.max() + 0.2)
+    # right: the likelihood curve traced as tau advances
     m = max(2, int(v * len(TAUS)))
     axR.plot(TAUS[:m], NLL[:m], color=BLUE, lw=2.5)
     axR.plot(TAUS[m - 1], NLL[m - 1], "o", color=YELLOW, ms=10)
-    if v >= 1:
+    if u > 0.72:
         axR.axvline(tau_best, color=GREEN, ls="--", lw=2)
-        axR.text(tau_best + 1, np.min(NLL) + 0.6 * (np.max(NLL) - np.min(NLL)),
-                 rf"$\hat\tau$ = {tau_best:+.0f} min"
-                 "\n(head band, real data)", color=GREEN, fontsize=13)
+        axR.text(tau_best + 2,
+                 np.min(NLL) + 0.55 * (np.max(NLL) - np.min(NLL)),
+                 rf"$\hat\tau$ = {tau_best:+.0f} min" + "\n(real data)",
+                 color=GREEN, fontsize=13)
+    if u > 0.80:
+        axR.text(-0.08, -0.20,
+                 r"score:  $\mathcal{L}(\tau)=\sum_p \max_{z_p,\sigma_p}"
+                 r"\sum_t \log\left[P_{pt}^{y_{pt}}\,(1-P_{pt})"
+                 r"^{1-y_{pt}}\right]$",
+                 transform=axR.transAxes, fontsize=13, color=FG)
+        axR.text(-0.08, -0.275,
+                 r"$P_{pt}=\Phi\!\left(\frac{h_B(t-\tau)-z_p}{\sigma_p}"
+                 r"\right)$  = P if seen wet, 1$-$P if seen dry;"
+                 "  each pixel granted its best (z, σ) — 'profiled'",
+                 transform=axR.transAxes, fontsize=11, color=GREY)
     axR.set_xlabel(r"candidate clock $\tau$ (min)")
     axR.set_ylabel("negative log-likelihood")
 
