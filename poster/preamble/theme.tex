@@ -46,7 +46,7 @@
 % differently. The \typeout line lets check.ps1 audit what was really applied.
 \newcommand{\pfig}[2][\linewidth]{%
   \typeout{FIGCHECK: #2 width=\the\dimexpr#1\relax}%
-  \includegraphics[width=#1]{#2}}
+  \par{\centering\includegraphics[width=#1]{#2}\par}}
 
 % Numbered steps and labelled definitions without beamer's enumerate or
 % description environments, both of which recurse under enumitem.
