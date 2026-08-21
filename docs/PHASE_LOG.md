@@ -525,3 +525,19 @@ on heavily observed pixels and a poor map method; the reserved-set opening of
 burned) matches: all-points RMSE 0.202 with slope 0.765 at the RTK zone only.
 The epoch-parity re-run and the bracket+sigmoid hybrid remain pre-registered
 as stage-1 candidates; this closes the "does it generalise?" question: no.
+
+## 2026-08-21 — Campaign v2 cells: terrain-following polygons (relaunched)
+
+The v1 cells came from a hand-sketched 47-vertex coastline: rectangles that
+cut rias in half and burned jobs on open sea (12 of 38 processed cells were
+"sin_intermareal"). Replaced by `experiments/make_cells_v2.py`: real OSM
+coastline (2,701 ways, 169k points) + OSM tidal polygons (tidalflat,
+estuarine water, saltmarsh — needed because OSM's coastline stops at estuary
+mouths), buffered in a locally metric frame, partitioned by alongshore
+chainage with estuary-interior blobs kept whole, and recursively split so no
+cell's bbox exceeds 150 km2 (openEO job bound). 130 cells, bbox median
+72 km2. Flagship rias verified inside single cells (Villaviciosa mouth and
+interior share nc2_cell080). v1 archive: north_coast_cells_v1.json,
+runs/campana_jobs_v1.json, 38 processed v1 results kept in runs/. The 32
+pending v1 openEO jobs were cancelled to free the 30-slot account limit;
+campaign relaunched 13:12 with the new grid.
