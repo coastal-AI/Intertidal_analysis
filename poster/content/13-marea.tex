@@ -1,17 +1,17 @@
 \begin{pblock}{MAREA: the archive measures its own tide}
 Every published method assumes \term{one uniform water level per scene},
 from an ocean model at the mouth. Inside an estuary the tide arrives late
-and deformed — minutes of clock error become tens of centimetres of level
-assigned to every scene. MAREA (\emph{Mudflat Altimetry via
-Remotely-Estimated tides from the Archive}) measures that interior tide
-from the imagery itself.
+and deformed — minutes of clock error become tens of centimetres of
+mis-assigned level. MAREA (\emph{Mudflat Altimetry via Remotely-Estimated
+tides from the Archive}) measures that interior tide from the imagery
+itself.
 
 \step{1}{Each pixel is a binary threshold sensor: wet when the water tops
 its elevation. Its wet/dry sequence over 465 dated scenes records
 \emph{when} the water crossed it.}
 \step{2}{Thousands of sensors share the same water. Band the estuary by
-geodesic distance $s$ from the mouth (equal pixel counts) and ask each
-band: \emph{which clock makes your wet/dry record most probable?}}
+geodesic distance $s$ from the mouth and ask each band: \emph{which clock
+makes your wet/dry record most probable?}}
 \step{3}{Score a candidate lag $\tau$ by the profiled Bernoulli
 likelihood — every pixel granted its best elevation and width, so only
 the clocks remain as unknowns, anchored to $\tau=0$ at the mouth:}
@@ -25,9 +25,8 @@ the clocks remain as unknowns, anchored to $\tau=0$ at the mouth:}
 \end{equation*}
 
 \vspace{2mm}
-\pfig[\linewidth]{m2_gate}
+\pfig[0.66\linewidth]{fig_m2_recovery}
 \figcap{The identifiability gate: a lag profile planted in a calibrated
-digital twin (real sampling, real clouds) is recovered with
-\emphnum{4.7\,min} RMSE, beating the literature baseline (5.4). Right: the
-gain profile is machine-flat — the affine theorem, executable.}
+digital twin is recovered blind with \emphnum{4.7\,min} RMSE, beating the
+waterline-timing baseline from the literature (5.4\,min).}
 \end{pblock}

@@ -45,13 +45,24 @@ def main():
     _dev, res = rtk.load_rtk(allow_reserved=True)
     with rasterio.open(product) as s:
         arr = s.read(1)
-    z = arr[res["row"], res["col"]]
-    ok = np.isfinite(z)
-    slope = float(np.polyfit(res["elev"][ok], z[ok], 1)[0])
-    rmse = float(np.sqrt(np.mean((z[ok] - res["elev"][ok]) ** 2)))
+    def score(sub):
+        z = arr[sub["row"], sub["col"]]
+        ok = np.isfinite(z) & (z > -100)
+        if ok.sum() < 5:
+            return {"n": int(ok.sum())}
+        e = z[ok] - sub["elev"][ok]
+        e = e - np.median(e)          # datum: RTK is ellipsoidal, the
+                                      # product sits on the tide datum
+        return {"n": int(ok.sum()),
+                "pendiente": float(np.polyfit(sub["elev"][ok], z[ok], 1)[0]),
+                "rmse_centrado": float(np.sqrt(np.mean(e ** 2)))}
+
+    both = {k: np.concatenate([_dev[k], res[k]])
+            for k in ("row", "col", "elev")}
     rec = {"fecha": datetime.datetime.now().isoformat(timespec="seconds"),
-           "producto": product, "n": int(ok.sum()),
-           "pendiente": slope, "rmse": rmse,
+           "producto": product,
+           "reservado": score(res), "dev": score(_dev),
+           "todos_361": score(both),
            "nota": "V3 opening recorded; the reserved set is consumed"}
     log = os.path.join("results", "v3_aperturas.jsonl")
     os.makedirs("results", exist_ok=True)

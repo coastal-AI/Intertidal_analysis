@@ -1,0 +1,62 @@
+\setbeamertemplate{navigation symbols}{}
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{normal text}{fg=PInk}
+\setbeamercolor{itemize item}{fg=PTeal}
+\setbeamercolor{itemize subitem}{fg=PTeal}
+\setbeamertemplate{itemize item}{\raisebox{0.28ex}{\rule{0.34em}{0.34em}}}
+\setbeamertemplate{itemize subitem}{\raisebox{0.28ex}{\rule{0.26em}{0.26em}}}
+\usebeamercolor[fg]{normal text}
+
+% A block is a title, a rule and text. No fill, no border, no rounded corner,
+% no shadow: hierarchy comes from the rule and from whitespace. That is the
+% whole defence against looking like a 2012 conference poster.
+\newenvironment{pblock}[1]{%
+  \par\vspace{\blockskip}%
+  {\color{PDeep}\bfseries\Large #1\par}%
+  \vspace{2.5mm}{\color{PTeal}\rule{\linewidth}{1.5mm}}\par
+  \vspace{6mm}\color{PInk}\justifying\ignorespaces
+}{\par}
+
+% The single filled variant, for at most one or two key results. Used more
+% than that it stops being emphasis.
+%
+% Its own savebox rather than \@tempboxa: this file is \input in the preamble,
+% where `@' is not a letter, so \@tempboxa would be read as \@ followed by the
+% word "tempboxa" and fail with an obscure \spacefactor error.
+\newsavebox{\pcalloutbox}
+\newenvironment{pcallout}{%
+  \par\vspace{\blockskip}%
+  % \fboxsep is 4 mm globally for other boxes; left on, the colorbox adds it
+  % outside the 8 mm padding below and the callout runs 8 mm past the column.
+  \setlength{\fboxsep}{0pt}%
+  \begin{lrbox}{\pcalloutbox}%
+  \begin{minipage}{\dimexpr\linewidth-16mm\relax}\color{PInk}\justifying
+}{%
+  \end{minipage}\end{lrbox}%
+  \colorbox{PMist}{\hspace{8mm}%
+    \raisebox{0pt}[\dimexpr\ht\pcalloutbox+8mm\relax][\dimexpr\dp\pcalloutbox+8mm\relax]{%
+      \usebox{\pcalloutbox}}\hspace{8mm}}\par}
+
+% Figure caption. The `caption' package is incompatible with beamer and a
+% poster has no floats, so this is all that is needed.
+\newcommand{\figcap}[1]{\par\vspace{2.5mm}{\color{PSlate}\small #1\par}}
+
+% Width is MANDATORY: the source PNGs carry inconsistent DPI metadata
+% (100/140/150/160/170), so a bare \includegraphics sizes two similar figures
+% differently. The \typeout line lets check.ps1 audit what was really applied.
+\newcommand{\pfig}[2][\linewidth]{%
+  \typeout{FIGCHECK: #2 width=\the\dimexpr#1\relax}%
+  \includegraphics[width=#1]{#2}}
+
+% Numbered steps and labelled definitions without beamer's enumerate or
+% description environments, both of which recurse under enumitem.
+\newcommand{\step}[2]{\par\vspace{0.4\baselineskip}%
+  \noindent\hangindent=1.6em\hangafter=1%
+  {\color{PTeal}\bfseries #1}\hspace{0.6em}#2\par}
+\newcommand{\defn}[2]{\par\vspace{0.45\baselineskip}%
+  \noindent{\color{PDeep}\bfseries #1}\par\nobreak\vspace{0.5mm}%
+  \noindent #2\par}
+
+\newcommand{\emphnum}[1]{{\color{PSand}\bfseries #1}}
+\newcommand{\term}[1]{{\color{PDeep}\bfseries #1}}
+\newcommand{\wip}{{\color{PSand}\bfseries\normalsize [\,in progress\,]}}

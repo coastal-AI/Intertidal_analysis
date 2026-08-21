@@ -1,5 +1,5 @@
 \begin{pblock}{A DEM that knows what it knows}
-\pfig[0.71\linewidth]{dem_v4}
+\pfig[0.56\linewidth]{dem_v4}
 \figcap{Villaviciosa, MAREA DEM at 10\,m (operator-corrected clock;
 declared interpolation flags; 2.6\,\% unmeasurable pixels stay honest
 NaN).}
@@ -15,9 +15,8 @@ errors — never optimistic.}
 transition width carries the tide-model error convolved in; deconvolved,
 median sub-pixel relief is \emphnum{0.177\,m} (35\,\% of the width's
 variance was water level, not ground).}
-\defn{Declared hydraulics}{Depression filling on the DEM yields the spill
+\defn{Declared hydraulics}{Depression filling yields each pixel's spill
 elevation and ponding depth: \emphnum{14\,\%} of the intertidal sits
 behind a barrier (median 1.2\,m). The flag is validated against the real
-per-pixel ponding signature; its bounded recall is printed on the product
-— censoring hides itself, so no flag is not proof of terrain.}
+ponding signature, its bounded recall printed on the product.}
 \end{pblock}

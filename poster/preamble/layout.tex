@@ -1,0 +1,36 @@
+% beamerposter hard-codes hmargin=1cm regardless of paper size (its line 176),
+% which on A0 is a 1.2 % margin — far too tight, and the reason `size=a3'
+% cannot reproduce these proportions. Re-issue \geometry AFTER it loads.
+\geometry{paperwidth=841mm,paperheight=1189mm,
+          top=28mm,bottom=28mm,head=0pt,headsep=0pt,foot=0pt}
+
+% Re-issuing \geometry does NOT override beamerposter's hard-coded hmargin=1cm
+% — the horizontal margin has to be set through beamer itself. 10 mm is far
+% too close to the trim edge for a printed A0; many large-format printers
+% cannot even reach it.
+\setbeamersize{text margin left=22mm,text margin right=22mm}
+
+\newlength{\colgap}   \setlength{\colgap}{24mm}
+% \colw is set inside the frame, not here: in the preamble \textwidth still
+% holds beamerposter's value and the columns come out 10 % too wide.
+\newlength{\colw}     \setlength{\colw}{240mm}
+\newlength{\blockskip}\setlength{\blockskip}{15mm}
+\newlength{\headskip} \setlength{\headskip}{22mm}
+
+\setlength{\parskip}{0.5\baselineskip}
+\setlength{\parindent}{0pt}
+
+% Only complain about overflow that is actually visible.
+\hfuzz=2pt
+
+% The height a column may occupy: the sheet minus the top and bottom margins,
+% minus the header band and the gap under it.
+\newlength{\colmax}
+\setlength{\colmax}{\dimexpr\paperheight-28mm-28mm-165mm-\headskip\relax}
+\newsavebox{\colbox}
+% With [t] alignment the reference point sits on the first line, so almost the
+% whole box lives in its DEPTH — \ht alone reports zero. Total extent is
+% height plus depth.
+\newcommand{\showcol}[1]{%
+  \typeout{COLHEIGHT: column #1 = \the\dimexpr\ht\colbox+\dp\colbox\relax
+           \space of \the\colmax}}

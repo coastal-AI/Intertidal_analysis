@@ -1,0 +1,48 @@
+\documentclass[tikz,border=0pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[sfdefault,book]{FiraSans}
+\usepackage{xcolor}
+\input{preamble/colors}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
+\input{tikz/_common}
+\begin{document}
+% Same geometry as pipeline.tex: natural width exactly 24.1 cm, four boxes of
+% 5.65 cm with 0.5 cm gaps, so both diagrams sit at 1:1 in a column and share
+% one type size.
+\begin{tikzpicture}[x=1cm,y=1cm]
+
+  \node[box, minimum width=5.65cm, minimum height=2.5cm,
+        anchor=north west] (m) at (0,5.0)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Model tide\\[0.5mm]
+          \sub start point\\[-0.3mm] \sub and anchor
+        \end{tabular}};
+  \node[box, minimum width=5.65cm, minimum height=2.5cm,
+        anchor=north west] (p) at (6.15,5.0)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Pixel curves\\[0.5mm]
+          \sub response\\[-0.3mm] \sub to water
+        \end{tabular}};
+  \node[box, minimum width=5.65cm, minimum height=2.5cm,
+        anchor=north west] (h) at (12.3,5.0)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Scene level\\[0.5mm]
+          \sub the pixels\\[-0.3mm] \sub vote
+        \end{tabular}};
+  \node[keybox, minimum width=5.65cm, minimum height=2.5cm,
+        anchor=north west] (c) at (18.45,5.0)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Remove haze\\[0.5mm]
+          \sub on saturated\\[-0.3mm] \sub pixels
+        \end{tabular}};
+
+  \draw[flow] (5.65,3.75) -- (6.15,3.75);
+  \draw[flow] (11.8,3.75) -- (12.3,3.75);
+  \draw[flow] (17.95,3.75) -- (18.45,3.75);
+
+  \draw[loop] (21.3,2.5) -- (21.3,1.2) -- (8.98,1.2) -- (8.98,2.5);
+  \node[anchor=north, font=\fontsize{17}{21}\selectfont, text=PTeal]
+       at (15.1,1.05) {repeat until it stops changing};
+
+\end{tikzpicture}
+\end{document}

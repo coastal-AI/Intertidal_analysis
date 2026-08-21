@@ -1,0 +1,37 @@
+% Undo beamerposter's damage. This file MUST be the last thing input, because
+% every fix here overwrites something beamerposter set.
+
+% beamerposter (its line 287) does
+%     \renewcommand*{\normalfont}{\normalsize}
+% which is wrong twice over: the real \normalfont resets encoding, family,
+% series AND shape, whereas this only sets a size; and \renewcommand* strips
+% the robustness the original had. TikZ nodes, pgfplots labels, siunitx and
+% \text{} in maths all call \normalfont internally, so with this in place they
+% silently inherit whatever family and weight surrounded them — bold diagram
+% labels for no visible reason. Restore the real thing.
+\DeclareRobustCommand\normalfont{%
+  \fontencoding{\encodingdefault}\fontfamily{\familydefault}%
+  \fontseries{\seriesdefault}\fontshape{\shapedefault}\selectfont}
+
+% beamerposter (lines 290-310) multiplies \leftmargini, \leftmarginii,
+% \labelwidth and \labelsep by the font scale — on top of `em' units, which
+% already scale with the font. The result at scale=1.25 is a first-level
+% itemize indented by about 5 em. Reset to something typographic.
+\setlist[itemize,1]{leftmargin=1.25em,labelsep=0.55em,
+                    itemsep=0.42\baselineskip,topsep=0.28\baselineskip,
+                    parsep=0pt}
+\setlist[itemize,2]{leftmargin=1.15em,labelsep=0.5em,
+                    itemsep=0.3\baselineskip,topsep=0.2\baselineskip}
+% Only itemize is configured through enumitem. Beamer's enumerate and
+% description templates recurse until TeX runs out of grouping levels the
+% moment enumitem touches them — the failure surfaces as an unhelpful
+% "TeX capacity exceeded [grouping levels=255]" pointing at the \begin line.
+% The poster uses itemize throughout instead; a numbered list is written out
+% with \step, below.
+
+% beamerposter's \normalsize skips \@setfontsize, so the display-maths skips
+% keep their 10 pt-era values against 31 pt type.
+\setlength{\abovedisplayskip}{0.9\baselineskip}
+\setlength{\belowdisplayskip}{0.9\baselineskip}
+\setlength{\abovedisplayshortskip}{0.5\baselineskip}
+\setlength{\belowdisplayshortskip}{0.7\baselineskip}
