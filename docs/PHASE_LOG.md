@@ -494,3 +494,34 @@ same valid dates as HSR; if it still separates, MAREA's stage-1 elevation
 engine is swappable by design and the bracket (or a bracket+sigmoid hybrid)
 must be gated in as a candidate. The gates exist precisely so the pipeline
 adopts whatever survives them — including a humbler estimator than ours.
+
+## 2026-08-21 — Closed: the bracket does NOT generalise (p8, three external regions)
+
+`experiments/p8_bracket_regions` replicated the legacy bracketing faithfully
+(NDWI > 0.1, midpoint of [max tide seen dry, min tide seen wet]) on the exact
+pixels and truth of the stored p5 runs (alignment asserted against
+z_scores.npz). Same recipe everywhere: centred RMSE + slope + Pearson r.
+
+| site (n common px) | method   | RMSE  | slope | r     |
+|--------------------|----------|-------|-------|-------|
+| Tagus (286k)       | bracket  | 0.344 | 0.416 | 0.914 |
+|                    | uniform  | 0.279 | 0.635 | 0.884 |
+|                    | MAREA op | 0.247 | 0.685 | 0.912 |
+| Vadehavet (342k)   | bracket  | 0.308 | 0.406 | 0.710 |
+|                    | uniform  | 0.273 | 0.536 | 0.776 |
+|                    | MAREA op | 0.281 | 0.502 | 0.765 |
+| Aveiro (333k)      | bracket  | 0.541 | 0.285 | 0.576 |
+|                    | uniform  | 0.588 | 0.457 | 0.542 |
+|                    | MAREA op | 0.579 | 0.481 | 0.562 |
+
+Verdict: outside the well-observed Villaviciosa RTK zone the bracket loses
+RMSE outright in Tagus (+0.10 vs operator) and Vadehavet (+0.04), and where
+it wins RMSE (Aveiro) it does so with slope 0.285 — winning by flattening,
+not by measuring. Its slope collapses to 0.28-0.42 in all three regions while
+the sigmoid stays at 0.46-0.69. Consistent with the within-Villaviciosa trend
+(dev slope 0.803 -> reserved 0.676). The dictionary is a good local estimator
+on heavily observed pixels and a poor map method; the reserved-set opening of
+2026-08-21 (results/v3_aperturas.jsonl, informational — holdout already
+burned) matches: all-points RMSE 0.202 with slope 0.765 at the RTK zone only.
+The epoch-parity re-run and the bracket+sigmoid hybrid remain pre-registered
+as stage-1 candidates; this closes the "does it generalise?" question: no.
