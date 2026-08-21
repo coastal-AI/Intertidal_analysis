@@ -1,0 +1,50 @@
+\begin{pblock}{The limiting error is the tide}
+One systematic error is shared by both estimators. Relief comes out
+\term{compressed} — the regression of mapped against surveyed elevation has
+slope $0.7$--$0.9$, not $1$ — and the compression worsens
+\emphnum{$\approx1.0$ of slope per kilometre} upstream, surviving control for
+elevation ($t=-3.9$ to $-6.6$, $p\le0.0002$ across six products). Being
+identical in both methods, it cannot live in the estimator. It lives in what
+they share: the assumed water level.
+
+\vspace{3mm}
+The sigmoid fit is invariant under \emph{affine} maps of the tide axis, which
+is a theorem rather than a limit of effort — and it says exactly which
+estuarine effects a satellite can recover:
+
+\vspace{2mm}
+\begin{tabular}{@{}l l r@{}}
+\toprule
+Estuarine effect & Recoverable? & Measured \\
+\midrule
+Datum offset            & No — needs a gauge      & --- \\
+Constant amplification  & No — needs ground truth & --- \\
+Phase lag               & Yes — flood vs.\ ebb    & $\approx0$ \\
+\textbf{Damping with range} & Yes — springs vs.\ neaps & \textbf{0.25\,m} \\
+\bottomrule
+\end{tabular}
+
+\vspace{3mm}
+The spring--neap effect alone is twice the RMSE the estimators are separated
+by. And the published ensemble tide model does not transfer: its ranking
+dataset is 32\,936 points, \emph{all} in Australian waters, so outside that
+area the weighting collapses and the ensemble becomes an unweighted mean of
+its members — difference 0.0000\,m over 1379 dates.
+\end{pblock}
+
+\begin{pblock}{The flat as its own tide gauge \wip}
+So stop treating the water level as an input. Let $h_t$ be unknown and solve
+it jointly with the elevations: which pixels are wet tells you how high the
+water stood, with tens of thousands voting.
+
+\vspace{2mm}
+\pfig[\linewidth]{algo-loop}
+
+\vspace{2mm}
+A scene's level is theoretically readable to \emphnum{5\,mm}, against 140\,mm
+for the harmonic model. The obstacle: haze shifts every pixel of a scene
+together, which to first order is indistinguishable from the water rising.
+Calibrating on \emph{saturated} pixels, which cannot respond to level, removes
+it — and agreement with the survey rises from $r=0.845$ to $r=0.890$. Not yet
+conclusive, and reported as such.
+\end{pblock}

@@ -1,0 +1,18 @@
+\begin{pblock}{From topography to habitat}
+The DEM is an intermediate product. Three layers follow from it, each kept
+honest about what it does not know:
+
+\begin{itemize}
+  \item \term{Hydroperiod} — the fraction of \emph{time} a pixel is
+        submerged, evaluated over a continuous modelled tide series and
+        deliberately not over the satellite dates, which inherit the orbit's
+        sampling bias. This, not water frequency, is what ecology needs.
+  \item \term{Hypsometry} — the area--elevation curve. Convex means accreting,
+        concave sediment-starved, and it gives the flooded-area response to
+        sea-level rise directly.
+  \item \term{Change between epochs} — never a bare difference of two DEMs.
+        Each carries a significance mask from the propagated uncertainty
+        $\sigma_\Delta=\sqrt{\sigma_1^2+\sigma_2^2}$, because a datum shift
+        between epochs otherwise masquerades perfectly as erosion.
+\end{itemize}
+\end{pblock}

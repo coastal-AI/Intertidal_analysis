@@ -1,0 +1,35 @@
+\begin{pblock}{HSR: elevation from the whole wetting curve}
+A 10\,m pixel on the waterline is not wet or dry — it is
+\term{partially flooded}, and its NDWI is the linear mixture of its wet and
+dry fractions. As the tide rises that fraction follows the pixel's own
+internal hypsometry, so its NDWI against tide height is a sigmoid whose
+parameters are physical, not fitted conveniences:
+
+\vspace{-2mm}
+\begin{equation*}
+  % \text, not \mathrm: with a sans text font and no matching math roman,
+  % \mathrm falls back to a METAFONT bitmap — a Type 3 font that prints
+  % jagged at a metre. \text picks up the document face instead.
+  \text{NDWI}_p(t) \;=\; a_p \;+\; b_p\,
+  \Phi\!\left(\frac{h_t-\mu_p}{\sigma_p}\right)
+\end{equation*}
+
+\defn{$\mu_p$ — median pixel elevation}{Read from the \emph{entire} curve
+rather than from one threshold crossing, so every clear observation
+contributes and the estimate is sub-decimetre.}
+\defn{$\sigma_p$ — sub-pixel relief}{The roughness \emph{inside} the
+10\,m cell: a product no threshold-crossing method can produce,
+because it discards exactly the mixed pixels that carry it.}
+\defn{Fit quality — a Cramér--Rao bound per pixel}{An uncertainty that is
+derived rather than assumed, and that doubles as automatic quality control.}
+
+The amplitude terms $(a_p,b_p)$ have a closed-form solution per candidate
+$(\mu,\sigma)$, so the fit is a cheap grid sweep — tractable over millions
+of pixels on one machine. With MAREA, $h_t$ is each band's
+\term{corrected clock}, not the raw model.
+
+\vspace{3mm}
+\pfig[0.68\linewidth]{02_curvas_reales}
+\figcap{Real per-pixel curves. The sigmoid is not imposed on the data — it is
+what mixed pixels actually do as the tide crosses them.}
+\end{pblock}

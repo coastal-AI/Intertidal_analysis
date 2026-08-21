@@ -1,0 +1,28 @@
+\begin{pblock}{External validation: never worse, better where it matters}
+Elevation against independent surveys of the flats themselves, and water
+level against gauges never used in calibration. Centred RMSE, metres:
+
+\vspace{2mm}
+\begin{tabular}{@{}l l r r@{}}
+\toprule
+Site (truth) & Regime & uniform & \term{MAREA} \\
+\midrule
+Tagus interior (EMODnet, 286k px) & estuary, $\tau\!\approx\!45'$ & 0.279 & \emphnum{0.247} \\
+Aveiro lagoon (LiDAR, 333k px)    & branched, $\tau\!:41\!-\!56'$ & 0.590 & \emphnum{0.580} \\
+Vadehavet (EMODnet, 344k px)      & open flat                     & 0.275 & 0.275$^{*}$ \\
+Villaviciosa (own RTK, 217 pts)   & short deep ria                & 0.211 & 0.211$^{*}$ \\
+\bottomrule
+\end{tabular}
+\figcap{$^{*}$the operator \emph{declines} where the lag does not beat the
+null or does not help — equality is the correct verdict there, verified,
+not assumed. In Aveiro the gain concentrates where the lag grows:
+$+24$ to $+53$\,mm per band.}
+
+\vspace{3mm}
+\pfig[0.84\linewidth]{escalda}
+\figcap{The Scheldt, blind: the imagery-only lag gradient
+(\emphnum{0.72\,min/km}) matches the tide gauges' 0.9. At Terneuzen the
+operator's level (0.407\,m) beats EOT20 raw (0.419), GOT4.10 (0.703) and
+the 3-model ensemble (0.592) — 92\,\% of what any pure lag can give, zero
+instruments.}
+\end{pblock}

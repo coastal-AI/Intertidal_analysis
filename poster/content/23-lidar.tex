@@ -1,0 +1,12 @@
+\begin{pblock}{Why the LiDAR would not do}
+The obvious reference for an Asturian estuary is the national 5\,m LiDAR DTM.
+It is unusable on the flat: across our intertidal mask it takes only
+\emphnum{seven distinct values}, and 83\,\% of it sits at exactly $+2.00$\,m
+— not terrain, but the \term{water surface} at the moment of the flight.
+
+\vspace{2mm}
+Triangulating with water frequency, which must track elevation since a lower
+pixel floods more often, confirms which reference is the wrong one:
+$\rho=-0.20$ for the LiDAR against $-0.88$ to $-0.95$ for the satellite
+products. So we went and measured it ourselves.
+\end{pblock}

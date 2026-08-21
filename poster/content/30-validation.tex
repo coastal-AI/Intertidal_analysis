@@ -1,0 +1,32 @@
+\begin{pblock}{RTK GNSS field survey}
+Ría de Villaviciosa, at the lowest spring tide of the month:
+\term{361 fixed points at 1.3\,cm}. The implied datum offset between survey
+and satellite is 52.81\,m — the local geoid undulation, an independent
+confirmation that the two describe the same surface in different vertical
+frames.
+
+\vspace{3mm}
+Each tide model is run through \emph{both} estimators, so every row compares
+like with like, on the same 107 pixels. RMSE in metres:
+
+\vspace{2mm}
+\begin{tabular}{@{}l r r r l@{}}
+\toprule
+Tide model & {HSR} & {Step (DEA)} & {$\Delta$} & \\
+\midrule
+GOT4.10   & 0.159 & 0.135 &  0.024 & $p=0.007$ \\
+EOT20     & 0.135 & 0.151 & -0.016 & n.s. \\
+Ensemble  & 0.138 & 0.148 & -0.010 & n.s. \\
+\bottomrule
+\end{tabular}
+
+\vspace{3mm}
+\begin{pcallout}
+\term{No configuration separates the estimators} under a paired bootstrap:
+the tide model moves the numbers more than the estimator does. And
+comparing GNSS \emph{points} to 10\,m pixel \emph{medians} adds
+$\sigma\!\approx\!0.21$\,m of yardstick error — the method's own error is
+$\approx$0.13--0.15\,m.
+\end{pcallout}
+
+\end{pblock}

@@ -1,0 +1,11 @@
+\begin{pblock}{The north coast: 116 cells, one census \wip}
+Nothing is site-specific: every cell runs the identical pipeline — same
+configs, same seeds, zero per-site tuning. Cubes are queued server-side on
+openEO (30 concurrent jobs), harvested and processed in a resumable worker
+pool; one tide-model call per cell.
+
+\vspace{2mm}
+\pfig[\linewidth]{census_map}
+\figcap{Live snapshot: 116 bathymetries with uncertainty, and the first
+\term{interior-tide census} of the coast — decided by the method itself.}
+\end{pblock}

@@ -1,0 +1,34 @@
+% Full-bleed band anchored to the page, so it needs two pdflatex passes.
+\begin{tikzpicture}[remember picture,overlay]
+  \fill[PDeep] ([yshift=0pt]current page.north west)
+    rectangle ([yshift=-165mm]current page.north east);
+\end{tikzpicture}%
+\vspace*{-14mm}%
+\begin{minipage}[c]{0.145\textwidth}
+  \color{white}
+  % Placeholder until the official University of Oviedo mark is supplied.
+  % Replace this minipage body with \includegraphics[width=\linewidth]{uniovi}
+  \setlength{\fboxrule}{1pt}%
+  \textcolor{white}{\framebox[\linewidth][c]{\rule{0pt}{34mm}\parbox{0.8\linewidth}{\centering\small
+    University of Oviedo\\ logo}}}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.70\textwidth}
+  \color{white}\raggedright
+  {\fontsize{78}{88}\selectfont\bfseries Mapping intertidal topography\\ from optical satellite time series\par}
+  \vspace{7mm}
+  {\fontsize{34}{42}\selectfont MAREA: the archive measures its own tide --- a distributed tide
+   gauge, a DEM with calibrated uncertainty, and its demonstrated limits\par}
+  \vspace{9mm}
+  {\fontsize{30}{38}\selectfont
+   \textbf{AUTHOR NAMES}\,\textsuperscript{1}\par}
+  \vspace{2mm}
+  {\fontsize{25}{32}\selectfont\color{PMist}
+   \textsuperscript{1}\,DEPARTMENT, University of Oviedo, Spain \quad·\quad
+   \texttt{jorge.alias.alvarez@gmail.com}\par}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.115\textwidth}
+  \centering\color{white}
+  \colorbox{white}{\qrcode[height=32mm]{https://github.com/coastal-AI/Intertidal_analysis}}\\[3mm]
+  {\small Code and data}
+\end{minipage}
+\par\vspace{20mm}

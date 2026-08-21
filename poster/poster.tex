@@ -1,0 +1,49 @@
+\documentclass[final,t]{beamer}
+% scale=0.95 puts body text near 23 pt on A0 — comfortably readable at a
+% metre, and the largest size at which this much material fits three columns.
+\usepackage[orientation=portrait,size=a0,scale=0.88]{beamerposter}
+
+\input{preamble/packages}
+\input{preamble/colors}
+\input{preamble/layout}
+\input{preamble/theme}
+\input{preamble/tables}
+\input{preamble/fixes}      % must stay last: it undoes beamerposter's damage
+
+\graphicspath{{figures/}{tikz/build/}}
+
+% Three minipages rather than beamer's `columns' environment: columns inject
+% their own glue and interact badly with [t] alignment when blocks have very
+% different heights. Minipages give exact, predictable gutters.
+\begin{document}
+\begin{frame}[t]{}
+  % Inside the frame \textwidth is finally the real usable width, so the
+  % column measure is computed here rather than in the preamble.
+  \setlength{\colw}{\dimexpr(\textwidth-2\colgap)/3\relax}
+  \typeout{LAYOUT: textwidth=\the\textwidth\space colw=\the\colw}
+  \input{content/00-header}
+
+  % Each column is measured before it is typeset. A minipage taller than the
+  % frame does NOT raise an Overfull \vbox in beamer and does not create a
+  % second page — it silently runs off the bottom of the sheet, so the usual
+  % "Pages: 1" check passes on a poster whose last block is missing. These
+  % COLHEIGHT lines are the only reliable warning; check.ps1 reads them.
+  \noindent
+  \begin{lrbox}{\colbox}\begin{minipage}[t]{\colw}
+    \input{content/10-problem}
+    \input{content/13-marea}
+    \input{content/14-operator}
+  \end{minipage}\end{lrbox}\showcol{1}\usebox{\colbox}\hfill
+  \begin{lrbox}{\colbox}\begin{minipage}[t]{\colw}
+    \input{content/22-hsr}
+    \input{content/24-products}
+    \input{content/30-validation}
+  \end{minipage}\end{lrbox}\showcol{2}\usebox{\colbox}\hfill
+  \begin{lrbox}{\colbox}\begin{minipage}[t]{\colw}
+    \input{content/34-wins}
+    \input{content/35-limits}
+    \input{content/33-scaling}
+    \input{content/90-footer}
+  \end{minipage}\end{lrbox}\showcol{3}\usebox{\colbox}
+\end{frame}
+\end{document}
