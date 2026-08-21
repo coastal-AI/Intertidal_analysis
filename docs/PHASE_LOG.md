@@ -478,3 +478,19 @@ anatomy must be shown — it is the measured frontier of the method, not an acci
   runs/campana_marea.log, one cell failure does not bring down the campaign.
 - Smoke test on cell004: 23,002 px, 342 s, and the detector found real interior tide
   (+26 and +20-23 min in three bands) — the first northern cell with the operator active.
+
+## 2026-08-21 — The retired method strikes back (finding, pre-registered follow-up)
+
+Scoring the legacy rasters against dev RTK with the standard recipe (block
+bootstrap, median-centred, common pixels): the retired "dictionary" method
+(per-pixel bracketing: midpoint of [max tide seen dry, min tide seen wet])
+beats plain HSR/EOT20 with statistical separation (pixel-aggregated: 0.167 vs
+0.206, Delta CI [-0.090, -0.004]) and is indistinguishable from MAREA v4
+(0.167 vs 0.191, CI [-0.048, +0.001]). Isolines do not separate (0.227).
+Confound declared: the dictionary raster likely used the 10-year window (3x
+the scenes of the epoch HSR) — an unfair data advantage until re-run.
+**Pre-registered follow-up**: regenerate the dictionary on 2023-2025 with the
+same valid dates as HSR; if it still separates, MAREA's stage-1 elevation
+engine is swappable by design and the bracket (or a bracket+sigmoid hybrid)
+must be gated in as a candidate. The gates exist precisely so the pipeline
+adopts whatever survives them — including a humbler estimator than ours.
