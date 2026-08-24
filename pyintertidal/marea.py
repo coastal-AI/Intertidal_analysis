@@ -284,7 +284,11 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
               indent=1)
 
     import matplotlib
-    matplotlib.use("Agg")
+    # headless campaigns need Agg, but inside a notebook this call would
+    # kill the inline backend for every later cell — switch only if no
+    # interactive backend is already live
+    if "inline" not in matplotlib.get_backend():
+        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 3, figsize=(15, 4.6))
     img = np.full(H * W, np.nan, np.float32)
