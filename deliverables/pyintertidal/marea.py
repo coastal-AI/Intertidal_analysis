@@ -1,6 +1,6 @@
 """
-marea.py — MAREA de punta a punta para un cubo cualquiera (campaña)
-===================================================================
+marea.py — MAREA end to end for any cube (campaign engine)
+==========================================================
 
 *Mudflat Altimetry via Remotely-Estimated tides from the Archive.*
 
@@ -36,9 +36,9 @@ from .elevation import _fit_block
 SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
 CLEAR = (4, 5, 6, 7)
 T_CHUNK = 40
-TAU_DETECT_MIN = 10.0     # umbral de deteccion demostrado contra nulos
-                          # igualados en Villaviciosa/Escalda; por debajo el
-                          # operador se queda en identidad (conservador)
+TAU_DETECT_MIN = 10.0     # detection threshold demonstrated against the
+                          # matched nulls of Villaviciosa/Scheldt; below it
+                          # the operator stays at identity (conservative)
 
 
 def extract(cube_path):
@@ -183,7 +183,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     H, W = ex["shape"]
     keep, sea, inter = ex["keep"], ex["sea"], ex["inter"]
     if verbose:
-        print(f"[{name}] {len(keep):,} px intermareales", flush=True)
+        print(f"[{name}] {len(keep):,} intertidal px", flush=True)
     if len(keep) < 3000:
         json.dump({"sitio": name, "estado": "sin_intermareal",
                    "n_px": int(len(keep))},
@@ -240,7 +240,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     tau_used = np.where(np.abs(tau) > tau_detect_min, tau, 0.0)
     if verbose:
         print(f"[{name}] tau={np.round(tau, 1)} -> "
-              f"aplicado {np.round(tau_used, 1)}", flush=True)
+              f"applied {np.round(tau_used, 1)}", flush=True)
 
     lo, hi = float(h0.min()), float(h0.max())
     z = np.full(len(keep), np.nan)
@@ -298,7 +298,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     ax[0].set_xticks([]); ax[0].set_yticks([])
     plt.colorbar(im, ax=ax[0], shrink=0.8)
     ax[1].plot(centers, tau, "o-", color="C0", label="medido")
-    ax[1].plot(centers, tau_used, "s--", color="C2", label="aplicado")
+    ax[1].plot(centers, tau_used, "s--", color="C2", label="applied")
     ax[1].axhline(0, color="k", lw=0.5)
     ax[1].set_xlabel("s (km)"); ax[1].set_ylabel("tau (min)")
     ax[1].legend(fontsize=8); ax[1].set_title("marea interior")

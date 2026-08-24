@@ -42,15 +42,15 @@ def decide(overpass_hours_utc, max_alias_days=100.0):
     out = {}
     for k, days in al.items():
         if not np.isfinite(days):
-            est, why = False, ("congelado: su periodo divide el dia solar; "
-                               f"el jitter de {spread_min:.0f} min de la "
-                               "hora real no lo rescata")
+            est, why = False, ("frozen: its period divides the solar day; "
+                               f"the {spread_min:.0f}-min jitter of the "
+                               "real overpass time does not rescue it")
         elif days > 300:
-            est, why = False, "alias ~anual: confundido con la estacionalidad"
+            est, why = False, "~annual alias: confounded with seasonality"
         elif days > max_alias_days:
-            est, why = False, f"alias {days:.0f} d: mas alla del umbral"
+            est, why = False, f"alias {days:.0f} d: beyond the threshold"
         else:
-            est, why = True, f"alias {days:.1f} d, bien muestreado"
+            est, why = True, f"alias {days:.1f} d, well sampled"
         out[k] = {"alias_days": days, "estimable": est, "reason": why,
                   "period_h": PERIODS_H[k]}
     return out

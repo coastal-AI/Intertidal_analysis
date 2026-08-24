@@ -19,7 +19,7 @@ The four moving parts, in the order a cell experiences them:
 4. purge     a successfully processed cube is deleted (130 cubes would
              not fit on this disk); ``--keep-cubes`` disables that.
 
-Everything is resumable: the manifest (``runs/campana_jobs.json``) records
+Everything is resumable: the manifest (``runs/campaign_jobs.json``) records
 each cell's job id and state, and a finished cell is recognised by its
 ``runs/<cell>/marea/result.json``. Kill the process at any point — power
 cut, suspend, Ctrl-C — and rerunning the same command continues where it
@@ -27,7 +27,7 @@ stopped, resubmitting nothing that is already queued, downloaded or done.
 
 Usage:
 
-    python -m experiments.campana_norte_v2 [options]
+    python -m experiments.campaign_north_v2 [options]
 
 Options (all have sensible defaults; no environment variables are read):
 
@@ -47,8 +47,8 @@ repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, repo_root)
 os.chdir(repo_root)
 
-log_path = os.path.join("runs", "campana_marea.log")
-manifest_path = os.path.join("runs", "campana_jobs.json")
+log_path = os.path.join("runs", "campaign.log")
+manifest_path = os.path.join("runs", "campaign_jobs.json")
 
 # Measured on this account, 2026-08-20: the 31st concurrent job is refused
 # with "[400] ConcurrentJobLimit". After hitting it we pause submissions

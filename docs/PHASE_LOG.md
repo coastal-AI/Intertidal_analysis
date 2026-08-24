@@ -541,3 +541,22 @@ interior share nc2_cell080). v1 archive: north_coast_cells_v1.json,
 runs/campana_jobs_v1.json, 38 processed v1 results kept in runs/. The 32
 pending v1 openEO jobs were cancelled to free the 30-slot account limit;
 campaign relaunched 13:12 with the new grid.
+
+## 2026-08-24 — English everywhere (user directive) + campaign complete
+
+Campaign v2 finished: 130/130 cells, 129 with an intertidal product, 108
+adopting a measured interior tide (nc2_cell115 recovered after its server
+job stalled; final counts in deliverables/north_coast_census.csv).
+
+Language sweep per the user's directive — English for everything including
+file names: campana_norte*.py -> campaign_north_v*.py, b5_v3_veredicto ->
+b5_v3_verdict, b6_dem_hidraulico -> b6_hydraulic_dem, p0_descarga_* ->
+p0_download_*, p4_escalda -> p4_scheldt, p4_sitio -> p4_site,
+p6_comparativa_terneuzen -> p6_terneuzen_comparison, p7_tabla_mareografos
+-> p7_gauge_table; runs/campana_jobs.json -> runs/campaign_jobs.json,
+runs/campana_marea.log -> runs/campaign.log. All cross-references updated
+(experiments, research notebooks, tests, deliverables). Remaining Spanish
+strings in living code translated. Root README rewritten in English for the
+current structure. Two deliberate exceptions, documented in the README:
+keys of sealed artifacts keep their recorded names, and
+experiments/prototypes/ stays verbatim as the historical record.

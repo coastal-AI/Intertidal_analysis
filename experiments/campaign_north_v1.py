@@ -10,11 +10,11 @@ processing of cell k.
 Everything is resumable: a cell with runs/<name>/marea/result.json is
 skipped, a cell whose cube exists skips the download. Failures are logged
 and the campaign continues — one broken cell must never kill a night of
-work. Progress goes to runs/campana_marea.log (one line per event) so a
+work. Progress goes to runs/campaign.log (one line per event) so a
 Monitor can follow it.
 
-Run:  python -m experiments.campana_norte            (all cells)
-      MAX_CELLS=10 python -m experiments.campana_norte
+Run:  python -m experiments.campaign_north_v1            (all cells)
+      MAX_CELLS=10 python -m experiments.campaign_north_v1
 """
 import json
 import os
@@ -27,7 +27,7 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
 N_WORKERS = 2          # 7.4 GB of RAM: each worker peaks at ~1.5-2 GB
-LOG = os.path.join("runs", "campana_marea.log")
+LOG = os.path.join("runs", "campaign.log")
 PY = sys.executable
 
 

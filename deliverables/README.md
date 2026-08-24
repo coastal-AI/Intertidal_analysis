@@ -26,7 +26,7 @@ inversion with it, only where the correction beats a matched null.
 | `experiments/` | Every gated experiment (m0–m4, b1–b7, p0–p8, the campaign runner) plus `prototypes/` — the 155 verbatim exploratory scripts that preceded them | — |
 | `configs/` | The pre-registered gate criteria, with the rationale for every threshold as comments | — |
 | `dem_villaviciosa_2023-2025.tif` | The flagship product: 10 m intertidal DEM of the Ría de Villaviciosa, operator-corrected clock, with quality flags (band 2) | `pyintertidal.marea.reconstruct` |
-| `north_coast_census.csv` | The first interior-tide census of the north coast of Spain: 130 cells, per-cell verdict, band lags, hypsometry | `experiments/campana_norte_v2.py` |
+| `north_coast_census.csv` | The first interior-tide census of the north coast of Spain: 130 cells, per-cell verdict, band lags, hypsometry | `experiments/campaign_north_v2.py` |
 | `north_coast_census.png` | The census as a map | same campaign results |
 | `marea_method.mp4` | 3-minute animated explanation of the method with real data | `research/anim_marea.py` |
 

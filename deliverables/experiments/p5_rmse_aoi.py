@@ -46,7 +46,7 @@ from pyintertidal import geometry, seal
 from pyintertidal import tide_estimators as te
 from pyintertidal.marea import invert_series
 import pyintertidal as pit
-from experiments.p4_sitio import extract
+from experiments.p4_site import extract
 
 CFG2 = yaml.safe_load(open("configs/m2.yaml", encoding="utf-8"))
 TAU_APLICA_MIN = 5.0     # the demonstrated noise level of M2a (gate M2):
