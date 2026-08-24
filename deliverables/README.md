@@ -41,9 +41,9 @@ the repository, alongside two things not duplicated here:
 
 ## Headline numbers (as of 2026-08-24)
 
-* North coast: **129/130 cells processed**, 128 with an intertidal product;
-  **107 cells adopt a measured interior tide**, 21 correctly keep the
-  model's clock. 285 km² of intertidal mapped; 2.85 M pixels with
+* North coast: **130/130 cells processed**, 129 with an intertidal product;
+  **108 cells adopt a measured interior tide**, 21 correctly keep the
+  model's clock. 286 km² of intertidal mapped; 2.85 M pixels with
   elevation.
 * Identifiability: a planted lag profile is recovered blind with
   **4.7 min** RMSE (literature-style waterline timing: 5.4).
