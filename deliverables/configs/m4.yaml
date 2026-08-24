@@ -1,0 +1,35 @@
+# Phase M4 — the operator T and its contraction gate. Thresholds with
+# their rationale.
+
+puerta:
+  # 1) BENEFIT: inverting elevations with the operator must reduce the RMSE
+  #    against the planted truth in the interior bands (where the planted
+  #    lag reaches 40 min => ~0.3 m of misassigned level at spring tide).
+  #    At least half of that damage must be recovered — less would be an
+  #    operator that "works" without biting
+  min_fraccion_dano_recuperado: 0.5
+  # 2) NO HARM at the mouth: there the transfer is ~identity by
+  #    construction; tolerance = refit noise between two nulls (~1 cm)
+  max_degradacion_boca_m: 0.015
+  # 3) CONTRACTION (fixed point): feeding M2a the operator's own level
+  #    must return identity — same tolerance as the M3 leak
+  max_tau_residual_min: 6.0
+
+# this gate's planted world: phase ONLY (tau 0->40 min, alpha=1). After
+# gate M2 v2, operator T v1 corrects phase; per-band amplitude is
+# unidentifiable in binary (affine theorem) and its estimation lives in the
+# OOS judge over continuous NDWI — the operator is judged on what it
+# declares it corrects
+plantado:
+  tau_boca_a_fondo_min: [0.0, 40.0]
+
+# elevation inversion uses the standard machinery (_fit_block) with the
+# usual guards (adopted in the prototype era, R4-safe)
+min_obs: 8
+min_b: 0.15
+mu_puntos: 50
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  geometria: results/m1_geometry/geometry.npz

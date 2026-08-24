@@ -18,21 +18,22 @@ inversion with it, only where the correction beats a matched null.
 
 ## Contents
 
-| File | What it is | Produced by |
+| Item | What it is | Produced by |
 |---|---|---|
 | `MAREA_poster.pdf` | A0 conference poster of the whole project | `poster/` (pdflatex) |
+| `intertidal_topography_villaviciosa.ipynb` | **The worked study**: the complete pipeline on one estuary, from raw Sentinel-2 to the DEM with the measured interior tide, every step shown in a cell | executed with the package |
+| `pyintertidal/` | **The package**: one function per scientific step, explicit parameters, no `run_everything()` | — |
+| `experiments/` | Every gated experiment (m0–m4, b1–b7, p0–p8, the campaign runner) plus `prototypes/` — the 155 verbatim exploratory scripts that preceded them | — |
+| `configs/` | The pre-registered gate criteria, with the rationale for every threshold as comments | — |
 | `dem_villaviciosa_2023-2025.tif` | The flagship product: 10 m intertidal DEM of the Ría de Villaviciosa, operator-corrected clock, with quality flags (band 2) | `pyintertidal.marea.reconstruct` |
 | `north_coast_census.csv` | The first interior-tide census of the north coast of Spain: 130 cells, per-cell verdict, band lags, hypsometry | `experiments/campana_norte_v2.py` |
 | `north_coast_census.png` | The census as a map | same campaign results |
 | `marea_method.mp4` | 3-minute animated explanation of the method with real data | `research/anim_marea.py` |
 
-## Where the rest lives
+The copies of the package, the experiments and the study notebook are
+snapshots taken at release time; the living versions are one level up in
+the repository, alongside two things not duplicated here:
 
-* **The worked study** — `../intertidal_topography_villaviciosa.ipynb`:
-  the complete pipeline on one estuary, from raw Sentinel-2 to the DEM,
-  every step shown in a cell.
-* **The package** — `../pyintertidal/`: one function per scientific step,
-  no `run_everything()`.
 * **The evidence** — `../research/01..07`: one executed notebook per
   deduction, including the negative results (`06`).
 * **The audit trail** — `../docs/PHASE_LOG.md`: every gate, every
