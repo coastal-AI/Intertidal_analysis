@@ -1,11 +1,13 @@
-\begin{pblock}{The north coast: 116 cells, one census \wip}
+\begin{pblock}{The north coast: 130 cells, one census}
 Nothing is site-specific: every cell runs the identical pipeline — same
-configs, same seeds, zero per-site tuning. Cubes are queued server-side on
-openEO (30 concurrent jobs), harvested and processed in a resumable worker
-pool; one tide-model call per cell.
+configs, same seeds, zero per-site tuning. Terrain-following cells from the
+real coastline, cubes queued server-side on openEO, harvested and processed
+in a resumable worker pool; one tide-model call per cell.
 
 \vspace{2mm}
 \pfig[0.92\linewidth]{census_map}
-\figcap{Live snapshot: 116 bathymetries with uncertainty, and the first
-\term{interior-tide census} of the coast — decided by the method itself.}
+\figcap{The first \term{interior-tide census} of the coast — decided by
+the method itself: \emphnum{107} of 128 mapped cells carry a measured
+interior tide; 285\,km\textsuperscript{2} of intertidal, 2.85\,M pixels
+with elevation.}
 \end{pblock}
