@@ -28,21 +28,35 @@
  ],
  "contra_levantamiento": {
   "uniforme": {
-   "n": 286280,
-   "pendiente": 0.6352813685947641,
-   "rmse_centrado": 0.2788126059423376,
+   "n": 286222,
+   "pendiente": 0.6353133227794848,
+   "rmse_centrado": 0.2786371104210599,
    "offset_datum_mediano": -1.4029433167710597
   },
   "operador": {
-   "n": 286280,
-   "pendiente": 0.6849325926703826,
-   "rmse_centrado": 0.24703342331326092,
+   "n": 286222,
+   "pendiente": 0.6849689998400587,
+   "rmse_centrado": 0.24687364576870915,
    "offset_datum_mediano": -1.4919576766539593
+  },
+  "todos": {
+   "uniforme": {
+    "n": 286280,
+    "pendiente": 0.6352813685947641,
+    "rmse_centrado": 0.2788126059423376,
+    "offset_datum_mediano": -1.4029433167710597
+   },
+   "operador": {
+    "n": 286280,
+    "pendiente": 0.6849325926703826,
+    "rmse_centrado": 0.24703342331326092,
+    "offset_datum_mediano": -1.4919576766539593
+   }
   }
  },
  "inputs_sha": {
   "cube": "1adb757090d18956b999fa2bf281c5ccbd6b2b03cd82eed348d16cc78d8b5b43",
   "ref": "1212102eb64a19efc526f422f426b37ecdb86c690840152f7cc44b4e7bc0e321"
  },
- "duracion_s": 947.6
+ "duracion_s": 608.6
 }

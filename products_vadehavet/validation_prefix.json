@@ -1,0 +1,45 @@
+{
+ "all": [
+  {
+   "method": "HSR",
+   "n": 309318,
+   "bias_m": -1.018,
+   "rmse_m": 0.265,
+   "mae_m": 0.203,
+   "pearson_r": 0.777,
+   "spearman": 0.785
+  },
+  {
+   "method": "step (DEA)",
+   "n": 212709,
+   "bias_m": -1.175,
+   "rmse_m": 0.293,
+   "mae_m": 0.203,
+   "pearson_r": 0.741,
+   "spearman": 0.804
+  }
+ ],
+ "common": [
+  {
+   "method": "HSR",
+   "n": 193169,
+   "bias_m": -1.024,
+   "rmse_m": 0.258,
+   "mae_m": 0.194,
+   "pearson_r": 0.749,
+   "spearman": 0.757
+  },
+  {
+   "method": "step (DEA)",
+   "n": 193169,
+   "bias_m": -1.171,
+   "rmse_m": 0.295,
+   "mae_m": 0.206,
+   "pearson_r": 0.727,
+   "spearman": 0.792
+  }
+ ],
+ "n_common": 193169,
+ "epoch": "2019-2021",
+ "tide_range": 1.584665951698384
+}

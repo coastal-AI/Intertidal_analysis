@@ -1,0 +1,34 @@
+[
+ {
+  "cell": "north_coast_cell000",
+  "km2": 36.21,
+  "status": "failed",
+  "started": "2026-08-17 23:38:14",
+  "error": "\u001b[31mNameError\u001b[39m: name 'rows' is not defined",
+  "minutes": 30.0
+ },
+ {
+  "cell": "north_coast_cell001",
+  "km2": 79.24,
+  "status": "failed",
+  "started": "2026-08-17 23:38:14",
+  "error": "\u001b[31mNameError\u001b[39m: name 'rows' is not defined",
+  "minutes": 50.7
+ },
+ {
+  "cell": "north_coast_cell002",
+  "km2": 80.37,
+  "status": "failed",
+  "started": "2026-08-18 00:08:12",
+  "error": "RuntimeError: Kernel didn't respond in 60 seconds",
+  "minutes": 1.1
+ },
+ {
+  "cell": "north_coast_cell003",
+  "km2": 80.05,
+  "status": "failed",
+  "started": "2026-08-18 00:09:16",
+  "error": "RuntimeError: Kernel didn't respond in 60 seconds",
+  "minutes": 1.1
+ }
+]

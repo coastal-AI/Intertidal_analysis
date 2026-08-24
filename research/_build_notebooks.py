@@ -158,11 +158,11 @@ for k, v in sorted(r["rmse_m"].items(), key=lambda kv: -kv[1]):
 print("gauge-calibrated reference (needs 2 gauges):",
       r["referencia_con_mareografos"])"""),
      ("code", """\
-r = load("results/p4_escalda/result.json")
+r = load("results/p4_scheldt/result.json")
 print(f"Scheldt blind gradient: {r['gradiente_m2a_min_km']:.2f} min/km "
       f"vs gauges {r['gradiente_mareografos_min_km']} "
       f"-> {r['validacion']}")
-t = load("results/p7_tabla_mareografos/result.json")["tabla"]
+t = load("results/p7_gauge_table/result.json")["tabla"]
 print("\\nlevel RMSE at every studied gauge (models as-is):")
 for k, v in t.items():
     if "rmse_m" in v:
@@ -246,7 +246,7 @@ print(np.round(np.asarray(r["tabla_sigma_z"], float), 3))
 print(f"dev coverage at 68% nominal: {100*r['cobertura_dev']:.0f}% "
       f"(conservative)")"""),
      ("code", """\
-r = load("results/b6_dem_hidraulico/result.json")
+r = load("results/b6_hydraulic_dem/result.json")
 print(f"ponded pixels: {r['n_px_charco']:,} ({100*r['frac_charco']:.1f} %), "
       f"median depth {r['profundidad_mediana_m']:.2f} m")
 print("real-signature judge:", r["juez_real"])
@@ -281,7 +281,7 @@ print("improvements measured with hysteresis planted:",
 g = load("results/m2_gate_sim/result.json")["perfil_nll_alpha"]
 print(f"NLL(alpha) range with scale-invariant grids: {g['recorrido']:.2e} "
       f"(machine-flat: the theorem, executable)")
-b6 = load("results/b6_dem_hidraulico/result.json")["juez_simulacion"]
+b6 = load("results/b6_hydraulic_dem/result.json")["juez_simulacion"]
 print(f"censoring self-hiding: precision {b6['precision']:.2f}, "
       f"recall {b6['exhaustividad']:.2f} against planted censoring")"""),
     ])

@@ -28,21 +28,35 @@
  ],
  "contra_levantamiento": {
   "uniforme": {
-   "n": 344061,
-   "pendiente": 0.534566556886622,
-   "rmse_centrado": 0.27478067377824694,
-   "offset_datum_mediano": -0.9799906112709824
+   "n": 342235,
+   "pendiente": 0.5359340528372275,
+   "rmse_centrado": 0.2734649899316115,
+   "offset_datum_mediano": -0.9779712253687332
   },
   "operador": {
-   "n": 344061,
-   "pendiente": 0.500857022963425,
-   "rmse_centrado": 0.2821856635472773,
-   "offset_datum_mediano": -0.9766358185787589
+   "n": 342235,
+   "pendiente": 0.501744566517183,
+   "rmse_centrado": 0.280944358014229,
+   "offset_datum_mediano": -0.9746809991038575
+  },
+  "todos": {
+   "uniforme": {
+    "n": 344061,
+    "pendiente": 0.534566556886622,
+    "rmse_centrado": 0.27478067377824694,
+    "offset_datum_mediano": -0.9799906112709824
+   },
+   "operador": {
+    "n": 344061,
+    "pendiente": 0.500857022963425,
+    "rmse_centrado": 0.2821856635472773,
+    "offset_datum_mediano": -0.9766358185787589
+   }
   }
  },
  "inputs_sha": {
   "cube": "897e83149366e50c4c37d5b4de62b0d5222a7ecaa06065e42394370048367744",
   "ref": "be3dfb0602bc0a41b3d846e0d0543fb00acaa850d2f91bf3c4a034c14c41a80c"
  },
- "duracion_s": 468.9
+ "duracion_s": 532.1
 }

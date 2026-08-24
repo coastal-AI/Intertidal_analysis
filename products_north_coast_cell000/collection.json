@@ -1,0 +1,33 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "id": "pyintertidal",
+  "description": "Intertidal products \u00b7 north_coast_cell000",
+  "license": "proprietary",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -7.951353021104416,
+          43.67546877925515,
+          -7.841108043403874,
+          43.739898362607484
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2025-07-01T00:00:00Z",
+          "2025-07-01T00:00:00Z"
+        ]
+      ]
+    }
+  },
+  "links": [
+    {
+      "rel": "item",
+      "href": "./hsr_elevation.json"
+    }
+  ]
+}

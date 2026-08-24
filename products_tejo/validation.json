@@ -1,0 +1,51 @@
+{
+ "all": [
+  {
+   "method": "HSR",
+   "n": 288616,
+   "bias_m": 1.378,
+   "rmse_m": 0.32,
+   "mae_m": 0.227,
+   "pearson_r": 0.852
+  },
+  {
+   "method": "step (DEA)",
+   "n": 272325,
+   "bias_m": 1.389,
+   "rmse_m": 0.184,
+   "mae_m": 0.139,
+   "pearson_r": 0.931
+  }
+ ],
+ "common": [
+  {
+   "method": "HSR",
+   "n": 271948,
+   "bias_m": 1.365,
+   "rmse_m": 0.272,
+   "mae_m": 0.198,
+   "pearson_r": 0.839
+  },
+  {
+   "method": "step (DEA)",
+   "n": 271948,
+   "bias_m": 1.389,
+   "rmse_m": 0.184,
+   "mae_m": 0.139,
+   "pearson_r": 0.932
+  }
+ ],
+ "epoch": "2019-2021",
+ "n_dates": 435,
+ "n_common": 271948,
+ "bootstrap": {
+  "comparison": "HSR menos step (DEA)",
+  "delta_rmse_m": 0.0879,
+  "ci95": [
+   0.0861,
+   0.0897
+  ],
+  "significant": true,
+  "n_resampled": 40000
+ }
+}

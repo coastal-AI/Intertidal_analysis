@@ -1,0 +1,33 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "id": "pyintertidal",
+  "description": "Intertidal products \u00b7 Villaviciosa",
+  "license": "proprietary",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -5.458235294138516,
+          43.468222829495645,
+          -5.371867133940115,
+          43.54977776123578
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2025-07-01T00:00:00Z",
+          "2025-07-01T00:00:00Z"
+        ]
+      ]
+    }
+  },
+  "links": [
+    {
+      "rel": "item",
+      "href": "./hsr_elevation.json"
+    }
+  ]
+}

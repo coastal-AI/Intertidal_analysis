@@ -1,0 +1,30 @@
+{
+ "sitio": "north_coast_cell070",
+ "estado": "ok",
+ "n_escenas": 254,
+ "n_px": 3465,
+ "n_px_cota": 2232,
+ "s_max_km": null,
+ "centros_km": [
+  0.0
+ ],
+ "tau_min": [
+  0.0
+ ],
+ "tau_usado_min": [
+  0.0
+ ],
+ "con_operador": false,
+ "hipsometria": {
+  "integral": 0.6734753886823908,
+  "area_total_km2": 0.2232
+ },
+ "rango_marea_m": [
+  -2.2107856273651123,
+  1.3635092973709106
+ ],
+ "inputs_sha": {
+  "cube": "81bd5917c2be69db2cc0ac368a99bddb076f83a840a25245cd9ad7f107750902"
+ },
+ "duracion_s": 94.6
+}

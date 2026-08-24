@@ -35,12 +35,12 @@ def test_b5_negative_result_recorded():
 
 
 def test_b6_operating_point_recorded():
-    r = _load("results/b6_dem_hidraulico/result.json")
+    r = _load("results/b6_hydraulic_dem/result.json")
     # the flag that lights up is trustworthy (real judge vs matched null)
     assert r["juez_real"]["firma_observada"] > r["juez_real"]["nulo_p95"]
     # and the bounded recall is declared (self-hiding censoring)
     assert r["juez_simulacion"]["exhaustividad"] < 0.7
-    assert os.path.exists("results/b6_dem_hidraulico/capas.npz")
+    assert os.path.exists("results/b6_hydraulic_dem/capas.npz")
 
 
 def test_b7_conservative_intervals_recorded():

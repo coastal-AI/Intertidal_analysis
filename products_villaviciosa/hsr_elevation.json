@@ -1,0 +1,96 @@
+{
+  "type": "Feature",
+  "stac_version": "1.0.0",
+  "id": "hsr_elevation",
+  "collection": "pyintertidal",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -5.458235294138516,
+          43.468222829495645
+        ],
+        [
+          -5.371867133940115,
+          43.468222829495645
+        ],
+        [
+          -5.371867133940115,
+          43.54977776123578
+        ],
+        [
+          -5.458235294138516,
+          43.54977776123578
+        ],
+        [
+          -5.458235294138516,
+          43.468222829495645
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    -5.458235294138516,
+    43.468222829495645,
+    -5.371867133940115,
+    43.54977776123578
+  ],
+  "properties": {
+    "datetime": "2025-07-01T00:00:00Z",
+    "proj:epsg": 32630,
+    "proj:shape": [
+      887,
+      673
+    ],
+    "proj:transform": [
+      10.0,
+      0.0,
+      301420.0,
+      0.0,
+      -10.0,
+      4824610.0
+    ],
+    "gsd": 10.0,
+    "processing:software": {
+      "pyintertidal": "0.1.0"
+    },
+    "pyintertidal:method": "hsr",
+    "pyintertidal:epoch": "2023-2025",
+    "pyintertidal:ndwi_threshold": 0.0,
+    "pyintertidal:cloud_threshold": 0.1,
+    "pyintertidal:wf_window": [
+      0.05,
+      0.95
+    ],
+    "pyintertidal:min_obs": 16,
+    "pyintertidal:tide_model": "EOT20",
+    "pyintertidal:ocean_cell_km": 8.9,
+    "pyintertidal:site": "Villaviciosa",
+    "pyintertidal:area_km2": 44.35
+  },
+  "assets": {
+    "data": {
+      "href": "C:\\Users\\Jorge\\sketch_fitton\\Intertidal_analysis\\products_villaviciosa\\hsr_elevation.tif",
+      "type": "image/tiff; application=geotiff",
+      "roles": [
+        "data"
+      ]
+    },
+    "uncertainty": {
+      "href": "C:\\Users\\Jorge\\sketch_fitton\\Intertidal_analysis\\products_villaviciosa\\hsr_uncertainty.tif",
+      "type": "image/tiff; application=geotiff",
+      "roles": [
+        "metadata"
+      ]
+    },
+    "subpixel_relief": {
+      "href": "C:\\Users\\Jorge\\sketch_fitton\\Intertidal_analysis\\products_villaviciosa\\hsr_sigma.tif",
+      "type": "image/tiff; application=geotiff",
+      "roles": [
+        "metadata"
+      ]
+    }
+  },
+  "links": []
+}

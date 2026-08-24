@@ -1,0 +1,25 @@
+{
+ "validation": [
+  {
+   "method": "HSR",
+   "n": 285673,
+   "bias_m": -1.333,
+   "rmse_m": 0.339,
+   "mae_m": 0.247,
+   "pearson_r": 0.828,
+   "spearman": 0.886
+  },
+  {
+   "method": "step (DEA)",
+   "n": 133083,
+   "bias_m": -1.424,
+   "rmse_m": 0.218,
+   "mae_m": 0.148,
+   "pearson_r": 0.856,
+   "spearman": 0.922
+  }
+ ],
+ "n_common": 290879,
+ "epoch": "2019-2021",
+ "n_dates": 435
+}

@@ -1,0 +1,96 @@
+{
+  "type": "Feature",
+  "stac_version": "1.0.0",
+  "id": "hsr_elevation",
+  "collection": "pyintertidal",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -7.844169966200395,
+          43.67513961778386
+        ],
+        [
+          -7.716769205530224,
+          43.67513961778386
+        ],
+        [
+          -7.716769205530224,
+          43.76487860353359
+        ],
+        [
+          -7.844169966200395,
+          43.76487860353359
+        ],
+        [
+          -7.844169966200395,
+          43.67513961778386
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    -7.844169966200395,
+    43.67513961778386,
+    -7.716769205530224,
+    43.76487860353359
+  ],
+  "properties": {
+    "datetime": "2025-07-01T00:00:00Z",
+    "proj:epsg": 32629,
+    "proj:shape": [
+      982,
+      1012
+    ],
+    "proj:transform": [
+      10.0,
+      0.0,
+      593170.0,
+      0.0,
+      -10.0,
+      4846410.0
+    ],
+    "gsd": 10.0,
+    "processing:software": {
+      "pyintertidal": "0.1.0"
+    },
+    "pyintertidal:method": "hsr",
+    "pyintertidal:epoch": "2023-2025",
+    "pyintertidal:ndwi_threshold": 0.0,
+    "pyintertidal:cloud_threshold": 0.1,
+    "pyintertidal:wf_window": [
+      0.05,
+      0.95
+    ],
+    "pyintertidal:min_obs": 8,
+    "pyintertidal:tide_model": "EOT20",
+    "pyintertidal:ocean_cell_km": 9.2,
+    "pyintertidal:site": "north_coast_cell001",
+    "pyintertidal:area_km2": 79.24
+  },
+  "assets": {
+    "data": {
+      "href": "C:\\Users\\Jorge\\sketch_fitton\\Intertidal_analysis\\products_north_coast_cell001\\hsr_elevation.tif",
+      "type": "image/tiff; application=geotiff",
+      "roles": [
+        "data"
+      ]
+    },
+    "uncertainty": {
+      "href": "C:\\Users\\Jorge\\sketch_fitton\\Intertidal_analysis\\products_north_coast_cell001\\hsr_uncertainty.tif",
+      "type": "image/tiff; application=geotiff",
+      "roles": [
+        "metadata"
+      ]
+    },
+    "subpixel_relief": {
+      "href": "C:\\Users\\Jorge\\sketch_fitton\\Intertidal_analysis\\products_north_coast_cell001\\hsr_sigma.tif",
+      "type": "image/tiff; application=geotiff",
+      "roles": [
+        "metadata"
+      ]
+    }
+  },
+  "links": []
+}

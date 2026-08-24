@@ -1,0 +1,30 @@
+{
+ "sitio": "nc2_cell111",
+ "estado": "ok",
+ "n_escenas": 465,
+ "n_px": 14017,
+ "n_px_cota": 3157,
+ "s_max_km": 4.303330444827417,
+ "centros_km": [
+  0.0
+ ],
+ "tau_min": [
+  0.0
+ ],
+ "tau_usado_min": [
+  0.0
+ ],
+ "con_operador": false,
+ "hipsometria": {
+  "integral": 0.39908545817939545,
+  "area_total_km2": 0.31570000000000004
+ },
+ "rango_marea_m": [
+  -2.2801454067230225,
+  1.3709865808486938
+ ],
+ "inputs_sha": {
+  "cube": "7fab0b03d7c4b9e5f71fe31fe2ddc9a54832901f7c363719a7e1d1b959d34aca"
+ },
+ "duracion_s": 258.0
+}

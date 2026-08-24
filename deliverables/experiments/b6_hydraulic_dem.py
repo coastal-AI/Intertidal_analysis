@@ -15,7 +15,7 @@ layers and puts the claim through two judges:
     null that permutes flags within s-band x elevation-quintile cells —
     the flag has to know something the elevation and position alone do not.
 
-Outputs results/b6_dem_hidraulico/{capas.npz, result.json, figure.png}:
+Outputs results/b6_hydraulic_dem/{capas.npz, result.json, figure.png}:
 spill elevation, ponding depth (spill - z), and the censored flag.
 
 Run:  python -m experiments.b6_dem_hidraulico    (~10 min)
