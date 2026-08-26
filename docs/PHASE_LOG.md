@@ -592,3 +592,29 @@ the free-band model isolates it outside the null. The ladder is the
 pedagogy: simpler estimators see the same physics qualitatively and lose
 the power to prove it; each piece of machinery is justified by a failure
 the previous rung exhibits.
+
+## 2026-08-26 — P10 closed: linear (P9) vs free bands (M2a) on external truth
+
+Final table (centred RMSE / slope / r on common pixels vs survey):
+  Tejo (286k px):   uniform .279/.635/.884 · linear(g=+16.5) .267/.643/.898
+                    · free bands .247/.685/.912  -> FREE WINS CLEAN
+  Vadehavet (337k): uniform .274/.536/.774 wins; both corrections cost
+                    ~1 cm ungated -> gating is mandatory for ANY model
+  Aveiro (333k):    linear(g=+6) .577/.466/.557 ties free .580/.480/.560
+                    -> the one genuine one-parameter site
+Two methodological findings worth keeping:
+1. GRID-CAP ARTIFACT: with the sweep capped at +8, Tejo's linear scored
+   .246 (a spurious tie with free bands). The cap acted as accidental
+   regularisation; choosing a cap by external RMSE would be label leakage
+   (R2). Honest rule: the model picks gamma by likelihood alone — and its
+   true optimum (+16.5) OVERSHOOTS elevations.
+2. MISSPECIFICATION OVERSHOOT: on Tejo's convex profile the linear model's
+   likelihood keeps improving toward large gamma (interior bands dominate)
+   while external RMSE degrades — an ML-optimal fit of a wrong shape is
+   not elevation-optimal. Free bands are immune (per-band clocks).
+Verdict: M2a stays the adopted estimator. The linear model enters the
+ladder as: (a) gated fallback candidate for data-poor cells, (b) the
+nonlinearity index (band profile vs its best line), (c) the paper's
+ablation. Pre-registered next rungs: the linear model's own planted-truth
+gate, and the broken-stick tau(s) with 2-3 parameters for convex/two-
+regime profiles (Tejo, Villaviciosa).

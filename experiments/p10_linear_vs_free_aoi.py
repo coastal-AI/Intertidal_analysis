@@ -45,7 +45,7 @@ SITES = {
     "vadehavet": "ndwi_cube_vadehavet_2019_2021.nc",
     "aveiro": "ndwi_cube_aveiro_2023-2025.nc",
 }
-GAMMA_GRID = np.arange(-2.0, 16.0 + 0.5, 0.5)
+GAMMA_GRID = np.arange(-2.0, 32.0 + 0.5, 0.5)
 SUB_PX_BAND = 2000
 
 
