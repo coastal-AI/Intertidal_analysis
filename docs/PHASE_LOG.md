@@ -560,3 +560,20 @@ strings in living code translated. Root README rewritten in English for the
 current structure. Two deliberate exceptions, documented in the README:
 keys of sealed artifacts keep their recorded names, and
 experiments/prototypes/ stays verbatim as the historical record.
+
+## 2026-08-26 — P9: the one-parameter tide adapter tau(s) = gamma*(s-s0)
+
+Built at the user's request as the first rung of a piece-by-piece ladder
+(uniform 0 params -> linear 1 param -> free bands 5 params), matched to
+m2_real in every respect (same pixels, bands, grids, null seeds).
+Villaviciosa: gamma = +3.25 min/km (celerity 5.1 m/s -> effective depth
+2.7 m, physically plausible). NLL ladder 0.297876 -> 0.294668 -> 0.293867:
+the line captures ~80% of the free-band likelihood gain. HONEST VERDICT:
+gamma does NOT leave its 5-replica null band [-1.75, +3.25] — one uniform
+replica fabricated the same slope. Reading: Villaviciosa's profile is not
+linear (head +26 vs ~+4 midway); a global slope dilutes the head signal
+into the noisy outer bands, where nulls can match it. The head band's own
+departure (m2_real, 3/4 estimators outside) remains the adopted evidence.
+Follow-ups pre-registered: planted-linear-truth recovery in the twin
+(bias/precision of gamma-hat), more null replicas, and the Scheldt as the
+favourable case (its measured profile IS linear, 0.72 min/km).
