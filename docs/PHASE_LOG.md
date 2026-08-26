@@ -577,3 +577,18 @@ departure (m2_real, 3/4 estimators outside) remains the adopted evidence.
 Follow-ups pre-registered: planted-linear-truth recovery in the twin
 (bias/precision of gamma-hat), more null replicas, and the Scheldt as the
 favourable case (its measured profile IS linear, 0.72 min/km).
+
+## 2026-08-26 — P9b/P9c: the gamma ladder completed (three routes, one verdict)
+
+Three ways to determine gamma (lag per km), same pixels/bands/null seeds:
+P9c two-curves arithmetic (no optimisation): gamma +6.2, null up to +7.1;
+mouth band shows a nonphysical -24 min (the rising/falling gap conflates
+ponding and wave asymmetry with propagation). P9b sliding-clock Spearman
+on band wet fractions: gamma +4.28 (rho 0.53-0.82), null [0.0, +6.2].
+P9 profiled likelihood: gamma +3.25, null up to +3.25. VERDICT: no route
+separates a GLOBAL linear slope from its null — but P9b's relative head
+lag (tau_head - tau_mouth = +24 min) matches M2a's adopted +26, and only
+the free-band model isolates it outside the null. The ladder is the
+pedagogy: simpler estimators see the same physics qualitatively and lose
+the power to prove it; each piece of machinery is justified by a failure
+the previous rung exhibits.
