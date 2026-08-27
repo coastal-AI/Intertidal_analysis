@@ -1,0 +1,35 @@
+{
+ "globals": {
+  "m0": 0.06155398488044739,
+  "w_inf": 0.4428044259548187
+ },
+ "oos_ndwi_rmse": {
+  "p4": 0.23030302963336385,
+  "p6": 0.2281609751616491,
+  "frac_p6_better": 0.6732365145228216
+ },
+ "z_vs_lidar": {
+  "p4": {
+   "rmse_centrado": 0.7714762227427,
+   "pendiente": 0.5348420221193574,
+   "n": 19280
+  },
+  "p6": {
+   "rmse_centrado": 0.5972374828082723,
+   "pendiente": 0.3296864434724519,
+   "n": 19280
+  }
+ },
+ "gate": {
+  "oos_majority": true,
+  "z_not_degraded": false,
+  "PASA": false
+ },
+ "L_median_m": 0.6603860435898538,
+ "k_median_1_m": 0.576939274143639,
+ "n_px": 19280,
+ "inputs_sha": {
+  "cube": "0cdc354c86ead927049e54cf2ca62c22b1b46122d4605f177ea06d129a2456ea"
+ },
+ "duracion_s": 1749.3
+}

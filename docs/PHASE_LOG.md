@@ -719,3 +719,25 @@ lagoon water; archive length (more extreme-low catches) remains the only
 in-scope lever. The P11 master curve keeps its other yields: the
 three-regime picture, the threshold finding (+0.1 dominates 0), and the
 turbidity decline as a diagnostic.
+
+## 2026-08-27 — P12: the six-parameter pixel — gated, NOT adopted, products kept
+
+Extended per-pixel model (drainage exp + Phi + attenuation exp, 6 params)
+vs the 4-param sigmoid, same pixels (20k, Aveiro), chronological 65/35
+split, pre-registered gate. VERDICT: gate (i) PASSED — the extended model
+predicts unseen scenes better on 67.3% of pixels (OOS NDWI RMSE 0.2282 vs
+0.2303): regimes I and III are real physics, not overfit. Gate (ii)
+FAILED — elevation degrades in the way we now know by name: better RMSE
+(0.597 vs 0.771) with collapsed slope (0.330 vs 0.535) — the extra
+flexibility lets z drift toward the middle while L and k compensate
+(identifiability leak), the compression trap third time this week. NOT
+ADOPTED for elevation; the 4-param sigmoid stays. The exploratory
+products survive their sanity check: L (drainage length, median 0.66 m)
+and k (attenuation, median 0.58 /m) show strong spatial coherence
+(neighbour r = 0.68 and 0.56 — provinces, not confetti), so they stand as
+candidate sediment/turbidity layers pending a dedicated validation. The
+day's arc closes: the pixel's full four-regime response is measured,
+modelled, and each regime assigned its verdict — II carries the
+elevation; I and III carry real but non-elevation information; IV is a
+diagnostic. The estimator was already parked on the only regime that
+pays.
