@@ -657,3 +657,24 @@ the Santander reference from the multiband cube with class 12 integrated
 paper: the elevation method needs an observable wetting transition, so
 marsh pixels get no sigmoid elevation (NaN with reason) — marsh is a
 habitat-extent product, not an altimetry one.
+
+## 2026-08-27 — Recovery levers implemented and honestly tuned (Santander)
+
+Two levers built and scored against exposure witnesses:
+LEVER 1 (lowest flats): readmit wf 0.88-0.985 px, dry >=N distinct dates,
+connected to known flats. Sensitivity: N>=2 recovers 60 ha but drags
+1,625 ha of doubtful additions; N>=4: 53 ha / 491 ha. Adjudication needed
+a better truth, which produced the day's second method: the VETTED
+WITNESS — exposed in >=2 of the 5 most-exposed clear scenes AND flooded
+at a high-tide scene. (The naive union of 5 lows gave 2,341 ha — glint
+contamination, wf median 0.967 of its excess; 2-of-5 persistence cleans
+it to 1,157 ha, consistent with the single-scene 1,048.)
+Final accounting vs the vetted witness (1,157 ha of true intertidal):
+pipeline 81.6% -> +lever1(N>=4) 90.0%; only 10% of lever1's bulk-archive
+additions are vindicated, so the PRODUCTION RULE should be the direct
+form: readmit = seen dry in >=2 extreme-low scenes + connected (evidence
+of exposure, not vote counting). LEVER 2 (phenology marsh: winter
+intertidal + summer vegetation): +10 ha fringes; MNDWI marsh (141 ha)
+remains the main vegetated layer. Remaining ~10%: canopy-hidden fringes,
+residual film, and the never-caught deepest flats — the optical frontier,
+now measured and declarable per site. All arrays in results/santander_*.
