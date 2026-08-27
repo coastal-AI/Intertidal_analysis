@@ -638,3 +638,22 @@ voter; SCL's cleanliness advantage (fewer inland/ship speckles, 1,534 vs
 3,113) is self-healing for NDWI anyway via the frequency window, while
 SCL's flats loss is not. SCL remains the cloud/validity gatekeeper only.
 Evidence: results/santander_scl_revision.png, santander_diag_*.npz.
+
+## 2026-08-27 — The marsh gap (user caught it again): 141 ha invisible
+
+Second audit hit from the same user review: the central/eastern bay zones
+hold SALT MARSH — intertidal that the wet/dry vote cannot see (SCL labels
+canopy as vegetation; NDWI goes negative over leaves even when the plant
+stands in water). The package anticipated this (pyintertidal/marsh.py:
+flooded vegetation via MNDWI, relabelled class 12) BUT the Santander
+working cube has no B11, so the notebook's marsh product came out EMPTY
+(0 px) — silently. Running the detector properly on the multiband cube
+(B11 present, 247 scenes): 14,098 px = 141 ha of repeatedly-flooded
+vegetation, ringing the flats exactly where Santander's marshes are.
+Fixes queued: (1) marsh step must DECLARE "no SWIR -> marsh not assessed"
+instead of writing an empty raster; (2) pre-registered follow-up: rebuild
+the Santander reference from the multiband cube with class 12 integrated
+-> the complete intertidal = flats + marsh. Honest scope note for the
+paper: the elevation method needs an observable wetting transition, so
+marsh pixels get no sigmoid elevation (NaN with reason) — marsh is a
+habitat-extent product, not an altimetry one.
