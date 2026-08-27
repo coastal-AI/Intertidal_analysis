@@ -1,0 +1,23 @@
+{
+ "n_px_banda": 28206,
+ "n_px_estimados": 28204,
+ "rmse_centrado": 0.19126474630847498,
+ "rmse_trivial": 0.16915135085582733,
+ "pendiente": 0.08509689760054491,
+ "pearson": 0.126282804632496,
+ "sesgo_m": 0.36560929087606164,
+ "sondas_por_px_mediana": 15.0,
+ "banda_m": [
+  -2.289694881439209,
+  -1.709694881439209
+ ],
+ "marea_minima_muestreada_m": -1.689694881439209,
+ "ventana_inversion_d_m": [
+  -0.04999999999999827,
+  0.9500000000000026
+ ],
+ "inputs_sha": {
+  "cube": "0cdc354c86ead927049e54cf2ca62c22b1b46122d4605f177ea06d129a2456ea"
+ },
+ "duracion_s": 821.5
+}

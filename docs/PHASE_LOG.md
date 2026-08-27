@@ -697,3 +697,25 @@ thr +0.1 DOMINATES it (0.512/0.537); beyond that the compression trap
 scale. BLIND-BAND TEST: could not run — the extraction's mask excludes
 never-dry pixels by construction; follow-up registered: extract sea-class
 pixels with LiDAR truth and invert within the 0-1 m window.
+
+## 2026-08-27 — P11b: blind-band inversion of NDWI is DEAD (negative, kept)
+
+Two designs, both graded against the trivial predictor (assign the band's
+middle elevation):
+v1 (all-tide soundings, band 1.2 m below sampled minimum): RMSE 0.393 vs
+trivial 0.351, slope -0.07, bias +1.72 m — the non-monotonic curve
+hallucinated shallow depths from turbidity-depressed NDWI of deep water.
+Lesson: inverting outside the window does not degrade gracefully, it
+hallucinates with confidence (101 bogus "soundings" per pixel).
+v2 (soundings only from the 73 lowest-tide scenes, band 0.6 m): RMSE
+0.191 vs trivial 0.169, slope 0.085, r 0.13 — still no skill. Cause: the
+pooled 0-1 m depth ramp (~0.2 NDWI across the band) is smaller than the
+pixel-to-pixel bottom-albedo spread (IQR ~0.3): a pooled curve cannot
+tell "darker bottom" from "deeper water" per pixel. Classic SDB solves
+exactly this with blue/green band ratios (Lyzenga, Stumpf) — our cubes
+carry no B02, so that route needs new downloads and is out of scope.
+VERDICT: the never-exposed band is not mappable from NDWI level in turbid
+lagoon water; archive length (more extreme-low catches) remains the only
+in-scope lever. The P11 master curve keeps its other yields: the
+three-regime picture, the threshold finding (+0.1 dominates 0), and the
+turbidity decline as a diagnostic.
