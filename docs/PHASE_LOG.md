@@ -618,3 +618,23 @@ nonlinearity index (band profile vs its best line), (c) the paper's
 ablation. Pre-registered next rungs: the linear model's own planted-truth
 gate, and the broken-stick tau(s) with 2-3 parameters for convex/two-
 regime profiles (Tejo, Villaviciosa).
+
+## 2026-08-27 — Santander SCL verdict REVISED (user caught it from imagery)
+
+The user compared the reference maps against the 2025-04-30 low-tide scene
+and flagged (a) the central-bay intertidal looking too small and (b) NDWI
+transition speckles in the navigation channel. Diagnostic against that
+scene as witness: (1) the NDWI reference is CORRECT on the central flats —
+39,702/39,708 of the dry-at-low-tide, usually-wet pixels are transition;
+the figure's rendering had misled. (2) The channel speckle is real: 3,113
+permanent-deep-water px labelled transition by NDWI flicker (ships/wakes)
+— harmless downstream (wf>0.995 falls outside the Otsu window, so the
+final intertidal mask drops them) but ugly in the reference map. (3) THE
+REVISION: SCL as voter labels 4,788 px of REAL central flats (12% of the
+proxy zone) as stable water — turbid shallow water over the flats reads
+as class-6 water even near exposure. That error is UNRECOVERABLE (the
+final mask requires reference==0). Verdict corrected: NDWI stays the
+voter; SCL's cleanliness advantage (fewer inland/ship speckles, 1,534 vs
+3,113) is self-healing for NDWI anyway via the frequency window, while
+SCL's flats loss is not. SCL remains the cloud/validity gatekeeper only.
+Evidence: results/santander_scl_revision.png, santander_diag_*.npz.
