@@ -678,3 +678,22 @@ intertidal + summer vegetation): +10 ha fringes; MNDWI marsh (141 ha)
 remains the main vegetated layer. Remaining ~10%: canopy-hidden fringes,
 residual film, and the never-caught deepest flats — the optical frontier,
 now measured and declarable per site. All arrays in results/santander_*.
+
+## 2026-08-27 — P11: the NDWI-depth master curve (Aveiro, 454k px, LiDAR)
+
+Non-parametric binned curve of NDWI vs instantaneous depth (d = tide - z):
+EXPOSED branch: -0.19 at 1.5 m above waterline rising to -0.02 at the
+edge — the drainage gradient exists (exposed-NDWI vs elevation r = -0.23,
+weak but the right sign). CROSSING at +0.06. SUBMERGED: steep usable ramp
++0.06 -> +0.44 over 0-1 m (a real depth gauge in the first metre), then
+NOT a plateau but a DECLINE (+0.44 -> +0.15 by 4 m): deep pixels are the
+turbid channels, and suspended sediment raises NIR -> lowers NDWI. So the
+curve is NON-MONOTONIC: invertible only in the 0-1 m window, exactly the
+band the wet/dry methods miss (Santander's blind band) — a fortunate
+complementarity, but inversion must be windowed. THRESHOLD PLAY (frequency
+-quantile estimator vs LiDAR): thr 0.0 gives RMSE 0.574/slope 0.522;
+thr +0.1 DOMINATES it (0.512/0.537); beyond that the compression trap
+(+0.3: RMSE 0.482 but slope 0.326) — the dictionary lesson at threshold
+scale. BLIND-BAND TEST: could not run — the extraction's mask excludes
+never-dry pixels by construction; follow-up registered: extract sea-class
+pixels with LiDAR truth and invert within the 0-1 m window.
