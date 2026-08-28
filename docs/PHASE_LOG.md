@@ -741,3 +741,22 @@ modelled, and each regime assigned its verdict — II carries the
 elevation; I and III carry real but non-elevation information; IV is a
 diagnostic. The estimator was already parked on the only regime that
 pays.
+
+## 2026-08-28 — P13: a-posteriori sigma_z (Cramer-Rao) — refuted as a full
+bar; the statistical floor it reveals is the keeper
+
+The user's announced plan: integrate sigma_p a posteriori into per-pixel
+elevation uncertainty for validation. Formula: sigma_z = s_e * sigma_p /
+(b_p * sqrt(sum phi^2)), evaluated for 399k Aveiro pixels, graded against
+LiDAR. VERDICT: as a calibrated error bar, REFUTED — coverage 8.7% at the
+68% target (bars ~7x too small; median sigma_z 0.046 m vs median |error|
+0.309 m) and pointwise ranking near zero (Spearman -0.01; only the top
+decile of sigma_z stands out, and the lowest-sigma_z decile actually has
+LARGER error than the middle — overconfident sharp fits). THE RESCUED
+NUMBER: the fit's own statistical precision floor is ~5 cm — i.e. >95% of
+the observed error at Aveiro is SYSTEMATIC (interior tide misfit, datum,
+truth vintage), not fitting noise. This quantitatively explains why the
+twin-calibrated sigma_z (B7), which simulates the systematics, is the
+right product route, and why no per-pixel analytic bar can replace it:
+sigma_total^2 = sigma_stat^2 (CRLB, tiny) + sigma_syst^2 (site-level,
+dominant). The CRLB stays as a component/diagnostic, not a bar.
