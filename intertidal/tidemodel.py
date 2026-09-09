@@ -155,16 +155,17 @@ class PyTMDTideModel:
         )
 
         time = np.array([np.datetime64(dt)] * len(flat_lats), dtype="datetime64[ns]")
+        # pyTMD >= 2.x espera argumentos en MAYÚSCULAS y devuelve masked array
         tide = pyTMD.compute.tide_elevations(
             flat_lons,
             flat_lats,
             time,
-            model=model_name,
-            directory=self.directory,
-            crs="4326",
-            standard="datetime",
+            MODEL=model_name,
+            DIRECTORY=self.directory,
+            EPSG=4326,
+            TIME="datetime",
         )
-        heights = tide.values
+        heights = np.ma.filled(tide, np.nan)
 
         # descartar NaN
         valid = ~np.isnan(heights)
@@ -221,10 +222,10 @@ class PyTMDTideModel:
             probe_time = np.array([np.datetime64(datetimes[0])] * len(flat_lats), dtype="datetime64[ns]")
             probe = pyTMD.compute.tide_elevations(
                 flat_lons, flat_lats, probe_time,
-                model=model_name, directory=self.directory,
-                crs="4326", standard="datetime",
+                MODEL=model_name, DIRECTORY=self.directory,
+                EPSG=4326, TIME="datetime",
             )
-            heights_probe = probe.values
+            heights_probe = np.ma.filled(probe, np.nan)
             valid = ~np.isnan(heights_probe)
             if np.any(valid):
                 dx = flat_lons[valid] - lon
@@ -243,10 +244,10 @@ class PyTMDTideModel:
             np.full(len(times), best_lon),
             np.full(len(times), best_lat),
             times,
-            model=model_name, directory=self.directory,
-            crs="4326", standard="datetime",
+            MODEL=model_name, DIRECTORY=self.directory,
+            EPSG=4326, TIME="datetime",
         )
-        return [float(h) for h in result.values]
+        return [float(h) for h in np.ma.filled(result, np.nan)]
 
 
 class CopernicusTideModel:

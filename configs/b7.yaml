@@ -1,0 +1,26 @@
+# Phase B7 — per-pixel uncertainty calibrated by the simulator.
+
+n_replicas: 3        # planted replicates to populate the error table:
+                     # 3 x 33k pixels = ~100k errors, plenty for 24 cells
+bins_holgura: [-9, 0.0, 0.25, 0.5, 1.0, 1.5, 2.5, 9]
+                     # edges in metres of headroom to the tide-window edge:
+                     # the measured bias curve changes on that scale
+                     # (unbiased with >0.5 m, metres outside the window)
+bins_nobs: [0, 60, 120, 900]   # approximate terciles of archive n_obs
+robusto: true        # per-cell sigma = 1.4826*MAD (refit tails)
+
+puerta:
+  # the 68 % interval must COVER: against dev RTK, the expected total
+  # error is sqrt(sigma_z^2 + sigma_sampling^2) with sigma_sampling =
+  # 0.214 m (point-vs-pixel, measured by two routes on 2026-08-18)
+  # v2: PER-PIXEL sampling sigma = sigma_topo (layer B2); the global
+  # 0.214 constant over-covered (83 %) because sub-pixel relief is spatial
+  sigma_muestreo: "b2_sigma_topo"
+  cobertura_objetivo: 0.68
+  tolerancia_cobertura: 0.10
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  bathy: results/b1_bathymetry/bathy.npz
+  sigma_decomp: results/b2_sigma/sigma_decomp.npz

@@ -595,10 +595,23 @@ class OpenEOClient:
         dates = sorted(dates)
 
         start = dates[0]
-        end = dates[-1]
+        # temporal_extent es exclusivo por la derecha en openEO:
+        # sin el +1 dia la ultima fecha pedida se queda fuera del job
+        end = (datetime.strptime(dates[-1], "%Y-%m-%d")
+               + timedelta(days=1)).strftime("%Y-%m-%d")
 
         print(f"Intervalo temporal : {start} → {end}")
         print(f"Fechas solicitadas : {len(dates)}")
+
+        # Idempotencia real: si todas las fechas pedidas ya tienen archivo en
+        # output_dir (con cualquier prefijo), no se relanza el batch job
+        on_disk = {m.group(0) for f in os.listdir(output_dir)
+                   for m in [re.search(r"\d{4}-\d{2}-\d{2}", f)] if m}
+        missing = [d for d in dates if d not in on_disk]
+        if not missing:
+            print("✓ Todas las fechas ya descargadas — job omitido")
+            return [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
+        print(f"Fechas ya en disco : {len(dates) - len(missing)}")
 
     # ----------------------------------------------------------
     # Crear un único cubo
@@ -616,18 +629,11 @@ class OpenEOClient:
     # Filtrar únicamente las fechas válidas
     # ----------------------------------------------------------
 
-        try:
-            cube = cube.filter_labels(
-                dimension="t",
-                condition=lambda x: x.isin(dates)
-            )
-
-            print("✓ filter_labels aplicado")
-
-        except Exception as e:
-            print("⚠ filter_labels no soportado por el backend")
-            print(e)
-            print("Se utilizará todo el intervalo temporal.")
+        # NOTA (verificado 2026-09-09): CDSE no soporta filter_labels sobre
+        # la dimensión t de SENTINEL2_L2A — array_contains, cadenas de eq y
+        # text_begins fallan todas en el servidor. El job renderiza el
+        # intervalo completo y las fechas no pedidas se descartan al
+        # descargar (keep_only_valid).
 
     # ----------------------------------------------------------
     # Recorte al AOI
@@ -724,10 +730,23 @@ class OpenEOClient:
         dates = sorted(dates)
 
         start = dates[0]
-        end = dates[-1]
+        # temporal_extent es exclusivo por la derecha en openEO:
+        # sin el +1 dia la ultima fecha pedida se queda fuera del job
+        end = (datetime.strptime(dates[-1], "%Y-%m-%d")
+               + timedelta(days=1)).strftime("%Y-%m-%d")
 
         print(f"Intervalo: {start} → {end}")
         print(f"Fechas: {len(dates)}")
+
+        # Idempotencia real: si todas las fechas pedidas ya tienen archivo en
+        # output_dir (con cualquier prefijo), no se relanza el batch job
+        on_disk = {m.group(0) for f in os.listdir(output_dir)
+                   for m in [re.search(r"\d{4}-\d{2}-\d{2}", f)] if m}
+        missing = [d for d in dates if d not in on_disk]
+        if not missing:
+            print("✓ Todas las fechas ya descargadas — job omitido")
+            return [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
+        print(f"Fechas ya en disco : {len(dates) - len(missing)}")
 
         cube = self.connection.load_collection(
             "SENTINEL2_L2A",
@@ -737,16 +756,11 @@ class OpenEOClient:
             max_cloud_cover=100,
         )
 
-        # Mantener únicamente las fechas válidas
-        try:
-            cube = cube.filter_labels(
-                dimension="t",
-                condition=lambda x: x.isin(dates)
-            )
-            print("✓ filter_labels aplicado")
-        except Exception as e:
-            print("⚠ filter_labels no disponible")
-            print(e)
+        # NOTA (verificado 2026-09-09): CDSE no soporta filter_labels sobre
+        # la dimensión t de SENTINEL2_L2A — array_contains, cadenas de eq y
+        # text_begins fallan todas en el servidor. El job renderiza el
+        # intervalo completo y las fechas no pedidas se descartan al
+        # descargar (keep_only_valid).
 
         # Recorte al AOI
         if polygon is not None:
@@ -809,7 +823,126 @@ class OpenEOClient:
         print(f"✓ {len(downloaded)} archivos descargados")
 
         return downloaded
-    
+
+    def download_bands_batch_single_job(
+        self,
+        dates: list[str],
+        bbox: dict,
+        output_dir: str,
+        polygon=None,
+        bands: list[str] = None,
+        keep_only_valid: bool = True,
+        title: str = None,
+    ) -> list[str]:
+        """
+        Descarga un stack multibanda mediante un único Batch Job.
+
+        Generalización de download_rgb_batch_single_job: la lista de bandas
+        es un parámetro. Con bandas de resoluciones nativas distintas
+        (p.ej. B11 a 20 m junto a B08 a 10 m) el backend las remuestrea a
+        una rejilla común al guardar el GeoTIFF; el orden de bandas del
+        archivo resultante es el orden de esta lista.
+
+        Parameters
+        ----------
+        dates : list[str]
+        bbox : dict
+        output_dir : str
+        polygon : GeoJSON | None
+        bands : list[str]
+            Bandas Sentinel-2 L2A a descargar. Por defecto
+            ["B04", "B03", "B02", "B08", "B11"] (RGB + NIR + SWIR).
+        keep_only_valid : bool
+        title : str | None
+
+        Returns
+        -------
+        list[str]
+            Lista de archivos descargados.
+        """
+        import os
+
+        if bands is None:
+            bands = ["B04", "B03", "B02", "B08", "B11"]
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        dates = sorted(dates)
+        start = dates[0]
+        # temporal_extent es exclusivo por la derecha en openEO:
+        # sin el +1 dia la ultima fecha pedida se queda fuera del job
+        end = (datetime.strptime(dates[-1], "%Y-%m-%d")
+               + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        print(f"Intervalo temporal : {start} → {end}")
+        print(f"Fechas solicitadas : {len(dates)}")
+
+        # Idempotencia real: si todas las fechas pedidas ya tienen archivo en
+        # output_dir (con cualquier prefijo), no se relanza el batch job
+        on_disk = {m.group(0) for f in os.listdir(output_dir)
+                   for m in [re.search(r"\d{4}-\d{2}-\d{2}", f)] if m}
+        missing = [d for d in dates if d not in on_disk]
+        if not missing:
+            print("✓ Todas las fechas ya descargadas — job omitido")
+            return [os.path.join(output_dir, f) for f in os.listdir(output_dir)]
+        print(f"Fechas ya en disco : {len(dates) - len(missing)}")
+        print(f"Bandas             : {', '.join(bands)}")
+
+        cube = self.connection.load_collection(
+            "SENTINEL2_L2A",
+            spatial_extent=bbox,
+            temporal_extent=[start, end],
+            bands=bands,
+            max_cloud_cover=100,
+        )
+
+        # NOTA (verificado 2026-09-09): CDSE no soporta filter_labels sobre
+        # la dimensión t de SENTINEL2_L2A — array_contains, cadenas de eq y
+        # text_begins fallan todas en el servidor. El job renderiza el
+        # intervalo completo y las fechas no pedidas se descartan al
+        # descargar (keep_only_valid).
+
+        # Recorte al AOI
+        if polygon is not None:
+            cube = cube.filter_spatial(polygon)
+
+        cube = cube.save_result("GTiff")
+
+        job = cube.create_job(
+            title=title or f"Bands stack {'+'.join(bands)} ({len(dates)} fechas)"
+        )
+
+        print("Lanzando Batch Job...")
+        job.start_and_wait()
+        print("Job finalizado.")
+
+        # Descargar assets
+        results = job.get_results()
+        assets = results.get_assets()
+        print(f"{len(assets)} assets encontrados")
+
+        downloaded = []
+        valid_dates_set = set(dates)
+
+        for asset in assets:
+            if keep_only_valid:
+                match = re.search(r"\d{4}-\d{2}-\d{2}", asset.name)
+                if match is None:
+                    print(f"⚠ No se pudo identificar la fecha de {asset.name}")
+                    continue
+                if match.group(0) not in valid_dates_set:
+                    print(f"⏭ Saltando {asset.name}")
+                    continue
+
+            filename = os.path.join(output_dir, asset.name)
+            print(f"↓ {asset.name}")
+            asset.download(filename)
+            downloaded.append(filename)
+
+        print(f"✓ {len(downloaded)} archivos descargados")
+
+        return downloaded
+
     @staticmethod
     def _get_reference_udf_code() -> str:
         """

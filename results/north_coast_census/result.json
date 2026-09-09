@@ -1,0 +1,428 @@
+{
+ "nota": "aggregated from runs/*/marea/result.json",
+ "n_cells": 68,
+ "cells": [
+  {
+   "sitio": "north_coast_cell000",
+   "estado": "ok",
+   "n_px_cota": 51334,
+   "tau_max_abs_min": 23.197191104684517,
+   "hipsometria_integral": 0.5336664123977427
+  },
+  {
+   "sitio": "north_coast_cell001",
+   "estado": "ok",
+   "n_px_cota": 24625,
+   "tau_max_abs_min": 12.988913060254482,
+   "hipsometria_integral": 0.5367139577532035
+  },
+  {
+   "sitio": "north_coast_cell002",
+   "estado": "ok",
+   "n_px_cota": 29044,
+   "tau_max_abs_min": 97.69260906639155,
+   "hipsometria_integral": 0.4907324628062666
+  },
+  {
+   "sitio": "north_coast_cell003",
+   "estado": "ok",
+   "n_px_cota": 11430,
+   "tau_max_abs_min": 28.813893728757805,
+   "hipsometria_integral": 0.481689047832714
+  },
+  {
+   "sitio": "north_coast_cell004",
+   "estado": "ok",
+   "n_px_cota": 11374,
+   "tau_max_abs_min": 26.492357853645075,
+   "hipsometria_integral": 0.45905830651571544
+  },
+  {
+   "sitio": "north_coast_cell006",
+   "estado": "ok",
+   "n_px_cota": 3434,
+   "tau_max_abs_min": 33.679254187947386,
+   "hipsometria_integral": 0.4369921426547985
+  },
+  {
+   "sitio": "north_coast_cell007",
+   "estado": "ok",
+   "n_px_cota": 26725,
+   "tau_max_abs_min": 28.486503111370176,
+   "hipsometria_integral": 0.5781831159820899
+  },
+  {
+   "sitio": "north_coast_cell010",
+   "estado": "ok",
+   "n_px_cota": 3666,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.4185154813983468
+  },
+  {
+   "sitio": "north_coast_cell011",
+   "estado": "ok",
+   "n_px_cota": 9657,
+   "tau_max_abs_min": 23.98548951660318,
+   "hipsometria_integral": 0.3675712025316456
+  },
+  {
+   "sitio": "north_coast_cell012",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell014",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell015",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell016",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell017",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell018",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell019",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell020",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell021",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell022",
+   "estado": "ok",
+   "n_px_cota": 4732,
+   "tau_max_abs_min": 14.607648334444729,
+   "hipsometria_integral": 0.44895294646002587
+  },
+  {
+   "sitio": "north_coast_cell023",
+   "estado": "ok",
+   "n_px_cota": 3438,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.41052352113355933
+  },
+  {
+   "sitio": "north_coast_cell024",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell025",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell028",
+   "estado": "ok",
+   "n_px_cota": 13239,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.5566627013458991
+  },
+  {
+   "sitio": "north_coast_cell029",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell031",
+   "estado": "ok",
+   "n_px_cota": 28798,
+   "tau_max_abs_min": 24.840502515872334,
+   "hipsometria_integral": 0.5909215596918844
+  },
+  {
+   "sitio": "north_coast_cell032",
+   "estado": "ok",
+   "n_px_cota": 10855,
+   "tau_max_abs_min": 11.913647809809072,
+   "hipsometria_integral": 0.44367762853172765
+  },
+  {
+   "sitio": "north_coast_cell033",
+   "estado": "ok",
+   "n_px_cota": 38034,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.4122737812426355
+  },
+  {
+   "sitio": "north_coast_cell034",
+   "estado": "ok",
+   "n_px_cota": 11598,
+   "tau_max_abs_min": 11.808970297489974,
+   "hipsometria_integral": 0.45461243510571947
+  },
+  {
+   "sitio": "north_coast_cell035",
+   "estado": "ok",
+   "n_px_cota": 10519,
+   "tau_max_abs_min": 35.68963768429958,
+   "hipsometria_integral": 0.4014356432009435
+  },
+  {
+   "sitio": "north_coast_cell036",
+   "estado": "ok",
+   "n_px_cota": 15431,
+   "tau_max_abs_min": 22.036382036703284,
+   "hipsometria_integral": 0.5003514562640033
+  },
+  {
+   "sitio": "north_coast_cell037",
+   "estado": "ok",
+   "n_px_cota": 25642,
+   "tau_max_abs_min": 93.69063741952995,
+   "hipsometria_integral": 0.4838208697019738
+  },
+  {
+   "sitio": "north_coast_cell038",
+   "estado": "ok",
+   "n_px_cota": 23596,
+   "tau_max_abs_min": 85.20207012121593,
+   "hipsometria_integral": 0.5594610201597996
+  },
+  {
+   "sitio": "north_coast_cell039",
+   "estado": "ok",
+   "n_px_cota": 11151,
+   "tau_max_abs_min": 18.434868620143387,
+   "hipsometria_integral": 0.44050538587786986
+  },
+  {
+   "sitio": "north_coast_cell040",
+   "estado": "ok",
+   "n_px_cota": 10682,
+   "tau_max_abs_min": 10.603219192389385,
+   "hipsometria_integral": 0.4553888599017933
+  },
+  {
+   "sitio": "north_coast_cell041",
+   "estado": "ok",
+   "n_px_cota": 17804,
+   "tau_max_abs_min": 44.096028663058476,
+   "hipsometria_integral": 0.4882924437334659
+  },
+  {
+   "sitio": "north_coast_cell042",
+   "estado": "ok",
+   "n_px_cota": 4928,
+   "tau_max_abs_min": 26.78234045822882,
+   "hipsometria_integral": 0.5525614645644489
+  },
+  {
+   "sitio": "north_coast_cell043",
+   "estado": "ok",
+   "n_px_cota": 2029,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.41326537025630716
+  },
+  {
+   "sitio": "north_coast_cell044",
+   "estado": "ok",
+   "n_px_cota": 13276,
+   "tau_max_abs_min": 11.317272022366113,
+   "hipsometria_integral": 0.431894385744942
+  },
+  {
+   "sitio": "north_coast_cell045",
+   "estado": "ok",
+   "n_px_cota": 15327,
+   "tau_max_abs_min": 120.0,
+   "hipsometria_integral": 0.39476121022686717
+  },
+  {
+   "sitio": "north_coast_cell046",
+   "estado": "ok",
+   "n_px_cota": 34855,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.6193708680167039
+  },
+  {
+   "sitio": "north_coast_cell047",
+   "estado": "ok",
+   "n_px_cota": 10725,
+   "tau_max_abs_min": 18.03396306988452,
+   "hipsometria_integral": 0.48343779943221427
+  },
+  {
+   "sitio": "north_coast_cell048",
+   "estado": "ok",
+   "n_px_cota": 1303,
+   "tau_max_abs_min": 34.59386791959985,
+   "hipsometria_integral": 0.2851031411157992
+  },
+  {
+   "sitio": "north_coast_cell049",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell050",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell052",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell053",
+   "estado": "ok",
+   "n_px_cota": 32476,
+   "tau_max_abs_min": 45.0,
+   "hipsometria_integral": 0.41815145691950656
+  },
+  {
+   "sitio": "north_coast_cell054",
+   "estado": "ok",
+   "n_px_cota": 18567,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.34176838314145785
+  },
+  {
+   "sitio": "north_coast_cell056",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell057",
+   "estado": "ok",
+   "n_px_cota": 11614,
+   "tau_max_abs_min": 18.822838795071487,
+   "hipsometria_integral": 0.4593382939901928
+  },
+  {
+   "sitio": "north_coast_cell058",
+   "estado": "ok",
+   "n_px_cota": 15945,
+   "tau_max_abs_min": 38.39956328685435,
+   "hipsometria_integral": 0.44949038303468686
+  },
+  {
+   "sitio": "north_coast_cell059",
+   "estado": "ok",
+   "n_px_cota": 20173,
+   "tau_max_abs_min": 44.029406218660355,
+   "hipsometria_integral": 0.36248377150275884
+  },
+  {
+   "sitio": "north_coast_cell060",
+   "estado": "ok",
+   "n_px_cota": 14162,
+   "tau_max_abs_min": 41.103739235178544,
+   "hipsometria_integral": 0.4514779919447642
+  },
+  {
+   "sitio": "north_coast_cell061",
+   "estado": "ok",
+   "n_px_cota": 10517,
+   "tau_max_abs_min": 45.0,
+   "hipsometria_integral": 0.458162098936147
+  },
+  {
+   "sitio": "north_coast_cell062",
+   "estado": "ok",
+   "n_px_cota": 7857,
+   "tau_max_abs_min": 45.0,
+   "hipsometria_integral": 0.4163476507889387
+  },
+  {
+   "sitio": "north_coast_cell063",
+   "estado": "ok",
+   "n_px_cota": 5312,
+   "tau_max_abs_min": 73.08736692365089,
+   "hipsometria_integral": 0.3692822847165929
+  },
+  {
+   "sitio": "north_coast_cell064",
+   "estado": "ok",
+   "n_px_cota": 2028,
+   "tau_max_abs_min": 120.0,
+   "hipsometria_integral": 0.5284040581713101
+  },
+  {
+   "sitio": "north_coast_cell065",
+   "estado": "ok",
+   "n_px_cota": 43906,
+   "tau_max_abs_min": 120.0,
+   "hipsometria_integral": 0.44070582164717453
+  },
+  {
+   "sitio": "north_coast_cell066",
+   "estado": "ok",
+   "n_px_cota": 20133,
+   "tau_max_abs_min": 13.28767982820447,
+   "hipsometria_integral": 0.5938613570869824
+  },
+  {
+   "sitio": "north_coast_cell067",
+   "estado": "ok",
+   "n_px_cota": 17536,
+   "tau_max_abs_min": 112.69720558992182,
+   "hipsometria_integral": 0.5632027877152445
+  },
+  {
+   "sitio": "north_coast_cell068",
+   "estado": "ok",
+   "n_px_cota": 53997,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.464506092445443
+  },
+  {
+   "sitio": "north_coast_cell069",
+   "estado": "ok",
+   "n_px_cota": 22142,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.6085873717324546
+  },
+  {
+   "sitio": "north_coast_cell070",
+   "estado": "ok",
+   "n_px_cota": 2232,
+   "tau_max_abs_min": 0.0,
+   "hipsometria_integral": 0.6734753886823908
+  },
+  {
+   "sitio": "north_coast_cell071",
+   "estado": "ok",
+   "n_px_cota": 92288,
+   "tau_max_abs_min": 10.960555745973354,
+   "hipsometria_integral": 0.5390053496049101
+  },
+  {
+   "sitio": "north_coast_cell072",
+   "estado": "ok",
+   "n_px_cota": 4015,
+   "tau_max_abs_min": 120.0,
+   "hipsometria_integral": 0.4670087209578789
+  },
+  {
+   "sitio": "north_coast_cell073",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell074",
+   "estado": "sin_intermareal"
+  },
+  {
+   "sitio": "north_coast_cell075",
+   "estado": "ok",
+   "n_px_cota": 11159,
+   "tau_max_abs_min": 43.907407748203326,
+   "hipsometria_integral": 0.5206582416145262
+  },
+  {
+   "sitio": "north_coast_cell076",
+   "estado": "ok",
+   "n_px_cota": 9523,
+   "tau_max_abs_min": 45.0,
+   "hipsometria_integral": 0.5467785400629155
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+{
+ "sd_level_m": 0.13,
+ "sigma_ajustada_mediana": 0.22,
+ "sigma_topo_mediana": 0.17748239349298847,
+ "fraccion_varianza_nivel_mediana": 0.3491735537190083,
+ "px_dominados_por_nivel": 11211,
+ "n_px": 33313,
+ "inputs_sha": {
+  "base": "221ec086721c73ea44f7b58abef08bf3156316ddcfbf7760c77be55fef57fc47",
+  "store": "b23fde89b68d44e643d18a68b99e36d3d136e102d4ed485c064ac46f63277cb2"
+ }
+}

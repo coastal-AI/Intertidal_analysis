@@ -1,0 +1,125 @@
+{
+ "tabla": {
+  "Honolulu - Keehi (control, 2.7 km)": {
+   "code": "keehi",
+   "lat": 21.316005,
+   "lon": -157.891076,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 0.0519787848153258,
+    "GOT4.10_nc": 0.06770922623529137,
+    "GOT4.8_nc": 0.0644717755553707,
+    "ensemble_media3": 0.060334234070501244,
+    "historico_solo_armonicos": 0.03068268403422126,
+    "historico_con_operador_mareografos": 0.030707161135695805
+   }
+  },
+  "Barcelona - Port (control, 2.9 km)": {
+   "code": "barc2",
+   "lat": 41.362977,
+   "lon": 2.187024,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 0.12909883645895165,
+    "GOT4.10_nc": 0.12706685689611416,
+    "GOT4.8_nc": 0.12737907451258926,
+    "ensemble_media3": 0.12765993255587788,
+    "historico_solo_armonicos": 0.1175518154178671,
+    "historico_con_operador_mareografos": 0.11749081775624629
+   }
+  },
+  "Tamsui/Danshuei (estuario somero, 2.0 km)": {
+   "code": "tdas",
+   "lat": 25.1757,
+   "lon": 121.4248,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 0.20776483427578682,
+    "GOT4.10_nc": 0.3958726093165569,
+    "GOT4.8_nc": 0.397130969203523,
+    "ensemble_media3": 0.3252371627558532
+   }
+  },
+  "Ferrol interior (ria profunda, 6.4 km)": {
+   "code": "fer2",
+   "lat": 43.47618,
+   "lon": -8.24851,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 0.09088262042251641,
+    "GOT4.10_nc": 0.08983906294882495,
+    "GOT4.8_nc": 0.09004124362972964,
+    "ensemble_media3": 0.08884243196846123,
+    "historico_solo_armonicos": 0.11593146378059398,
+    "historico_con_operador_mareografos": 0.10707980757169941
+   }
+  },
+  "Terneuzen (Escalda, 28 km)": {
+   "code": "trnz",
+   "lat": 51.3362008604,
+   "lon": 3.81950267556,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 0.4194673960621567,
+    "GOT4.10_nc": 0.7029269368092262,
+    "GOT4.8_nc": 0.7050690512462942,
+    "ensemble_media3": 0.591557695127533,
+    "historico_solo_armonicos": 0.40508503192885903,
+    "historico_con_operador_mareografos": 0.30719157001233344
+   }
+  },
+  "Sevilla (Guadalquivir, 85 km)": {
+   "code": "sev2",
+   "lat": 37.31849,
+   "lon": -6.00772,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 1.2388512697069765,
+    "GOT4.10_nc": 1.2286850953241573,
+    "GOT4.8_nc": 1.2263397620802257,
+    "ensemble_media3": 1.2311398023115596,
+    "historico_solo_armonicos": 1.0629437173056306,
+    "historico_con_operador_mareografos": 0.26084033480665925
+   }
+  },
+  "Dieppe (costa abierta, 90 km)": {
+   "code": "diep",
+   "lat": 49.93,
+   "lon": 1.085,
+   "ventana": [
+    "2025-11-27 18:00:00",
+    "2025-12-31 00:00:00"
+   ],
+   "rmse_m": {
+    "EOT20": 0.3213359212485633,
+    "GOT4.10_nc": 0.33542227195371477,
+    "GOT4.8_nc": 0.3398026832083624,
+    "ensemble_media3": 0.32433231368995413,
+    "historico_solo_armonicos": 1.0718860893519913,
+    "historico_con_operador_mareografos": 0.38504640629263187
+   }
+  }
+ },
+ "nota": "operador de imagen solo donde hay cubo (Escalda, p6); estos son los listones para cubos futuros",
+ "inputs_sha": {
+  "curva_estuarios": "56c3ac4dbb26f1fe81ba22dc15807250a73f05f55ed5af56201f439758598c11"
+ }
+}

@@ -1,0 +1,26 @@
+# Phase B6 — hydraulically aware DEM (terrain vs spill).
+
+umbral_charco_m: 0.10   # a pixel is declared "spill elevation" if
+                        # depression filling raises it more than 10 cm over
+                        # its fitted elevation: below that, the barrier is
+                        # indistinguishable from fit noise (median
+                        # sigma_topo 0.177 m; 0.10 ~ half of it)
+
+puerta:
+  # (a) simulation: planting connectivity censoring with the map's REAL
+  #     sills, the flag must recover the censored ones
+  min_precision: 0.7
+  min_exhaustividad: 0.7
+  # (b) real: the flagged pixels must concentrate the per-pixel ponding
+  #     signature (charcos, sealed) against a null matched by s-band and
+  #     elevation quintile — 95th percentile of the null
+  n_permutaciones: 200
+  seed: 20260819
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  bathy: results/b1_bathymetry/bathy.npz
+  canal: data_v4/store/canal.npz
+  charcos: data_v4/store/charcos.npz
+  geometria: results/m1_geometry/geometry.npz

@@ -1,0 +1,40 @@
+# Gate M0 — references fixed at the adoption of plan v4 (2026-08-18).
+# R7: changing any value here is a gate change and is recorded in
+# docs/PHASE_LOG.md with its rationale.
+
+baseline:
+  # measured at adoption with the canonical partition (seed 20260817, 361 FIX)
+  pooled_dev_slope_adopcion: 0.728
+  tolerancia_autoconsistencia: 0.02
+  # historical CI of the product-matched subset (192 points): the canonical
+  # pooled value must fall inside
+  ci_historico: [0.608, 0.782]
+  min_bloques_con_8pts: 8
+  min_recorrido_pendientes: 0.5     # the STRUCTURE is the plan's target
+
+simulador:
+  # archive marginals the null mode must reproduce (tolerances as relative
+  # fractions over the 25/50/75 percentiles of a, b, sigma and over the
+  # usable-observation fraction)
+  tolerancia_relativa: 0.15
+  seed: 20260818
+  # LEVEL uncertainty of the archive, re-injected by the null (metres).
+  # Sources measured 2026-08-18: sd=0.134 m from real vs nominal overpass
+  # hour alone; ~0.22 m EOT20 against gauges inside rias. The archive's
+  # sigma carries it convolved; calibrate() deconvolves it (sigma_topo).
+  sd_nivel_m: 0.13
+  # sigma lives on a grid of 8 atoms: the comparison is TV distance
+  # between atom distributions. Deconvolution+requantisation moves mass to
+  # ADJACENT atoms (measured at adoption: TV=0.179, all between
+  # neighbours). Sigma's own tolerance:
+  tolerancia_tv_sigma: 0.20
+
+particion:
+  block_m: 150.0
+  holdout_fraction: 0.35
+  seed: 20260817
+
+datos:
+  producto_baseline: products_villaviciosa/hsr_eot20_2023-2025.tif
+  store: data_v4/store/ndwi_intermareal.npz
+  mareas: data_v4/store/mareas_villa.npz

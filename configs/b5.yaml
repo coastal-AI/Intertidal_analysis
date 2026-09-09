@@ -1,0 +1,32 @@
+# Phase B5 — hysteresis-aware inversion (two clocks per band).
+# Every threshold with its rationale (anti-black-box contract).
+
+plantado:
+  # the gate's truth: rising on time, falling increasingly late — the
+  # ponding signature measured in Villaviciosa (falling +41 [14, 64]
+  # where rising ~0); 25 min is the conservative centre of that interval
+  tau_up_boca_a_fondo_min: [0.0, 0.0]
+  tau_dn_boca_a_fondo_min: [0.0, 25.0]
+
+# v2 (PHASE_LOG 2026-08-19): the binary likelihood CANNOT judge two
+# clocks (v1: leak to opposite edges in both worlds — separating the limbs
+# until the limb predicts the wetting). The v2 judge is out-of-sample
+# prediction of CONTINUOUS NDWI (the b2 machinery, which already passed):
+malla_tau_up_min: [0, 10, 20, 30]        # the rise can only lag a little
+malla_tau_dn_min: [0, 10, 20, 30, 45, 60] # the fall is where ponding lives
+test_cada: 3             # 1 of every 3 scenes to test, interleaved
+
+puerta:
+  # (a) the planted dn-up split is recovered with RMS <= the grid step
+  #     (10 min) in the bands where it is adopted
+  max_rms_desdoble_min: 10.0
+  # (b) ELEVATION must improve on average where hysteresis is planted
+  # (c) no-hysteresis control: spurious adoption in <= 2 of 5 interior
+  #     bands and elevation harm <= 1 cm
+  max_adopciones_espurias: 2
+  max_dano_sin_histeresis_m: 0.01
+
+datos:
+  store: data_v4/store/ndwi_intermareal.npz
+  base: data_v4/store/lamina_base.npz
+  geometria: results/m1_geometry/geometry.npz

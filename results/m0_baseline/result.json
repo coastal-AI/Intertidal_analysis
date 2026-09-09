@@ -1,0 +1,139 @@
+{
+ "pooled_dev_slope": 0.7284287202264127,
+ "pooled_ci": [
+  0.664787326640984,
+  0.7858797869704786
+ ],
+ "blocks": [
+  {
+   "block": 3,
+   "n": 25,
+   "slope": -0.25165388053209387,
+   "ci": [
+    -0.5813402263517963,
+    0.25573540463607597
+   ]
+  },
+  {
+   "block": 4,
+   "n": 8,
+   "slope": -0.06501753325549826,
+   "ci": [
+    -0.29749032106752,
+    0.242737289009808
+   ]
+  },
+  {
+   "block": 1000,
+   "n": 29,
+   "slope": 0.4136634261163634,
+   "ci": [
+    0.25516971480512746,
+    0.5500880244993827
+   ]
+  },
+  {
+   "block": 1001,
+   "n": 30,
+   "slope": 0.6641690203437163,
+   "ci": [
+    0.3702001093297449,
+    0.8906922811513682
+   ]
+  },
+  {
+   "block": 1002,
+   "n": 28,
+   "slope": 0.5443763872988848,
+   "ci": [
+    0.37556626810507976,
+    0.7177481590423778
+   ]
+  },
+  {
+   "block": 2000,
+   "n": 20,
+   "slope": 0.1311872176943759,
+   "ci": [
+    -0.04461842716495157,
+    0.6901653675907956
+   ]
+  },
+  {
+   "block": 2004,
+   "n": 56,
+   "slope": 0.7415731893874408,
+   "ci": [
+    0.6509202151308726,
+    0.8502247980653005
+   ]
+  },
+  {
+   "block": 3003,
+   "n": 10,
+   "slope": 0.9786304699934577,
+   "ci": [
+    0.5814948541752949,
+    1.1722980838734403
+   ]
+  },
+  {
+   "block": 3004,
+   "n": 15,
+   "slope": 0.3502879674864266,
+   "ci": [
+    -0.100381795186657,
+    0.7160513124821803
+   ]
+  }
+ ],
+ "spread": 1.2302843505255516,
+ "n_dev": 227,
+ "n_reserved_hidden": 91,
+ "inputs": {
+  "product": "products_villaviciosa/hsr_eot20_2023-2025.tif",
+  "product_sha256": "1f34d9da03fa89f8ad5b24c4a08b0942fa62206e1b0be9ae7a0e74313973ee2c",
+  "store_seals": [
+   {
+    "file": "data_v4/store/ndwi_intermareal.npz",
+    "sha256": "b23fde89b68d44e643d18a68b99e36d3d136e102d4ed485c064ac46f63277cb2",
+    "date": "2026-08-18T17:41:09Z",
+    "note": "Series NDWI intermareales Villaviciosa 1379 escenas x 39951 px, rejilla 915x915 canonica; base de M0-B4"
+   },
+   {
+    "file": "data_v4/store/swir_intermareal.npz",
+    "sha256": "d0b0dc252eee4b539b3f4497949161feaa652acb32db9a1f4bc0cedd23317d77",
+    "date": "2026-08-18T17:41:09Z",
+    "note": "NDWI/MNDWI/rojo 465 escenas, mismas keys; base de B2"
+   },
+   {
+    "file": "data_v4/store/escalda_intermareal.npz",
+    "sha256": "80a1765700a0b4b5a01340bbda430a51db140726d38f1b741c15826c416b4634",
+    "date": "2026-08-18T17:41:09Z",
+    "note": "Series Escalda 20 m, 464 escenas x 73764 px; sitio de desarrollo con verdad de mareografos"
+   },
+   {
+    "file": "data_v4/store/canal.npz",
+    "sha256": "f7f9fb8415b561ab409272a09a985e09e06b58d3566696918f070d8925bb870d",
+    "date": "2026-08-18T17:41:09Z",
+    "note": "Distancia geodesica por canal + mascaras, Villaviciosa"
+   },
+   {
+    "file": "data_v4/store/mareas_villa.npz",
+    "sha256": "e783c0a5c693764c231c6c549e14ccc92cd834ff3773f6557237ae336b74c28e",
+    "date": "2026-08-18T17:41:09Z",
+    "note": "EOT20 en la boca a las 11:00 + rango diario, 1379 fechas"
+   },
+   {
+    "file": "data_v4/store/mareas_hora_real.npz",
+    "sha256": "f5a0cbefadee65220eb086068d5b2d89e41d6b27ec178e55960666c163b9f0d0",
+    "date": "2026-08-18T17:41:09Z",
+    "note": "EOT20 a la hora REAL de paso (STAC), 2023-2025"
+   }
+  ]
+ },
+ "seeds": {
+  "partition": 20260817,
+  "bootstrap": 11
+ }
+}
