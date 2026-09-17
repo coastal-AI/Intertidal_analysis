@@ -67,7 +67,7 @@ the inverse square of their distance $d_k$ (km) to the centroid of the box,
 floored at 1 km:
 
 $$
-w_k = rac{1 / \max(d_k, 1)^2}{\sum_{j=1}^{N} 1 / \max(d_j, 1)^2}
+w_k = \frac{1 / \max(d_k, 1)^2}{\sum_{j=1}^{N} 1 / \max(d_j, 1)^2}
 $$
 
 Their blend, with $h_k^{st}(t)$ the demeaned record of gauge $k$ and
@@ -76,14 +76,14 @@ removed spikes (the others share the weight; nothing is interpolated across
 the hole):
 
 $$
-h_{	ext{gauges}}(t) = rac{\sum_{k=1}^{N} w_k \, m_k(t) \, h_k^{st}(t)}{\sum_{k=1}^{N} w_k \, m_k(t)}
+h_{	ext{gauges}}(t) = \frac{\sum_{k=1}^{N} w_k \, m_k(t) \, h_k^{st}(t)}{\sum_{k=1}^{N} w_k \, m_k(t)}
 $$
 
 And the consensus with the model is the plain mean, no distance involved
 (when no gauge has data at $t$, the model stands alone):
 
 $$
-h_{	ext{consensus}}(t) = rac{h_{	ext{EOT20}}(t) + h_{	ext{gauges}}(t)}{2}
+h_{	ext{consensus}}(t) = \frac{h_{	ext{EOT20}}(t) + h_{	ext{gauges}}(t)}{2}
 $$
 
 On the Escalda, Vlissingen (8.9 km) and Breskens (10.6 km) weigh 0.59 and
