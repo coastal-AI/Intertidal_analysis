@@ -236,9 +236,13 @@ método. En el Ems la vertical de MAREA cae casi en el mínimo; en el
 Wadden se pasa a la derecha; en el Escalda se queda a la izquierda.
 
 ![Escalda](figures/tide_comparison/escalda_judge_sweep.png)
+*Escalda, juez Terneuzen. La curva es el RMSE del nivel predicho en Terneuzen para cada retraso aplicado al contorno; su mínimo, +20 min, es el techo (punteado). Gris: sin reloj (0). Rojo: MAREA aplicado, también 0 porque +7 min no supera el umbral, así que coincide con el gris. Naranja: MAREA sin umbral (+7), hacia el mínimo pero corto. Azul: Granadeiro (+52), ya en la rama que sube.*
 ![Ems](figures/tide_comparison/ems_judge_sweep.png)
+*Ems, juez Delfzijl. Mínimo en +65 min. MAREA aplicado y sin umbral coinciden en +71 (el rojo queda bajo el naranja), casi sobre el mínimo. Granadeiro (+31, azul) se queda a medio camino. El gris (sin reloj) está en la rama izquierda, a 0,26 m del mínimo.*
 ![Wadden](figures/tide_comparison/wadden_judge_sweep.png)
+*Wadden, juez Harlingen. Mínimo en +95 min. MAREA (+128, rojo bajo naranja) se pasa a la derecha pero sigue lejos de la rama alta; Granadeiro (+1, azul) queda pegado al gris, sin ganancia. La curva es asimétrica: pasarse cuesta menos que quedarse corto.*
 ![Ferrol](figures/tide_comparison/ferrol_judge_sweep.png)
+*Ferrol, juez Ferrol2. Mínimo en +5 min, curva estrecha: 25 min de error de reloj cuestan 0,2 m. MAREA aplicado (rojo) está en 0 porque el veto físico anuló el perfil; el ajuste sin umbral (−25, naranja) y Granadeiro (−26, azul) caen en la rama izquierda, donde el error se dobla.*
 
 Qué contorno es mejor antes de aplicar ningún método (tal cual, en el juez):
 
@@ -291,8 +295,11 @@ diferencia con los relojes sin umbral (derecha, sensibilidad). En Escalda y
 Ferrol el panel de abajo a la izquierda es plano por construcción.
 
 ![Ems](figures/tide_comparison/ems_dem_without_vs_with.png)
+*Ems-Dollard. Arriba a la izquierda, cotas leyendo el contorno a la hora de paso (sin reloj); arriba a la derecha, cotas con los relojes MAREA aplicados; misma escala de color, blanco = píxel no resuelto por las guardas. Abajo a la izquierda, la diferencia aplicado − sin reloj (±0,3 m): azul, el reloj baja las cotas 0,2-0,3 m en el brazo exterior y en la ribera oeste; rojo saturado, las sube más de 0,3 m en el Dollard, donde el retraso es de 80-104 min. Abajo a la derecha, lo mismo con los relojes ajustados sin umbral: idéntico, porque aquí todas las bandas superaron el umbral. El mapa sin reloj deja huecos en el Dollard que MAREA resuelve.*
 ![Wadden](figures/tide_comparison/wadden_dem_without_vs_with.png)
+*Wadden-Vlie. Mismos cuatro paneles. Sin reloj, las llanuras interiores (sur y este) salen en azul oscuro, demasiado bajas y con huecos; con MAREA suben más de 0,3 m (rojo saturado en la diferencia) y se resuelven 51 000 píxeles más. El azul de la diferencia en las llanuras junto a la bocana norte es donde el reloj de 79 min baja la cota 0,1-0,3 m. La sensibilidad sin umbral es idéntica al producto: todas las bandas interiores superan los 10 min.*
 ![Escalda](figures/tide_comparison/escalda_dem_without_vs_with.png)
+*Westerschelde. Los dos mapas de arriba son idénticos y el panel de abajo a la izquierda es 0 en todas partes, como dice su título: ninguna banda superó el umbral de 10 min. Abajo a la derecha, lo que harían los relojes ajustados (−4 a +7 min) si se aplicaran: diferencias de ±0,1 m, con las líneas de marea de los bancos exteriores en rojo. Es el tamaño de lo que el umbral descarta aquí.*
 
 **Figuras `<sitio>_granadeiro_maps.png`**, cuatro paneles, todos sobre los
 mismos píxeles de entrada que los mapas anteriores:
@@ -329,9 +336,13 @@ ordenan el relieve igual; una nube desplazada dice que difieren en datum
 mojado/seco); una nube ancha dice que difieren píxel a píxel.
 
 ![Escalda](figures/tide_comparison/escalda_granadeiro_maps.png)
+*Westerschelde. Arriba a la izquierda, el mapa de retrasos de Granadeiro en minutos (spline sobre su muestra; los negros de −150 en bordes y charcas son extrapolación). Arriba a la derecha, su mapa de cotas (logística sobre NIR, ajustado en todos los píxeles aquí). Abajo a la izquierda, la cruzada: su retraso en nuestra inversión. Abajo a la derecha, Granadeiro − MAREA en ±0,5 m: predominan el rojo y el azul saturados, es decir, difieren en más de medio metro en buena parte de la llanura (0,65 m RMS).*
 ![Ems](figures/tide_comparison/ems_granadeiro_maps.png)
+*Ems-Dollard. Mismos cuatro paneles. Su mapa de cotas y la diferencia están ajustados en 1 píxel de cada 4 y expandidos para verlos (título). El mapa de retrasos da 30-60 min en el Dollard, la mitad de lo que MAREA mide y el mareógrafo confirma; la cruzada, con su retraso, queda a mitad de camino entre el mapa sin reloj y el de MAREA.*
 ![Wadden](figures/tide_comparison/wadden_granadeiro_maps.png)
+*Wadden-Vlie. Mismos cuatro paneles, cotas de Granadeiro en 1 píxel de cada 4. Su mapa de retrasos vale +1 min junto a Harlingen, donde el mareógrafo quiere +95, y su mapa de cotas cubre 66 757 píxeles frente a los 359 382 de MAREA.*
 ![Ferrol](figures/tide_comparison/ferrol_granadeiro_maps.png)
+*Ferrol. Mismos cuatro paneles, cotas de Granadeiro en 1 píxel de cada 2. El mapa de retrasos oscila entre −60 y +40 min sobre una ría donde el mareógrafo no ve retraso; Granadeiro − MAREA es azul casi en todas partes: su logística queda 0,17 m por debajo de la sigmoide (datum distinto), más dispersión.*
 
 ### 3.3 ¿Mejora el mapa? La batimetría oficial
 
@@ -358,6 +369,7 @@ productos. Lo que hay que mirar es la separación entre la línea gris (sin
 reloj) y la roja (MAREA) según nos alejamos de la boca.
 
 ![Por bandas](figures/tide_comparison/vaklodingen_by_band.png)
+*Arriba, RMSE contra las Vaklodingen; abajo, pendiente contra ellas; por banda de distancia a la boca y por producto (gris sin reloj, rojo MAREA, naranja cruzada, azul Granadeiro). Escalda: rojo y gris se superponen (nada aplicado) y el azul está siempre por encima. Wadden: el rojo cae a 0,17 m con pendiente 1 en las bandas de 8-11 km y vuelve a subir en las interiores. Ems: el gris se dispara y su pendiente cae a 0,05 más allá de 29 km; el rojo lo sostiene en 0,35-0,45 m y pendiente 0,5-0,6.*
 
 Lectura por bandas (RMSE / pendiente / sesgo mediano):
 

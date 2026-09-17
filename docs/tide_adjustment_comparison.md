@@ -235,9 +235,13 @@ the Ems MAREA's line sits almost on the minimum; on the Wadden it overshoots
 to the right; on the Escalda it stops short on the left.
 
 ![Escalda](figures/tide_comparison/escalda_judge_sweep.png)
+*Escalda, judge Terneuzen. The curve is the RMSE of the level predicted at Terneuzen for every delay applied to the boundary; its minimum, +20 min, is the ceiling (dotted). Grey: no clock (0). Red: MAREA applied, also 0 because +7 min is below the threshold, so it coincides with grey. Orange: MAREA without the threshold (+7), towards the minimum but short. Blue: Granadeiro (+52), already on the rising branch.*
 ![Ems](figures/tide_comparison/ems_judge_sweep.png)
+*Ems, judge Delfzijl. Minimum at +65 min. MAREA applied and unthresholded coincide at +71 (red under orange), almost on the minimum. Granadeiro (+31, blue) stops halfway. Grey (no clock) sits on the left branch, 0.26 m above the minimum.*
 ![Wadden](figures/tide_comparison/wadden_judge_sweep.png)
+*Wadden, judge Harlingen. Minimum at +95 min. MAREA (+128, red under orange) overshoots to the right but stays far from the high branch; Granadeiro (+1, blue) sits next to grey, no gain. The curve is asymmetric: overshooting costs less than stopping short.*
 ![Ferrol](figures/tide_comparison/ferrol_judge_sweep.png)
+*Ferrol, judge Ferrol2. Minimum at +5 min and a narrow curve: 25 min of clock error cost 0.2 m. MAREA applied (red) is at 0 because the physics veto zeroed the profile; the unthresholded fit (−25, orange) and Granadeiro (−26, blue) fall on the left branch, where the error doubles.*
 
 Which boundary is best before any method is applied (as-is, at the judge):
 
@@ -290,8 +294,11 @@ plain (left, the product) and the difference with the unthresholded clocks
 flat by construction.
 
 ![Ems](figures/tide_comparison/ems_dem_without_vs_with.png)
+*Ems-Dollard. Top left, elevations reading the boundary at the overpass time (no clock); top right, elevations with MAREA's clocks applied; same colour scale, white = pixel not resolved by the guards. Bottom left, the difference applied − plain (±0.3 m): blue, the clock lowers the elevations by 0.2-0.3 m on the outer arm and the west bank; saturated red, it raises them by more than 0.3 m in the Dollard, where the delay is 80-104 min. Bottom right, the same with the unthresholded clocks: identical, because every band cleared the threshold here. The plain map leaves holes in the Dollard that MAREA resolves.*
 ![Wadden](figures/tide_comparison/wadden_dem_without_vs_with.png)
+*Wadden-Vlie. Same four panels. Without a clock the inner flats (south and east) come out dark blue, too low and with holes; with MAREA they rise by more than 0.3 m (saturated red in the difference) and 51 000 more pixels resolve. The blue in the difference on the flats next to the northern inlet is where the 79-min clock lowers the elevation by 0.1-0.3 m. The unthresholded sensitivity is identical to the product: every inner band is above 10 min.*
 ![Escalda](figures/tide_comparison/escalda_dem_without_vs_with.png)
+*Westerschelde. The two top maps are identical and the bottom-left panel is 0 everywhere, as its title says: no band cleared the 10-min threshold. Bottom right, what the fitted clocks (−4 to +7 min) would do if applied: ±0.1 m differences, with the tide lines of the outer banks in red. That is the size of what the threshold discards here.*
 
 **Figures `<site>_granadeiro_maps.png`**, four panels, all on the same
 input pixels as the maps above:
@@ -326,9 +333,13 @@ they differ in datum (the NIR logistic's inflection is not the same zero as
 the wet/dry threshold); a wide cloud says they differ pixel by pixel.
 
 ![Escalda](figures/tide_comparison/escalda_granadeiro_maps.png)
+*Westerschelde. Top left, Granadeiro's delay map in minutes (spline over its sample; the −150 blacks at edges and ponds are extrapolation). Top right, their elevation map (logistic on NIR, fitted on every pixel here). Bottom left, the crossed map: their delay in our inversion. Bottom right, Granadeiro − MAREA on ±0.5 m: saturated red and blue dominate, i.e. they differ by more than half a metre over much of the flat (0.65 m RMS).*
 ![Ems](figures/tide_comparison/ems_granadeiro_maps.png)
+*Ems-Dollard. Same four panels. Their elevation map and the difference are fitted on 1 pixel in 4 and expanded for display (title). The delay map gives 30-60 min in the Dollard, half of what MAREA measures and the gauge confirms; the crossed map, with their delay, lands halfway between the plain map and MAREA's.*
 ![Wadden](figures/tide_comparison/wadden_granadeiro_maps.png)
+*Wadden-Vlie. Same four panels, Granadeiro's elevations on 1 pixel in 4. Their delay map reads +1 min next to Harlingen, where the gauge wants +95, and their elevation map covers 66 757 pixels against MAREA's 359 382.*
 ![Ferrol](figures/tide_comparison/ferrol_granadeiro_maps.png)
+*Ferrol. Same four panels, Granadeiro's elevations on 1 pixel in 2. The delay map swings between −60 and +40 min on a ría where the gauge sees no delay; Granadeiro − MAREA is blue almost everywhere: their logistic sits 0.17 m below the sigmoid (different datum), plus scatter.*
 
 ### 3.3 Does the map get better? The official bathymetry
 
@@ -355,6 +366,7 @@ What to look at is the gap between the grey line (plain) and the red line
 (MAREA) as we move away from the mouth.
 
 ![By band](figures/tide_comparison/vaklodingen_by_band.png)
+*Top, RMSE against the Vaklodingen; bottom, slope against them; by band of distance from the mouth and by product (grey plain, red MAREA, orange crossed, blue Granadeiro). Escalda: red and grey overlap (nothing applied) and blue is always above. Wadden: red drops to 0.17 m with slope 1 in the 8-11 km bands and climbs again in the inner ones. Ems: grey blows up and its slope falls to 0.05 beyond 29 km; red holds it at 0.35-0.45 m and slope 0.5-0.6.*
 
 Reading by band (RMSE / slope / median bias):
 

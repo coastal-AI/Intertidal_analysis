@@ -31,6 +31,7 @@ picture says the pixel alternates between water (6) and bare ground (5)
 from one clear visit to the next: a tidal flat.
 
 ![The pixel's visits](figures/onepixel/cell05_0.png)
+*Figure 1. Top, green (B03) and near-infrared (B08) reflectance of the pixel at each of its 1 379 visits, 2016-2025; bottom, the SCL class of each visit (red = cloud or shadow, blue = clear class).*
 
 **The threshold, and where the pixel sits against it.** The histogram is
 the site calibration: NDWI of the clear-sky pixels of the twelve clearest
@@ -45,6 +46,7 @@ The cut at 0 falls in the gap; the cut at +0.25 would have called some
 wet visits dry.
 
 ![The threshold on the pixel](figures/onepixel/cell07_0.png)
+*Figure 2. NDWI histogram of the clear-sky pixels of the site's 12 clearest scenes (brown ground, blue water); black dashed, Otsu's split (+0.25, pinned at the cap); red line, the adopted threshold (0); red ticks, this pixel's 288 clear visits.*
 
 **The cloud screen, as it lands on the pixel.** Two filters, at two scales.
 First the scene: a date survives if at most 10 % of the *transition zone*
@@ -61,6 +63,7 @@ cluster: thin cloud over water still reads "wet" on the index, and only the
 SCL class catches it.
 
 ![The cloud screen on the pixel](figures/onepixel/cell10_0.png)
+*Figure 3. The pixel's NDWI against time, coloured by what the cloud screen did with each visit: grey, scene rejected; orange, scene kept but pixel cloudy per SCL; blue and brown, the 199 surviving observations, wet and dry.*
 
 **Where the pixel lives.** Water frequency in a 1.2 km window around the
 pixel (red square), 7.9 km up the ría. Dark brown is land that is never
@@ -74,6 +77,7 @@ locate the water level, and it is far enough upstream for the clock to
 matter.
 
 ![Where the pixel sits: water frequency around it](figures/onepixel/cell13_0.png)
+*Figure 4. Water frequency in a 1.2 km window around the pixel (red square): brown never wet, green always wet, the pale band is the intertidal flat.*
 
 **Two cuts, three classes: the intertidal decision.** The histogram is the
 water frequency of every pixel of the transition class. It has three
@@ -89,6 +93,7 @@ per-pixel quality control downstream is left to reject what does not fit.
 This pixel, at 0.61, is inside both windows: intertidal by any reading.
 
 ![Two cuts, three classes](figures/onepixel/cell12_0.png)
+*Figure 5. Water-frequency histogram of the site's transition class; dashed, the two valleys of the three-class Otsu (0.21 and 0.66); red, the adopted window (0.05-0.95); the thick line, this pixel (0.61).*
 
 **The same 199 observations, seen two ways.** Left, NDWI against time:
 wet visits (blue) and dry visits (brown) alternate with no pattern a
@@ -101,6 +106,7 @@ that step correctly: MAREA asks whether a different clock on the tide axis
 makes the step sharper, and the inversion fits a sigmoid to it.
 
 ![The tide at every visit](figures/onepixel/cell15_0.png)
+*Figure 6. The pixel's 199 observations: left, NDWI against date; right, NDWI against the model tide level at the instant of each visit; blue wet, brown dry.*
 
 ## 1 · The same pixel under five clocks
 
@@ -111,6 +117,7 @@ NDWI sigmoid is refitted (closed form: elevation z, sub-pixel spread σ,
 offset a, gain b).
 
 ![NDWI curves under five clocks](figures/onepixel/cell19_0.png)
+*Figure 7. The same 199 observations under five clocks (τ = −30, 0, +24, +60, +90 min): each panel shifts every visit's level and refits the NDWI sigmoid (red curve); the dotted line is the fitted elevation z. Each fit's parameters are in the panel title.*
 
 | τ (min) | z (m) | σ (m) | a | b | rms |
 |---|---|---|---|---|---|
@@ -208,6 +215,7 @@ here to 1.10 m only to see the whole surface). The figure is
 $\ell(0; z, \sigma)$ for the ocean clock, with the maximum marked.
 
 ![Profiling surface for the ocean clock](figures/onepixel/cell22_0.png)
+*Figure 8. Log-likelihood surface ℓ(0; z, σ) of the ocean clock over the grid of candidate elevations (x) and widths (y); the circle marks the maximum, z = −0.66 m, σ = 0.65 m, the profiled pair.*
 
 **The same thing, drawn.** Three panels, all on this pixel's 199 visits.
 Left, the pixel's rule: the probability of reading wet against the water
@@ -226,6 +234,7 @@ than 1 on the ocean clock, 11 on the band clock. That tail is what the
 clock search reads.
 
 ![The likelihood, drawn](figures/onepixel/likelihood_explained.png)
+*Figure 9. A, the pixel's rule P(wet | h) with the 199 visits on it and three numbered visits; B, the cost of a visit as a function of u = (h − z)/σ, blue curve if it read wet and brown if dry; C, the 199 costs sorted from dearest to cheapest on the ocean clock (grey) and on the band clock +18 min (red).*
 
 ## 3 · The same sum for every clock, and the optimum
 
@@ -234,6 +243,7 @@ Repeat the profiled sum for 31 candidate clocks. Two curves: the pixel alone
 axis).
 
 ![Log-likelihood against the candidate clock](figures/onepixel/cell24_0.png)
+*Figure 10. Top, profiled log-likelihood relative to τ = 0 for 31 candidate clocks, for the pixel alone (blue) and for its 300-pixel band (red, ÷25); the grey band is the ±10-min threshold and the vertical red line the band optimum (+18). Below, the profiled elevation z and width σ for each clock.*
 
 * Pixel alone: best τ = **+24 min**. The curve is flat near the top: one
   pixel with 199 visits barely resolves 20 minutes.
@@ -263,6 +273,7 @@ The elevation estimator (`marea.invert_series`, the same closed-form sigmoid
 used by every product) is run twice on the same 199 visits:
 
 ![Inversion on the ocean clock vs the band clock](figures/onepixel/cell29_0.png)
+*Figure 11. The elevation inversion (`invert_series`) on the same 199 observations with the ocean clock (left, z = −0.204 m) and with the band clock +18 min (right, z = −0.241 m); red curve, the fitted sigmoid; dotted, the elevation.*
 
 | clock | z (m) | σ (m) |
 |---|---|---|

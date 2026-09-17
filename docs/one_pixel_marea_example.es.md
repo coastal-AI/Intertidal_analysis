@@ -33,6 +33,7 @@ entre agua (6) y suelo desnudo (5) de una visita clara a la siguiente: una
 llanura mareal.
 
 ![Las visitas del píxel](figures/onepixel/cell05_0.png)
+*Figura 1. Arriba, reflectancia de las bandas verde (B03) e infrarrojo cercano (B08) del píxel en cada una de sus 1 379 visitas, 2016-2025; abajo, la clase SCL de cada visita (rojo = nube o sombra, azul = clase clara).*
 
 **El umbral, y dónde queda el píxel respecto a él.** El histograma es la
 calibración del sitio: NDWI de los píxeles de cielo claro de las doce escenas
@@ -47,6 +48,7 @@ mismo eje: un grupo justo por debajo de 0 (seco) y una dispersión de 0 a 1,8
 +0,25 habría llamado secas a algunas visitas mojadas.
 
 ![El umbral sobre el píxel](figures/onepixel/cell07_0.png)
+*Figura 2. Histograma de NDWI de los píxeles de cielo claro de las 12 escenas más despejadas del sitio (marrón suelo, azul agua); línea negra discontinua, corte de Otsu (+0,25, clavado en el tope); línea roja, umbral adoptado (0); marcas rojas, las 288 visitas claras de este píxel.*
 
 **El filtro de nubes, tal como cae sobre el píxel.** Dos filtros, a dos
 escalas. Primero la escena: una fecha sobrevive si como mucho el 10 % de la
@@ -64,6 +66,7 @@ nube fina sobre agua sigue leyendo "mojado" en el índice, y solo la clase
 SCL la detecta.
 
 ![El filtro de nubes sobre el píxel](figures/onepixel/cell10_0.png)
+*Figura 3. NDWI del píxel contra el tiempo, coloreado por lo que hizo el filtro de nubes con cada visita: gris, escena rechazada; naranja, escena aceptada pero píxel nublado según SCL; azul y marrón, las 199 observaciones que sobreviven, mojadas y secas.*
 
 **Dónde vive el píxel.** Frecuencia de agua en una ventana de 1,2 km
 alrededor del píxel (cuadro rojo), 7,9 km ría arriba. El marrón oscuro es
@@ -77,6 +80,7 @@ para que su registro mojado/seco localice el nivel, y está lo bastante río
 arriba para que el reloj importe.
 
 ![Dónde está el píxel: frecuencia de agua a su alrededor](figures/onepixel/cell13_0.png)
+*Figura 4. Frecuencia de agua en una ventana de 1,2 km alrededor del píxel (cuadro rojo): marrón nunca mojado, verde siempre mojado, la banda pálida es la llanura intermareal.*
 
 **Dos cortes, tres clases: la decisión intermareal.** El histograma es la
 frecuencia de agua de todos los píxeles de la clase de transición. Tiene tres
@@ -93,6 +97,7 @@ rechazar lo que no encaje. Este píxel, con 0,61, está dentro de las dos
 ventanas: intermareal con cualquier lectura.
 
 ![Dos cortes, tres clases](figures/onepixel/cell12_0.png)
+*Figura 5. Histograma de frecuencia de agua de la clase de transición del sitio; discontinuas, los dos valles del Otsu de tres clases (0,21 y 0,66); rojas, la ventana adoptada (0,05-0,95); la línea gruesa, este píxel (0,61).*
 
 **Las mismas 199 observaciones, vistas de dos maneras.** Izquierda, NDWI
 contra el tiempo: las visitas mojadas (azul) y secas (marrón) se alternan sin
@@ -106,6 +111,7 @@ reloj en el eje de marea hace el escalón más nítido, y la inversión le ajust
 una sigmoide.
 
 ![La marea en cada visita](figures/onepixel/cell15_0.png)
+*Figura 6. Las 199 observaciones del píxel: a la izquierda NDWI contra la fecha, a la derecha NDWI contra el nivel de marea del modelo en el instante de cada visita; azul mojado, marrón seco.*
 
 ## 1 · El mismo píxel bajo cinco relojes
 
@@ -116,6 +122,7 @@ se reajusta la sigmoide de NDWI (forma cerrada: cota z, dispersión sub-píxel
 σ, desplazamiento a, ganancia b).
 
 ![Curvas NDWI bajo cinco relojes](figures/onepixel/cell19_0.png)
+*Figura 7. Las mismas 199 observaciones bajo cinco relojes (τ = −30, 0, +24, +60, +90 min): cada panel desplaza el nivel de cada visita y reajusta la sigmoide NDWI (curva roja); la línea punteada es la cota z ajustada. Los parámetros de cada ajuste van en el título del panel.*
 
 | τ (min) | z (m) | σ (m) | a | b | rms |
 |---|---|---|---|---|---|
@@ -216,6 +223,7 @@ superficie entera). La figura es $\ell(0; z, \sigma)$ para el reloj
 oceánico, con el máximo marcado.
 
 ![Superficie de perfilado para el reloj oceánico](figures/onepixel/cell22_0.png)
+*Figura 8. Superficie de log-verosimilitud ℓ(0; z, σ) del reloj oceánico sobre la rejilla de cotas candidatas (eje x) y anchuras candidatas (eje y); el círculo marca el máximo, z = −0,66 m, σ = 0,65 m, que es el par perfilado.*
 
 **Lo mismo, dibujado.** Tres paneles, todos sobre las 199 visitas de este
 píxel. Izquierda, la regla del píxel: la probabilidad de leer mojado contra
@@ -235,6 +243,7 @@ reloj oceánico, 11 con el de banda. Esa cola es lo que lee la búsqueda del
 reloj.
 
 ![La verosimilitud, dibujada](figures/onepixel/likelihood_explained.png)
+*Figura 9. A, la regla del píxel P(mojado | h) con las 199 visitas sobre ella y tres visitas numeradas; B, el coste de una visita en función de u = (h − z)/σ, curva azul si leyó mojado y marrón si leyó seco; C, los 199 costes ordenados de mayor a menor con el reloj oceánico (gris) y con el reloj de banda +18 min (rojo).*
 
 ## 3 · La misma suma para cada reloj, y el óptimo
 
@@ -243,6 +252,7 @@ solo (199 visitas) y su banda entera (300 píxeles muestreados, escalados ÷25
 para compartir el eje).
 
 ![Log-verosimilitud contra el reloj candidato](figures/onepixel/cell24_0.png)
+*Figura 10. Arriba, log-verosimilitud perfilada relativa a τ = 0 para 31 relojes candidatos, para el píxel solo (azul) y para su banda de 300 píxeles (rojo, ÷25); la banda gris es el umbral de ±10 min y la línea roja vertical el óptimo de la banda (+18). Abajo, la cota z y la anchura σ perfiladas para cada reloj.*
 
 * Píxel solo: mejor τ = **+24 min**. La curva es plana cerca del máximo: un
   píxel con 199 visitas apenas resuelve 20 minutos.
@@ -275,6 +285,7 @@ cerrada que usa cada producto) se ejecuta dos veces sobre las mismas 199
 visitas:
 
 ![Inversión con el reloj oceánico frente al reloj de banda](figures/onepixel/cell29_0.png)
+*Figura 11. La inversión de cotas (`invert_series`) sobre las mismas 199 observaciones con el reloj oceánico (izquierda, z = −0,204 m) y con el reloj de banda +18 min (derecha, z = −0,241 m); curva roja, la sigmoide ajustada; punteada, la cota.*
 
 | reloj | z (m) | σ (m) |
 |---|---|---|
