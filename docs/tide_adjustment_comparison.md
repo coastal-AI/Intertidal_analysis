@@ -62,6 +62,33 @@ and plateaus and never interpolated across holes longer than an hour. The
 same object feeds MAREA, Granadeiro and the no-clock inversion: between rows
 the method changes, never the data.
 
+How they are combined, in three formulas. The $N$ gauges are weighted by
+the inverse square of their distance $d_k$ (km) to the centroid of the box,
+floored at 1 km:
+
+$$
+w_k = rac{1 / \max(d_k, 1)^2}{\sum_{j=1}^{N} 1 / \max(d_j, 1)^2}
+$$
+
+Their blend, with $h_k^{st}(t)$ the demeaned record of gauge $k$ and
+$m_k(t) \in \{0, 1\}$ equal to 0 in holes longer than an hour and at
+removed spikes (the others share the weight; nothing is interpolated across
+the hole):
+
+$$
+h_{	ext{gauges}}(t) = rac{\sum_{k=1}^{N} w_k \, m_k(t) \, h_k^{st}(t)}{\sum_{k=1}^{N} w_k \, m_k(t)}
+$$
+
+And the consensus with the model is the plain mean, no distance involved
+(when no gauge has data at $t$, the model stands alone):
+
+$$
+h_{	ext{consensus}}(t) = rac{h_{	ext{EOT20}}(t) + h_{	ext{gauges}}(t)}{2}
+$$
+
+On the Escalda, Vlissingen (8.9 km) and Breskens (10.6 km) weigh 0.59 and
+0.41; in the 18 months without Vlissingen the blend is Breskens alone.
+
 ### The five products compared
 
 All start from the **same record**: the intertidal pixels of MAREA's

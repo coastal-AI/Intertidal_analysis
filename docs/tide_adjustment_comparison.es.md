@@ -62,6 +62,33 @@ a través de huecos de más de una hora. El mismo objeto alimenta a MAREA, a
 Granadeiro y a la inversión sin reloj: entre filas cambia el método, nunca
 el dato.
 
+Cómo se combinan, en tres fórmulas. Los $N$ mareógrafos se pesan por la
+inversa del cuadrado de su distancia $d_k$ (km) al centroide del recuadro,
+acotada por abajo a 1 km:
+
+$$
+w_k = rac{1 / \max(d_k, 1)^2}{\sum_{j=1}^{N} 1 / \max(d_j, 1)^2}
+$$
+
+Su mezcla, con $h_k^{st}(t)$ el registro del mareógrafo $k$ sin su
+mediana y $m_k(t) \in \{0, 1\}$ valiendo 0 en huecos de más de una hora y
+en picos eliminados (los demás se reparten el peso; nada se interpola a
+través del hueco):
+
+$$
+h_{	ext{gauges}}(t) = rac{\sum_{k=1}^{N} w_k \, m_k(t) \, h_k^{st}(t)}{\sum_{k=1}^{N} w_k \, m_k(t)}
+$$
+
+Y el consenso con el modelo es la media simple, sin distancia (si ningún
+mareógrafo tiene dato en $t$, queda el modelo solo):
+
+$$
+h_{	ext{consenso}}(t) = rac{h_{	ext{EOT20}}(t) + h_{	ext{gauges}}(t)}{2}
+$$
+
+En el Escalda, Vlissingen (8,9 km) y Breskens (10,6 km) pesan 0,59 y 0,41;
+en los 18 meses sin Vlissingen la mezcla es Breskens solo.
+
 ### Los cinco productos que se comparan
 
 Todos parten del **mismo registro**: los píxeles intermareales de la
