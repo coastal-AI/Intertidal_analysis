@@ -228,6 +228,10 @@ def calibrate_threshold(cube, n_scenes=12, max_pixels=400_000, chunk=None,
     threshold = otsu_threshold(pooled, clip=clip)
     saturated = threshold in clip
     info = {"threshold": threshold, "n_pixels": int(pooled.size),
+            # a thinned copy of the pooled sample, so the calibration
+            # histogram can be plotted without re-reading the cube
+            "sample": pooled[::max(1, pooled.size // 120_000)].astype(
+                np.float32),
             "n_scenes": len(used), "scenes": used,
             "cloudiest_sampled": round(max(c for c, _ in cloudiness[:len(clearest)]), 3),
             "clipped": saturated}

@@ -1,0 +1,92 @@
+{
+ "split": {
+  "blocks": 19,
+  "reserved_blocks": 7,
+  "seed": 20260817,
+  "block_m": 150.0
+ },
+ "rows": [
+  {
+   "method": "HSR (no interior tide)",
+   "rmse_m": 0.199,
+   "slope": 0.759,
+   "n": 146
+  },
+  {
+   "method": "step (DEA-style)",
+   "rmse_m": 0.155,
+   "slope": 0.761,
+   "n": 88
+  },
+  {
+   "method": "Granadeiro 10y (no lags)",
+   "rmse_m": 0.141,
+   "slope": 0.878,
+   "n": 120
+  },
+  {
+   "method": "Granadeiro 10y (their lags)",
+   "rmse_m": 0.142,
+   "slope": 0.873,
+   "n": 120
+  },
+  {
+   "method": "Granadeiro 2023-25 (no lags)",
+   "rmse_m": 0.312,
+   "slope": 1.086,
+   "n": 85
+  },
+  {
+   "method": "Granadeiro 2023-25 (their lags)",
+   "rmse_m": 0.268,
+   "slope": 0.374,
+   "n": 99
+  },
+  {
+   "method": "MAREA (band clocks)",
+   "rmse_m": 0.24,
+   "slope": 0.864,
+   "n": 119
+  }
+ ],
+ "common_subset": {
+  "n": 52,
+  "rows": [
+   {
+    "method": "HSR (no interior tide)",
+    "rmse_m": 0.128,
+    "slope": 0.898
+   },
+   {
+    "method": "step (DEA-style)",
+    "rmse_m": 0.128,
+    "slope": 0.824
+   },
+   {
+    "method": "Granadeiro 10y (no lags)",
+    "rmse_m": 0.109,
+    "slope": 0.978
+   },
+   {
+    "method": "Granadeiro 10y (their lags)",
+    "rmse_m": 0.11,
+    "slope": 0.976
+   },
+   {
+    "method": "Granadeiro 2023-25 (no lags)",
+    "rmse_m": 0.369,
+    "slope": 1.224
+   },
+   {
+    "method": "Granadeiro 2023-25 (their lags)",
+    "rmse_m": 0.297,
+    "slope": 0.374
+   },
+   {
+    "method": "MAREA (band clocks)",
+    "rmse_m": 0.135,
+    "slope": 0.956
+   }
+  ]
+ }
+}

@@ -1,0 +1,122 @@
+{
+ "epoch": [
+  2023,
+  2025
+ ],
+ "dev_pixels": 181,
+ "rows": {
+  "sigmoid \u00b7 ocean clock (plain)": {
+   "rmse_m": 0.16258414511296254,
+   "slope": 0.7468527901133619,
+   "n": 120
+  },
+  "sigmoid \u00b7 MAREA band clocks (product)": {
+   "rmse_m": 0.23985140625799053,
+   "slope": 0.8638501087040575,
+   "n": 119
+  },
+  "sigmoid \u00b7 MAREA clocks, applied (recomputed)": {
+   "rmse_m": 0.16258414511296254,
+   "slope": 0.7468527901133619,
+   "n": 120
+  },
+  "sigmoid \u00b7 MAREA fitted clocks, no threshold": {
+   "rmse_m": 0.16926232590993104,
+   "slope": 0.7566874603798683,
+   "n": 120
+  },
+  "sigmoid \u00b7 Granadeiro lag map (crossed)": {
+   "rmse_m": 0.23279779905967982,
+   "slope": 0.5239312806104428,
+   "n": 120
+  },
+  "logistic \u00b7 ocean clock (Granadeiro, no lags)": {
+   "rmse_m": 0.3153577071044466,
+   "slope": 1.0813977116452191,
+   "n": 85
+  },
+  "logistic \u00b7 their lag map (Granadeiro)": {
+   "rmse_m": 0.2794095739430647,
+   "slope": 0.35619759734201734,
+   "n": 100
+  },
+  "logistic \u00b7 MAREA band clocks (crossed)": {
+   "rmse_m": 0.3153577071044466,
+   "slope": 1.0813977116452191,
+   "n": 85
+  },
+  "HSR 2023-25 (shipped, ocean clock)": {
+   "rmse_m": 0.19889356025498478,
+   "slope": 0.7588918741569526,
+   "n": 146
+  },
+  "step / DEA-style (shipped)": {
+   "rmse_m": 0.15451784260244078,
+   "slope": 0.7609239190292241,
+   "n": 88
+  },
+  "logistic 10 y \u00b7 ocean clock (shipped)": {
+   "rmse_m": 0.1411178291616829,
+   "slope": 0.878396633318114,
+   "n": 120
+  },
+  "logistic 10 y \u00b7 their lags (shipped)": {
+   "rmse_m": 0.14165680594945076,
+   "slope": 0.8732993027954306,
+   "n": 120
+  }
+ },
+ "common": {
+  "n": 53,
+  "rows": {
+   "sigmoid \u00b7 ocean clock (plain)": {
+    "rmse_m": 0.12708160232652313,
+    "slope": 0.8482321740061596
+   },
+   "sigmoid \u00b7 MAREA band clocks (product)": {
+    "rmse_m": 0.13852487756146517,
+    "slope": 0.9563058378551149
+   },
+   "sigmoid \u00b7 MAREA clocks, applied (recomputed)": {
+    "rmse_m": 0.12708160232652313,
+    "slope": 0.8482321740061596
+   },
+   "sigmoid \u00b7 MAREA fitted clocks, no threshold": {
+    "rmse_m": 0.12082315818126094,
+    "slope": 0.8685578519979817
+   },
+   "sigmoid \u00b7 Granadeiro lag map (crossed)": {
+    "rmse_m": 0.2054194417377956,
+    "slope": 0.6070152954062831
+   },
+   "logistic \u00b7 ocean clock (Granadeiro, no lags)": {
+    "rmse_m": 0.3669066291701744,
+    "slope": 1.2184066009644712
+   },
+   "logistic \u00b7 their lag map (Granadeiro)": {
+    "rmse_m": 0.3037506165127923,
+    "slope": 0.36389049428094883
+   },
+   "logistic \u00b7 MAREA band clocks (crossed)": {
+    "rmse_m": 0.3669066291701744,
+    "slope": 1.2184066009644712
+   },
+   "HSR 2023-25 (shipped, ocean clock)": {
+    "rmse_m": 0.13000485081853932,
+    "slope": 0.8980849655093048
+   },
+   "step / DEA-style (shipped)": {
+    "rmse_m": 0.12918135204628264,
+    "slope": 0.82155098035598
+   },
+   "logistic 10 y \u00b7 ocean clock (shipped)": {
+    "rmse_m": 0.11170942442126844,
+    "slope": 0.9801247078402266
+   },
+   "logistic 10 y \u00b7 their lags (shipped)": {
+    "rmse_m": 0.11095306853737581,
+    "slope": 0.9776701132986504
+   }
+  }
+ }
+}

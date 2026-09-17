@@ -31,17 +31,31 @@ from __future__ import annotations
 import numpy as np
 
 
-def mouth_seeds(sea):
+def mouth_seeds(sea, side="any"):
     """The seaward opening: permanent-water pixels touching the image border.
 
     Verified for Villaviciosa at adoption: the open-sea component reaches the
     border (canal.py, 2026-08-18); an estuary clipped away from the sea would
     yield no seeds, which is a loud error and should be.
+
+    ``side`` restricts the border to one edge ("west", "east", "north",
+    "south", or several joined by "+") for a box the estuary crosses — the
+    Westerschelde leaves the frame on the east too, and measuring distance
+    from both ends would put the inner reach next to a second "mouth".
     """
     sea = np.asarray(sea, bool)
     border = np.zeros_like(sea)
-    border[0, :] = border[-1, :] = True
-    border[:, 0] = border[:, -1] = True
+    sides = {s.strip().lower() for s in str(side).split("+")}
+    if "any" in sides:
+        sides = {"north", "south", "west", "east"}
+    if "north" in sides:
+        border[0, :] = True
+    if "south" in sides:
+        border[-1, :] = True
+    if "west" in sides:
+        border[:, 0] = True
+    if "east" in sides:
+        border[:, -1] = True
     seeds = sea & border
     if not seeds.any():
         raise ValueError("el mar permanente no toca el borde de la imagen: "

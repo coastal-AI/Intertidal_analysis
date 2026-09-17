@@ -209,7 +209,7 @@ class GaugeBoundary(BoundaryProvider):
     available and the one to prefer wherever a gauge exists.
     """
 
-    def __init__(self, times, levels, name="gauge"):
+    def __init__(self, times, levels, name="gauge", max_gap="1h"):
         import pandas as pd
 
         idx = pd.DatetimeIndex(pd.to_datetime(times))
@@ -219,6 +219,10 @@ class GaugeBoundary(BoundaryProvider):
         self.times = idx[order]
         self.values = np.asarray(levels, dtype=float)[order]
         self.name = name
+        # a record with holes must not be bridged by a straight line
+        # across them: an instant farther than max_gap from both of its
+        # neighbouring samples reads NaN
+        self.max_gap_s = float(pd.Timedelta(max_gap).total_seconds())
 
     @classmethod
     def from_file(cls, path, name=None, **kw):
@@ -234,9 +238,15 @@ class GaugeBoundary(BoundaryProvider):
         idx = pd.DatetimeIndex(pd.to_datetime(times))
         if idx.tz is not None:
             idx = idx.tz_localize(None)
-        x = self.times.view("int64").astype(float)
-        return np.interp(idx.view("int64").astype(float), x, self.values,
-                         left=np.nan, right=np.nan)
+        x = self.times.view("int64").astype(float) / 1e9
+        q = idx.view("int64").astype(float) / 1e9
+        out = np.interp(q, x, self.values, left=np.nan, right=np.nan)
+        j = np.searchsorted(x, q)
+        j0 = np.clip(j - 1, 0, len(x) - 1)
+        j1 = np.clip(j, 0, len(x) - 1)
+        gap = np.minimum(np.abs(q - x[j0]), np.abs(x[j1] - q))
+        out[gap > self.max_gap_s] = np.nan
+        return out
 
     def harmonics(self, constituents=None):
         return fit_harmonics(self.times, self.values, constituents)
@@ -363,3 +373,162 @@ def transfer_from_gauges(mouth, inner, constituents=None):
                                                       sm / max(am, 1e-9))),
                   "lag_hours": float(-lag)}
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  One boundary interface for every estimator: a tide model, N nearest
+#  gauges, or the consensus of both
+# ─────────────────────────────────────────────────────────────────────────────
+
+IOC_BASE = "http://www.ioc-sealevelmonitoring.org/service.php"
+
+
+def nearest_gauges(lat, lon, n, stations_path="data_v4/gauges/ioc_stations.json",
+                   max_km=400.0):
+    """The ``n`` IOC stations closest to (lat, lon): [(code, name, km)]."""
+    import json
+
+    with open(stations_path, encoding="utf-8") as f:
+        st = json.load(f)
+    rows = st if isinstance(st, list) else st.get("stations", st)
+    out = []
+    for s in rows:
+        try:
+            la, lo = float(s["Lat"]), float(s["Lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        dlat = np.radians(la - lat)
+        dlon = np.radians(lo - lon)
+        a = (np.sin(dlat / 2) ** 2
+             + np.cos(np.radians(lat)) * np.cos(np.radians(la))
+             * np.sin(dlon / 2) ** 2)
+        km = 2 * 6371.0 * np.arcsin(np.sqrt(a))
+        if km <= max_km:
+            out.append((s["Code"], s.get("Location", s["Code"]), float(km)))
+    out.sort(key=lambda r: r[2])
+    return out[:int(n)]
+
+
+def fetch_ioc(code, t0, t1, cache_dir="data_v4/gauges", chunk_days=30):
+    """Download (once) and load one IOC sea-level record for [t0, t1].
+
+    Cached as ``ioc_{code}_{t0}_{t1}.json`` in ``cache_dir`` so the loader
+    :func:`pyintertidal.gauges.load_cached_ioc` finds it; returns its tidy
+    frame (time, level_m) or None when the station has no data.
+    """
+    import json
+    import os
+    import time
+    import urllib.request
+
+    import pandas as pd
+
+    from .gauges import load_cached_ioc
+
+    os.makedirs(cache_dir, exist_ok=True)
+    out = os.path.join(cache_dir, f"ioc_{code}_{t0}_{t1}.json")
+    if not os.path.exists(out):
+        raw = []
+        edges = list(pd.date_range(t0, t1, freq=f"{chunk_days}D")) + [
+            pd.Timestamp(t1) + pd.Timedelta(days=1)]
+        for a, b in zip(edges, edges[1:]):
+            url = (f"{IOC_BASE}?query=data&code={code}"
+                   f"&timestart={a.strftime('%Y-%m-%dT%H:%M:%S')}"
+                   f"&timestop={b.strftime('%Y-%m-%dT%H:%M:%S')}&format=json")
+            for _ in range(3):
+                try:
+                    req = urllib.request.Request(
+                        url, headers={"User-Agent": "pyintertidal"})
+                    with urllib.request.urlopen(req, timeout=120) as r:
+                        chunk = json.loads(r.read().decode("utf-8", "replace"))
+                    if isinstance(chunk, list):
+                        raw += chunk
+                    break
+                except Exception:
+                    time.sleep(5)
+            time.sleep(0.3)
+        with open(out, "w") as f:
+            json.dump(raw, f)
+    return load_cached_ioc(code, cache_dir=cache_dir)
+
+
+class InterpolatedGauges(BoundaryProvider):
+    """The N nearest gauges, demeaned and blended by inverse distance.
+
+    Demeaning removes each harbour's datum; the blend keeps each gauge's
+    own amplitude and phase weighted by 1/d^2, so the nearest dominates
+    and a far one only nudges. Members that lack data at an instant simply
+    drop out of the average there.
+    """
+
+    def __init__(self, gauges, distances_km, name="gauges"):
+        self.gauges = list(gauges)
+        d = np.maximum(np.asarray(distances_km, float), 1.0)
+        self.weights = (1.0 / d ** 2) / np.sum(1.0 / d ** 2)
+        self.name = name
+
+    def levels(self, times):
+        stack = np.vstack([g.levels(times) for g in self.gauges])
+        w = self.weights[:, None] * np.isfinite(stack)
+        num = np.nansum(np.nan_to_num(stack) * w, axis=0)
+        den = w.sum(axis=0)
+        return np.where(den > 0, num / np.maximum(den, 1e-12), np.nan)
+
+    def harmonics(self, constituents=None):
+        return EnsembleBoundary(self.gauges).harmonics(constituents)
+
+
+def make_boundary(aoi, tide_model="EOT20", n_gauges=None,
+                  period=("2023-01-01", "2025-12-31"), directory="tide_models",
+                  cache_dir="data_v4/gauges", exclude=(), verbose=True):
+    """The boundary level every estimator consumes, from two switches.
+
+    ``tide_model``  a pyTMD model name at the site, or None.
+    ``n_gauges``    the N nearest IOC gauges (fetched and cached for
+                    ``period``), inverse-distance blended, or None.
+    Both given → the CONSENSUS (mean of the two); both None → error.
+    ``exclude``     gauge codes never used, however near — the judges a
+                    validation holds out (e.g. the inner gauge of an estuary).
+    Returns a provider with ``.levels(times)`` and ``.harmonics()``.
+    """
+    from .aoi import as_aoi
+
+    aoi = as_aoi(aoi)
+    lat, lon = aoi.centroid          # AOI.centroid is (lat, lon)
+    parts = []
+    if tide_model:
+        parts.append(PyTMDBoundary(tide_model, lat, lon, directory=directory))
+    if n_gauges:
+        members, dists = [], []
+        excl = {str(c).lower() for c in exclude}
+        near = [g for g in nearest_gauges(lat, lon, n_gauges + len(excl))
+                if g[0].lower() not in excl][:int(n_gauges)]
+        for code, name, km in near:
+            df = fetch_ioc(code, period[0], period[1], cache_dir=cache_dir)
+            if df is None or len(df) < 1000:
+                if verbose:
+                    print(f"[boundary] gauge {code} ({name}): no data, skipped")
+                continue
+            from .gauges import despike
+            n_raw = len(df)
+            df = despike(df)
+            lev = df["level_m"].to_numpy(float)
+            members.append(GaugeBoundary(df["time"], lev - np.nanmedian(lev),
+                                         name=code))
+            dists.append(km)
+            if verbose:
+                print(f"[boundary] gauge {code} ({name}) at {km:.0f} km: "
+                      f"{len(df):,} samples ({n_raw - len(df)} spikes "
+                      f"dropped)")
+        if members:
+            parts.append(InterpolatedGauges(
+                members, dists,
+                name=(members[0].name if len(members) == 1 else
+                      f"{len(members)} gauges ("
+                      + "+".join(m.name for m in members) + ")")))
+    if not parts:
+        raise ValueError("make_boundary needs a tide model, gauges, or both")
+    if len(parts) == 1:
+        return parts[0]
+    return EnsembleBoundary(parts, name="consensus " + " + ".join(
+        getattr(q, "name", "?") for q in parts))

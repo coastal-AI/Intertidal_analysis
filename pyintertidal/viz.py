@@ -231,7 +231,7 @@ def plot_map(
     context_range=(0.72, 1.0),
     basemap=False,
     basemap_source=None,
-    interpolation="nearest",
+    interpolation=None,
     vmin=None,
     vmax=None,
     robust=True,
@@ -269,7 +269,7 @@ def plot_map(
         ``context``. Requires ``transform`` and ``crs``: the axes then carry
         real projected coordinates, which is what lets the tile server be
         asked for the right place and zoom.
-    interpolation : str
+    interpolation : str, optional
         Passed to ``imshow``. ``"nearest"`` by default: a satellite-derived
         DEM has one value per 10 m cell and smoothing between cells invents
         detail that is not in the data. Use ``"bilinear"`` only for figures
@@ -300,6 +300,13 @@ def plot_map(
         west, north = transform.c, transform.f
         extent = (west, west + nx * transform.a,
                   north + ny * transform.e, north)
+    # Resampling is where 10 m data turn into "pixelated" figures: a
+    # continuous field drawn with nearest-neighbour at any scale other
+    # than 1:1 grows hard-edged squares. Continuous rasters get
+    # antialiased resampling (correct when the figure is smaller than
+    # the grid, which is always); class maps keep their hard edges.
+    if interpolation is None:
+        interpolation = "nearest" if classes is not None else "antialiased"
     kw_img = dict(origin="upper", extent=extent, interpolation=interpolation)
 
     if context is not None:
@@ -739,6 +746,30 @@ def plot_tide_record(times, heights, sampled_times=None, sampled_heights=None,
         s, st = s[ok], st[ok]
         _frame(axes[1], st, s, f"Only the {s.size} imaged dates", "#5a5ad6")
 
+        # highlight the spring-tide acquisitions: dates whose DAILY tidal
+        # range sits in the top quartile of the whole record. Springs carry
+        # the extremes, so how many of them the archive caught is the first
+        # thing to read off this panel.
+        try:
+            import pandas as pd
+            ser = pd.Series(np.asarray(heights, float),
+                            index=pd.DatetimeIndex(np.asarray(times)))
+            daily = ser.resample("1D").apply(lambda x: x.max() - x.min())
+            r75 = float(daily.quantile(0.75))
+            day_rng = daily.reindex(
+                pd.DatetimeIndex(st).normalize()).to_numpy()
+            springs = np.nan_to_num(day_rng, nan=-1.0) >= r75
+            if springs.any():
+                axes[1].scatter(
+                    st[springs], s[springs], s=22, color="#d1495b",
+                    edgecolors="none", zorder=3,
+                    label=f"spring tides ({int(springs.sum())}: "
+                          f"day range ≥ {r75:.2f} m)")
+                axes[1].legend(loc="upper right", fontsize=8,
+                               framealpha=0.9)
+        except Exception:
+            pass                       # sampled_times not datetimes: skip
+
         ax = axes[2]
         rng = np.random.default_rng(0)
         ax.scatter(rng.normal(0, 0.16, s.size), s, s=26, alpha=0.75,
@@ -800,3 +831,567 @@ def plot_tide_distribution(reference_heights, sampled_heights=None,
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     return fig, ax
+
+
+import matplotlib.patches as mpatches
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Paper-style figures
+#
+# The presets below reproduce the figure genres of the field's papers
+# (Bué 2020, Granadeiro 2021, Chen & Wang 2025) from this pipeline's own
+# products: a cloud-free single-scene canvas, elevation draped over it with
+# a discrete stepped palette, Granadeiro-style cotidal isolines, the NDWI
+# temporal-variability pair, and the exposure map. Everything returns
+# ``(fig, ax)`` like the rest of the module.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def scene_canvas(cube, tide_heights=None, prefer_tide="low", n_scan=None,
+                 max_bad=0.01):
+    """Pick a cloud-free scene and return it as an RGB-like canvas.
+
+    Scores EVERY scene (spatially subsampled SCL — cheap) by its fraction of
+    bad pixels, keeps those under ``max_bad`` (default 1 %: paper canvases
+    must read as cloud-FREE, not cloud-poor) and — when ``tide_heights``
+    (date → metres) is given — picks the lowest or highest tide among them,
+    so the canvas shows the flats in the state the figure talks about.
+    NDWI cubes carry no red band, so the composite is the classic NIR·G·G
+    false colour; for a true-colour background download the chosen date with
+    :func:`pyintertidal.scenes.download_rgb` and load it with
+    :func:`rgb_canvas`.
+
+    Returns ``(canvas, date)`` with ``canvas`` an (H, W, 3) float array.
+    """
+    from .cube import open_cube
+    from .water import BAD_CLASSES
+
+    ds, _, tname = open_cube(cube.cache_path, cube.bands)
+    try:
+        n = ds.sizes[tname]
+        idx = (np.arange(n) if n_scan is None
+               else np.unique(np.linspace(0, n - 1,
+                                          min(n_scan, n)).astype(int)))
+        step = 6                      # cloud fraction needs no full res
+        bad = np.empty(len(idx), np.float32)
+        for j, i in enumerate(idx):
+            tile = ds["SCL"].isel({tname: int(i)}).values[::step, ::step]
+            bad[j] = np.isin(np.nan_to_num(tile, nan=0.0),
+                             BAD_CLASSES).mean()
+        ok = idx[bad <= max_bad]
+        if len(ok) == 0:
+            ok = idx[np.argsort(bad)[:3]]
+        dates = list(cube.dates)
+        if tide_heights and prefer_tide in ("low", "high"):
+            hs = np.array([tide_heights.get(dates[i], np.nan) for i in ok])
+            if np.isfinite(hs).any():
+                pick = ok[int(np.nanargmin(hs) if prefer_tide == "low"
+                              else np.nanargmax(hs))]
+            else:
+                pick = ok[0]
+        else:
+            pick = ok[0]
+        g = ds["B03"].isel({tname: int(pick)}).values.astype(np.float32)
+        b8 = ds["B08"].isel({tname: int(pick)}).values.astype(np.float32)
+    finally:
+        ds.close()
+
+    def _st(band):
+        lo, hi = np.nanpercentile(band, (2, 98))
+        return np.clip((band - lo) / max(hi - lo, 1e-6), 0, 1)
+
+    canvas = np.dstack([_st(b8), _st(g), 0.85 * _st(g)])
+    return canvas, dates[int(pick)]
+
+
+def rgb_canvas(tif_path, shape=None):
+    """True-colour canvas from a downloaded RGB GeoTIFF (B04, B03, B02).
+
+    Reads the scene, resamples it to ``shape`` (the analysis grid, so it can
+    sit under overlays from the cube), stretches each band to its 2-98
+    percentiles — the same convention as the dataset PNGs — and applies a
+    mild gamma. Returns an (H, W, 3) float array for the paper figures.
+    """
+    import rasterio
+    from rasterio.enums import Resampling
+
+    with rasterio.open(tif_path) as src:
+        if shape is None:
+            data = src.read(masked=True)
+        else:
+            data = src.read(out_shape=(src.count, int(shape[0]),
+                                       int(shape[1])),
+                            resampling=Resampling.average, masked=True)
+    data = np.ma.filled(data.astype(np.float32), np.nan)
+    chans = []
+    for k in range(min(3, data.shape[0])):
+        b = data[k]
+        lo, hi = np.nanpercentile(b, (2, 98))
+        chans.append(np.clip((b - lo) / max(hi - lo, 1e-6), 0.0, 1.0))
+    rgb = np.dstack(chans) ** (1.0 / 1.15)
+    return np.nan_to_num(rgb, nan=0.0)
+
+
+def _paper_frame(ax, shape, transform=None, scalebar_km=2, north=True,
+                 bar_color="white"):
+    """Scale bar + north arrow in the reference papers' style."""
+    if transform is not None:
+        px_m = abs(transform.a)
+    else:
+        px_m = 10.0
+    n_px = scalebar_km * 1000.0 / px_m
+    y0 = shape[0] - max(30, shape[0] // 25)
+    x0 = max(25, shape[1] // 30)
+    ax.plot([x0, x0 + n_px], [y0, y0], "-", color=bar_color, lw=3.5)
+    ax.text(x0 + n_px / 2, y0 - shape[0] * 0.015, f"{scalebar_km} km",
+            color=bar_color, ha="center", fontsize=10, fontweight="bold")
+    if north:
+        ax.annotate("N", xy=(x0 + 12, shape[0] * 0.05),
+                    xytext=(x0 + 12, shape[0] * 0.12), color=bar_color,
+                    fontsize=12, fontweight="bold", ha="center",
+                    arrowprops=dict(arrowstyle="-|>", color=bar_color, lw=2))
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def plot_paper_map(canvas, overlay=None, transform=None, bounds=None,
+                   cmap="turbo", vmin=None, vmax=None, cbar_label=None,
+                   title=None, scalebar_km=2, rects=(), figsize=(11, 10),
+                   ax=None):
+    """A product draped over a satellite canvas, reference-paper style.
+
+    Parameters
+    ----------
+    canvas : (H, W, 3) array
+        The cloud-free scene from :func:`scene_canvas`.
+    overlay : 2-D array, optional
+        Product to drape (NaN = canvas shows through).
+    bounds : sequence, optional
+        Discrete colour steps (Chen-style stepped legend); overrides
+        vmin/vmax.
+    rects : sequence of (r0, r1, c0, c1, label)
+        Zoom rectangles drawn on the map (the insets themselves are the
+        caller's business — see :func:`plot_elevation_paper`).
+    """
+    from matplotlib.colors import BoundaryNorm
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=150)
+    else:
+        fig = ax.figure
+    ax.imshow(canvas, origin="upper")
+    im = None
+    if overlay is not None:
+        if bounds is not None:
+            norm = BoundaryNorm(bounds, plt.get_cmap(cmap).N
+                                if isinstance(cmap, str) else cmap.N)
+            im = ax.imshow(overlay, cmap=cmap, norm=norm, origin="upper")
+        else:
+            im = ax.imshow(overlay, cmap=cmap, vmin=vmin, vmax=vmax,
+                           origin="upper")
+        if cbar_label is not None:
+            cb = fig.colorbar(im, ax=ax, shrink=0.72, pad=0.015)
+            cb.set_label(cbar_label, fontsize=10)
+    for r0, r1, c0, c1, lab in rects:
+        ax.add_patch(mpatches.Rectangle((c0, r0), c1 - c0, r1 - r0,
+                                        fill=False, ec="white", lw=1.8))
+        ax.text(c0 + 8, r0 + 30, lab, color="white", fontsize=13,
+                fontweight="bold")
+    _paper_frame(ax, canvas.shape[:2], transform, scalebar_km)
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    return fig, ax
+
+
+def plot_elevation_paper(dem, canvas, transform=None,
+                         bounds=None, cmap=None, rects=(),
+                         title=None, scalebar_km=2):
+    """Bué-style elevation figure: main map plus zoom insets.
+
+    ``rects`` are (r0, r1, c0, c1, label); each becomes an inset panel.
+    """
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+
+    if bounds is None:
+        lo = float(np.nanpercentile(dem, 2))
+        hi = float(np.nanpercentile(dem, 98))
+        bounds = np.round(np.linspace(lo, hi, 17), 2)
+    if cmap is None:
+        cmap = ListedColormap(
+            ["#20469c", "#2b62b8", "#3b7fcb", "#4f9bd0", "#63b3c1",
+             "#79c3a8", "#8fce8f", "#a6d97b", "#c0e26a", "#dcec59",
+             "#f2ee4e", "#f7d743", "#f2b23a", "#e88a30", "#d95f27",
+             "#c33d1f"])
+    norm = BoundaryNorm(bounds, cmap.N)
+
+    n_ins = len(rects)
+    fig = plt.figure(figsize=(13.5, 7.6), dpi=150)
+    axM = fig.add_axes([0.02, 0.10, 0.52, 0.84])
+    axM.imshow(canvas, origin="upper")
+    axM.imshow(np.clip(dem, bounds[0], bounds[-1]), cmap=cmap, norm=norm,
+               origin="upper")
+    for r0, r1, c0, c1, lab in rects:
+        axM.add_patch(mpatches.Rectangle((c0, r0), c1 - c0, r1 - r0,
+                                         fill=False, ec="white", lw=1.8))
+        axM.text(c0 + 8, r0 + 34, lab, color="white", fontsize=13,
+                 fontweight="bold")
+    _paper_frame(axM, canvas.shape[:2], transform, scalebar_km)
+    if title:
+        axM.set_title(title, fontsize=11, loc="left")
+
+    for k, (r0, r1, c0, c1, lab) in enumerate(rects[:2]):
+        ax = fig.add_axes([0.575 + 0.215 * k, 0.30, 0.20, 0.58])
+        ax.imshow(canvas[r0:r1, c0:c1], origin="upper")
+        ax.imshow(np.clip(dem[r0:r1, c0:c1], bounds[0], bounds[-1]),
+                  cmap=cmap, norm=norm, origin="upper")
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_title(f"inset {lab}", fontsize=10.5)
+
+    cax = fig.add_axes([0.575, 0.16, 0.40, 0.035])
+    cb = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cax,
+                      orientation="horizontal", ticks=bounds[::2])
+    cb.set_label("Elevation (m, tide datum)", fontsize=10)
+    cb.ax.tick_params(labelsize=8.5)
+    return fig, axM
+
+
+def plot_cotidal(s_km, centers_km, tau_min, water_mask, transform=None,
+                 levels=None, vmin=None, vmax=None, smooth_px=12,
+                 land_color="#5f6647", title=None, scalebar_km=2,
+                 figsize=(11, 10), ax=None):
+    """Granadeiro-style cotidal map from the band clocks.
+
+    The per-band clocks are interpolated monotonically along the geodesic
+    distance and painted through ``s_km`` wherever ``water_mask`` is true;
+    land is masked in olive and the isolines are drawn from a smoothed,
+    hole-free copy so they sweep continuously across the map.
+    """
+    from scipy import ndimage
+    from scipy.interpolate import PchipInterpolator
+
+    c = np.asarray(centers_km, float)
+    t = np.asarray(tau_min, float)
+    f = PchipInterpolator(c, t, extrapolate=False)
+    lag = f(np.clip(s_km, c[0], c[-1]))
+    lag = np.where(s_km <= c[0], t[0], lag)
+    lag = np.where(s_km >= c[-1], t[-1], lag)
+    lag = np.where(water_mask & np.isfinite(s_km), lag, np.nan)
+
+    has = np.isfinite(lag)
+    _, (iy, ix) = ndimage.distance_transform_edt(~has, return_indices=True)
+    smooth = ndimage.gaussian_filter(lag[iy, ix], smooth_px)
+
+    if vmin is None:
+        vmin = float(np.nanmin(t))
+    if vmax is None:
+        vmax = float(np.nanmax(t))
+    if levels is None:
+        step = max(5, int(round((vmax - vmin) / 6 / 5.0)) * 5)
+        levels = np.arange(np.floor(vmin), np.ceil(vmax) + step, step)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=150)
+    else:
+        fig = ax.figure
+    im = ax.imshow(lag, cmap="turbo", origin="upper", vmin=vmin, vmax=vmax)
+    land = np.zeros(lag.shape + (4,), np.float32)
+    land[~has] = mcolors.to_rgba(land_color)
+    ax.imshow(land, origin="upper")
+    cs = ax.contour(smooth, levels=levels, colors="k", linewidths=0.9)
+    ax.clabel(cs, fmt="%d", fontsize=9, inline_spacing=4)
+    _paper_frame(ax, lag.shape, transform, scalebar_km, bar_color="white")
+    cb = fig.colorbar(im, ax=ax, shrink=0.75, pad=0.015)
+    cb.set_label("lag behind the mouth tide (min)", fontsize=10)
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    return fig, ax
+
+
+def ndwi_temporal_variability(cube, chunk=None):
+    """Per-pixel standard deviation of NDWI over the clear archive.
+
+    Streams the cube and accumulates Welford statistics using only
+    SCL-clear observations — without the cloud mask, land pixels show the
+    largest variability and the figure lies. ``chunk=None`` lets
+    :func:`pyintertidal.cube.auto_chunk` bound the RAM from the grid size,
+    like every other streaming pass; a fixed 40-date chunk was a gigabyte
+    per band on the Arousa grid and killed 8 GB machines.
+
+    Returns ``(sd, n_clear)``.
+    """
+    from . import water as W
+
+    shape = cube.shape
+    n = np.zeros(shape, np.int32)
+    mean = np.zeros(shape, np.float64)     # accumulators: one frame each
+    m2 = np.zeros(shape, np.float64)
+    for _sl, block in cube.stream(chunk):
+        g = block["B03"].astype(np.float32)
+        b8 = block["B08"].astype(np.float32)
+        clear = np.isin(block["SCL"], list(W.CLEAR_CLASSES))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            w = np.where(g + b8 != 0, (g - b8) / (g + b8), np.nan)
+        del g, b8
+        w = np.where(clear & np.isfinite(w), w, np.nan)
+        del clear
+        for k in range(w.shape[0]):
+            x = w[k]
+            good = np.isfinite(x)
+            n_new = n + good
+            delta = np.where(good, x - mean, 0.0)
+            mean = mean + np.where(good, delta / np.maximum(n_new, 1), 0.0)
+            m2 = m2 + np.where(good, delta * (x - mean), 0.0)
+            n = n_new
+    sd = np.sqrt(np.where(n > 1, m2 / np.maximum(n - 1, 1), np.nan))
+    sd = np.where(n >= 15, sd, np.nan)
+    return sd, n
+
+
+def plot_ndwi_variability(sd, canvas=None, transform=None, vmax=0.35,
+                          title=None, scalebar_km=2, figsize=(11, 10),
+                          ax=None):
+    """Granadeiro Fig.-7-style temporal-variability map.
+
+    Their palette: near-zero variability in black/grey (land and permanent
+    water), then yellow to red where the pixel swings between states — the
+    intertidal lights up like a ring.
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+
+    cmap = LinearSegmentedColormap.from_list(
+        "granadeiro_tv",
+        ["#000000", "#3a3a3a", "#6e6e6e", "#9a9a9a", "#38761d", "#f1c232",
+         "#e69138", "#cc0000"])
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=150)
+    else:
+        fig = ax.figure
+    if canvas is not None:
+        ax.imshow(canvas, origin="upper")
+    im = ax.imshow(sd, cmap=cmap, origin="upper", vmin=0, vmax=vmax)
+    cb = fig.colorbar(im, ax=ax, shrink=0.72, pad=0.015)
+    cb.set_label("σ (NDWI) across the clear archive", fontsize=10)
+    _paper_frame(ax, sd.shape, transform, scalebar_km)
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    return fig, ax
+
+
+def plot_class_variability(sd, class_masks, threshold=None, xmax=0.4,
+                           figsize=(9, 5), ax=None):
+    """Granadeiro Fig.-8-style density curves of σ(NDWI) per class.
+
+    ``class_masks``: mapping of label → boolean mask, e.g. ``{"Land": ...,
+    "Water": ..., "Intertidal": ...}``. Drawn as thin curves, with the
+    optional ``threshold`` marked by an arrow.
+    """
+    from scipy.stats import gaussian_kde
+
+    COLORS = {"Land": "#cc3333", "Water": "#3344cc", "Intertidal": "#2d8a2d"}
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=150)
+    else:
+        fig = ax.figure
+    xx = np.linspace(0, xmax, 400)
+    rng = np.random.default_rng(7)
+    for name, mask in class_masks.items():
+        v = sd[mask & np.isfinite(sd)]
+        v = v[(v >= 0) & (v < xmax)]
+        if len(v) < 50:
+            continue
+        if len(v) > 20000:
+            v = rng.choice(v, 20000, replace=False)
+        k = gaussian_kde(v, bw_method=0.10)
+        ax.plot(xx, k(xx), "-", lw=1.8,
+                color=COLORS.get(name, None), label=name)
+    if threshold is not None:
+        ymid = ax.get_ylim()[1] * 0.35
+        ax.annotate("threshold", xy=(threshold, 0), xytext=(threshold, ymid),
+                    ha="center", fontsize=9,
+                    arrowprops=dict(arrowstyle="->", lw=1.2))
+    ax.set_xlabel("σ (NDWI) across the clear archive", fontsize=10.5)
+    ax.set_ylabel("density", fontsize=10.5)
+    ax.legend(fontsize=9.5)
+    ax.grid(alpha=0.2)
+    return fig, ax
+
+
+def plot_exposure_paper(exposure_hours, canvas, transform=None,
+                        title=None, scalebar_km=2, figsize=(11, 10),
+                        ax=None):
+    """Bué Fig.-10-style exposure map over the satellite canvas."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=150)
+    else:
+        fig = ax.figure
+    ax.imshow(canvas, origin="upper")
+    im = ax.imshow(exposure_hours, cmap="Spectral", origin="upper")
+    cb = fig.colorbar(im, ax=ax, shrink=0.72, pad=0.015)
+    cb.set_label("mean daily exposure (h)", fontsize=10)
+    _paper_frame(ax, exposure_hours.shape, transform, scalebar_km)
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    return fig, ax
+
+
+def plot_otsu_ndwi(sample, threshold, adopted=None, bins=140,
+                   title=None, figsize=(9, 4.6), ax=None):
+    """The water-threshold calibration histogram: ONE cut, TWO classes.
+
+    ``sample`` is the pooled clear-sky NDWI of the archive's clearest scenes
+    (:func:`pyintertidal.water.calibrate_threshold` returns it in its
+    diagnostics). Bimodal by construction — exposed ground low, water high.
+    The dashed line is Otsu's split of THIS sample; the solid red line is the
+    threshold the study actually adopted, so the two are never conflated.
+    """
+    vals = np.asarray(sample, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=140)
+    else:
+        fig = ax.figure
+    lo, hi = np.percentile(vals, [0.2, 99.8])
+    edges = np.linspace(lo, hi, bins + 1)
+    counts, _ = np.histogram(vals, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    w = edges[1] - edges[0]
+    land = centers < threshold
+    ax.bar(centers[land], counts[land], width=w, color="#b08968",
+           label="exposed ground")
+    ax.bar(centers[~land], counts[~land], width=w, color="#2a6f97",
+           label="water")
+    ax.axvline(threshold, color="k", ls="--", lw=1.4,
+               label=f"Otsu split {threshold:+.3f}")
+    if adopted is not None and abs(float(adopted) - float(threshold)) > 1e-9:
+        ax.axvline(adopted, color="#c1121f", lw=1.6,
+                   label=f"adopted {adopted:+.3f}")
+    ax.set_xlabel("NDWI (clear-sky pixels of the clearest scenes)",
+                  fontsize=10.5)
+    ax.set_ylabel("pixels", fontsize=10.5)
+    ax.legend(fontsize=9.5, frameon=False)
+    ax.grid(alpha=0.2)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    return fig, ax
+
+
+def plot_otsu_wf(wf, transition, thresholds, adopted=None, bins=50,
+                 log=False, title=None, figsize=(9, 4.6), ax=None):
+    """The multi-Otsu histogram of water frequency: TWO cuts, THREE classes.
+
+    Within the transition class the water-frequency histogram mixes three
+    populations — ground that is almost never wet, the truly intertidal, and
+    ground that is almost always wet. The dashed lines are the two valleys
+    multi-Otsu finds between them; the red band is the (deliberately wider)
+    window the study adopts, leaving per-pixel quality control to trim the
+    ends instead of the histogram. ``log=True`` rescues the middle class when
+    the end spikes dwarf it.
+    """
+    vals = np.asarray(wf, dtype=float)[np.asarray(transition, bool)]
+    vals = vals[np.isfinite(vals)]
+    t_lo, t_hi = float(thresholds[0]), float(thresholds[1])
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, dpi=140)
+    else:
+        fig = ax.figure
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    counts, _ = np.histogram(vals, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    w = edges[1] - edges[0]
+    cls = np.digitize(centers, [t_lo, t_hi])
+    colors = ("#b08968", "#38a3a5", "#2a6f97")
+    names = ("almost never wet", "intertidal", "almost always wet")
+    for k in range(3):
+        sel = cls == k
+        ax.bar(centers[sel], counts[sel], width=w, color=colors[k],
+               label=names[k])
+    ax.axvline(t_lo, color="k", ls="--", lw=1.4,
+               label=f"multi-Otsu valleys {t_lo:.2f} / {t_hi:.2f}")
+    ax.axvline(t_hi, color="k", ls="--", lw=1.4)
+    if adopted is not None:
+        a_lo, a_hi = float(adopted[0]), float(adopted[1])
+        ax.axvspan(a_lo, a_hi, color="#c1121f", alpha=0.05)
+        ax.axvline(a_lo, color="#c1121f", lw=1.3)
+        ax.axvline(a_hi, color="#c1121f", lw=1.3)
+        ax.plot([], [], color="#c1121f", lw=1.3,
+                label=f"adopted window {a_lo:.2f} – {a_hi:.2f}")
+    if log:
+        ax.set_yscale("log")
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("water frequency (pixels of the transition class)",
+                  fontsize=10.5)
+    ax.set_ylabel("pixels", fontsize=10.5)
+    ax.legend(fontsize=9.5, frameon=False)
+    ax.grid(alpha=0.2)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    return fig, ax
+
+
+def plot_pixel_sigmoids(cube, tide_heights, pixels, labels=None,
+                        title=None, figsize=None):
+    """The mixed-pixel model on real observations (Bué Fig.-4 style).
+
+    For each ``(row, col)`` pixel the full clear-sky index record is read
+    from the cube and plotted against the tide height at acquisition, with
+    the four-parameter model a + b·Φ((h − μ)/σ) profiled on the spot — μ and
+    σ on a grid, a and b in closed form. It is the estimator's own model on
+    the pixel's own evidence: the elevation is where the curve rises.
+    """
+    from scipy.special import ndtr
+    from .cube import open_cube
+    from .water import CLEAR_CLASSES, index_block
+
+    dates = cube.dates
+    h_all = np.array([tide_heights.get(d, np.nan) for d in dates],
+                     dtype=float)
+    ds, arrays, t_dim = open_cube(cube.cache_path, cube.bands)
+    try:
+        n = len(pixels)
+        fig, axs = plt.subplots(1, n, figsize=figsize or (4.6 * n, 3.9),
+                                dpi=140, sharey=True)
+        axs = np.atleast_1d(axs)
+        for k, (ax, (r, c)) in enumerate(zip(axs, pixels)):
+            series = {b: np.asarray(arrays[b][:, r, c].values,
+                                    dtype=float)[:, None, None]
+                      for b in cube.bands}
+            y_full = index_block(cube.water, series)[:, 0, 0]
+            scl = np.nan_to_num(series["SCL"][:, 0, 0],
+                                nan=0.0).astype(np.int16)
+            ok = (np.isin(scl, list(CLEAR_CLASSES)) & np.isfinite(y_full)
+                  & np.isfinite(h_all))
+            h, y = h_all[ok], y_full[ok]
+            best = None
+            for mu in np.linspace(h.min(), h.max(), 60):
+                for sig in np.geomspace(0.05, 1.2, 25):
+                    phi = ndtr((h - mu) / sig)
+                    A = np.column_stack([np.ones_like(phi), phi])
+                    coef, res, *_ = np.linalg.lstsq(A, y, rcond=None)
+                    sse = (float(res[0]) if res.size
+                           else float(np.sum((y - A @ coef) ** 2)))
+                    if best is None or sse < best[0]:
+                        best = (sse, mu, sig, coef)
+            _, mu, sig, (a, b) = best
+            hg = np.linspace(h.min(), h.max(), 200)
+            ax.plot(h, y, "o", ms=3, mfc="#2a6f97", mec="none", alpha=0.55)
+            ax.plot(hg, a + b * ndtr((hg - mu) / sig),
+                    color="#c1121f", lw=2)
+            ax.axvline(mu, color="k", ls=":", lw=1)
+            name = labels[k] if labels else f"({r}, {c})"
+            ax.set_title(f"{name} · μ = {mu:+.2f} m · σ = {sig:.2f} m · "
+                         f"{int(ok.sum())} obs", fontsize=9.5)
+            ax.set_xlabel("tide height at acquisition (m)", fontsize=9.5)
+            ax.grid(alpha=0.2)
+            for s in ("top", "right"):
+                ax.spines[s].set_visible(False)
+        axs[0].set_ylabel("NDWI", fontsize=10)
+        if title:
+            fig.suptitle(title, fontsize=11, x=0.01, ha="left")
+        fig.tight_layout()
+    finally:
+        ds.close()
+    return fig, axs

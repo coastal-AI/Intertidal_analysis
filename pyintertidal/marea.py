@@ -162,14 +162,40 @@ def build_bank(lat, lon, times, bank_taus=None, model="EOT20",
 
 
 BANK_TAUS = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0,
-             75.0, 90.0, 105.0, 120.0]
+             75.0, 90.0, 105.0, 120.0, 135.0, 150.0, 165.0, 180.0]
+# 180 min, not 120: behind the Vlie inlet (Wadden, 2026-09-16) the inner
+# bands pinned at the old 120-min bound while the Harlingen gauge put the
+# lag near 90-120; a pinned lag is not a measurement
+TAU_BOUNDS = (-45.0, 180.0)
 
 
 def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
                 tau_detect_min=TAU_DETECT_MIN, model="EOT20",
-                tide_dir="tide_models", verbose=True):
+                tide_dir="tide_models", region_mask=None, boundary=None,
+                extraction=None, mouth_side="any", verbose=True):
     """The full MAREA product for one cube. Writes ``out_dir``/{marea.npz,
-    result.json, figure.png} and returns the result dict."""
+    result.json, figure.png} and returns the result dict.
+
+    ``region_mask`` (H, W bool) restricts the INTERTIDAL pixels to one
+    region while the mouth anchor and the geodesic distance still come from
+    the whole frame. This is how a branched system is analysed honestly:
+    quantile bands of s over a whole ría put different branches — different
+    clocks — into the same band, and their lags average away. Banding one
+    branch at a time removes the cancellation without touching the
+    estimator.
+
+    ``boundary``: a :class:`pyintertidal.boundary.BoundaryProvider` (from
+    ``make_boundary``: tide model, N nearest gauges, or their consensus)
+    replaces the built-in EOT20 call for the clock bank.
+
+    ``extraction``: the dict :func:`extract` returns for this cube, when the
+    caller already streamed it (a notebook that also inverts the record
+    itself) — saves a second pass over the cube.
+
+    ``mouth_side``: which image edge(s) count as the sea (see
+    :func:`pyintertidal.geometry.mouth_seeds`); "any" for a box that only
+    touches the sea on one side.
+    """
     import pandas as pd
     from .net import use_system_certificates
     from . import overpass
@@ -179,9 +205,19 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     os.makedirs(out_dir, exist_ok=True)
     use_system_certificates()
 
-    ex = extract(cube_path)
+    ex = dict(extraction) if extraction is not None else extract(cube_path)
     H, W = ex["shape"]
     keep, sea, inter = ex["keep"], ex["sea"], ex["inter"]
+    if region_mask is not None:
+        rm = np.asarray(region_mask, bool)
+        sel = rm.ravel()[keep]
+        keep = keep[sel]
+        ex["Y"] = ex["Y"][:, sel]
+        ex["C"] = ex["C"][:, sel]
+        inter = inter & rm
+        if verbose:
+            print(f"[{name}] region mask keeps {len(keep):,} of "
+                  f"{sel.size:,} intertidal px", flush=True)
     if verbose:
         print(f"[{name}] {len(keep):,} intertidal px", flush=True)
     if len(keep) < 3000:
@@ -192,7 +228,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
 
     # geometry; a cell whose sea does not touch the border gets no operator
     try:
-        seeds = geometry.mouth_seeds(sea)
+        seeds = geometry.mouth_seeds(sea, side=mouth_side)
         s_m = geometry.along_distance(sea | inter, seeds, pixel_m)
         s_km = s_m.ravel()[keep] / 1000.0
     except ValueError:
@@ -214,8 +250,15 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     lat_c = 0.5 * (ex["bbox"]["south"] + ex["bbox"]["north"])
     lon_c = 0.5 * (ex["bbox"]["west"] + ex["bbox"]["east"])
 
-    bank, _rising = build_bank(lat_c, lon_c, t_real, model=model,
-                               tide_dir=tide_dir)
+    if boundary is not None:
+        # any BoundaryProvider (model, N gauges, consensus): the bank is
+        # its level read tau minutes earlier, for the standard tau grid
+        bank = te.ShiftBank(BANK_TAUS, [
+            np.asarray(boundary.levels(t_real - pd.Timedelta(minutes=tv)),
+                       float) for tv in BANK_TAUS])
+    else:
+        bank, _rising = build_bank(lat_c, lon_c, t_real, model=model,
+                                   tide_dir=tide_dir)
     h0 = bank.at(0.0)
 
     # interior tide (only with a usable mouth anchor)
@@ -228,7 +271,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         r2a = te.m2a_rasch(wet, C > 0, bank, band_of, centers, n_bands,
                            sigma0=cfg2["sigma0_m"],
                            sg_grid=tuple(cfg2["sigma_perfil_m"]),
-                           tau_bounds=(-45.0, 120.0),
+                           tau_bounds=TAU_BOUNDS,
                            z_points=cfg2["z_puntos"],
                            rng=np.random.default_rng(cfg2["seed"] + 31),
                            max_px_band=cfg2["max_px_banda"]["m2a"])
@@ -238,9 +281,20 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         band_of = np.zeros(len(keep), int)
         tau = np.array([0.0])
     tau_used = np.where(np.abs(tau) > tau_detect_min, tau, 0.0)
+    # Physics veto. The interior lag is a propagation delay: non-negative,
+    # growing inland. A profile whose above-threshold bands include a
+    # NEGATIVE lag — the interior running AHEAD of the ocean — is noise
+    # straddling the detection threshold, not a tide (seen in Arousa:
+    # -10.3 and +10.5 min in adjacent bands). One incoherent band vetoes
+    # the whole profile; the honest product is then "one clock".
+    veto = bool((tau_used < 0).any())
+    if veto:
+        tau_used = np.zeros_like(tau_used)
     if verbose:
         print(f"[{name}] tau={np.round(tau, 1)} -> "
-              f"applied {np.round(tau_used, 1)}", flush=True)
+              f"applied {np.round(tau_used, 1)}"
+              + ("  [physics veto: negative lag above threshold]"
+                 if veto else ""), flush=True)
 
     lo, hi = float(h0.min()), float(h0.max())
     z = np.full(len(keep), np.nan)
@@ -249,7 +303,16 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         cols = np.where(band_of == k)[0]
         if not len(cols):
             continue
-        h_k = bank.at(float(tau_used[k])) if tau_used[k] else h0
+        if not tau_used[k]:
+            h_k = h0
+        elif boundary is not None:
+            # the exact shifted level, not the bank's linear interpolation
+            # between 15-min shifts (a few cm at most, but the product and
+            # a notebook re-inverting the same record should agree exactly)
+            h_k = np.asarray(boundary.levels(
+                t_real - pd.Timedelta(minutes=float(tau_used[k]))), float)
+        else:
+            h_k = bank.at(float(tau_used[k]))
         z[cols], sg[cols] = _invert(Y[:, cols], C[:, cols], h_k, lo, hi)
 
     # hypsometry with uncertainty (sigma as the per-pixel jitter)
@@ -274,6 +337,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         "tau_min": np.asarray(tau).tolist(),
         "tau_usado_min": np.asarray(tau_used).tolist(),
         "con_operador": bool((tau_used != 0).any()),
+        "veto_fisico": veto,
         "hipsometria": {"integral": hyp["integral"],
                         "area_total_km2": hyp["area_total_km2"]},
         "rango_marea_m": [lo, hi],
