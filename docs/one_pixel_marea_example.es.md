@@ -21,34 +21,15 @@ píxel.
 
 **Lo que el cubo guarda del píxel.** Tres números por visita, una vez por
 escena, durante diez años: la reflectancia en verde (B03) e infrarrojo
-cercano (B08), y la clase de escena (SCL) que Sen2Cor asignó al píxel. La
-Figura 1 los enseña de tres maneras. La fila de arriba es lo que *es* una
-visita: la imagen NDWI de los 1,2 km alrededor del píxel (cuadro rojo) en
-cuatro fechas elegidas por regla, una claramente seca, una claramente
-mojada, una nube y una sombra de nube. En la fecha seca el canal es un hilo
-y las llanuras son marrones; en la mojada la ría está llena y el píxel bajo
-el agua; bajo nube toda la ventana es un valor plano, ninguna información;
-bajo sombra de nube las llanuras se vuelven cian pálido, porque una sombra
-se lee como agua en estas dos bandas (el NDWI del píxel es +0,10 ahí), y por
-eso el filtro SCL descarta las sombras igual que las nubes. La fila central
-es el infrarrojo cercano del píxel en cada una de sus 1 379 visitas, en eje
-logarítmico: las visitas de clase clara (oscuro) caen en dos poblaciones,
-en torno a 100 cuando el píxel está bajo el agua y en torno a 1 000 cuando
-es suelo desnudo, y las clases de nube y sombra (gris) quedan por encima de
-ambas, casi todas entre 3 000 y 12 000. Las 156 visitas que Sen2Cor dejó sin
-clasificar (naranja) tienen valores de suelo pero no clase clara, y el
-pipeline no las usa. Abajo a la izquierda se amplía el año con más visitas
-claras y se ven las dos bandas en cada visita, unidas por un segmento: azul
-cuando el verde está por encima del infrarrojo (agua), marrón cuando el
-infrarrojo está por encima del verde (suelo). Ese orden es todo el detector:
-el NDWI es la diferencia normalizada de las dos, y su signo dice cuál gana.
-Abajo a la derecha se cuentan las clases: de 1 379 visitas, 935 son nube o
-sombra, 156 sin clasificar y 288 llevan clase clara (190 suelo desnudo, 97
-agua, 1 vegetación). Esas 288 son las miradas útiles del píxel antes del
-filtro por escena de la sección 3.
-
-![Las visitas del píxel](figures/onepixel/cell05_0.png)
-*Figura 1. Arriba, NDWI de la ventana de 1,2 km alrededor del píxel (cuadro rojo) en cuatro visitas elegidas por regla: una claramente seca (cuartil inferior del NDWI de las visitas de suelo desnudo), una claramente mojada (cuartil superior de las visitas de agua), la nube mediana y la sombra de nube mediana; cada título da los tres números del píxel en esa fecha. Centro, la reflectancia en infrarrojo cercano del píxel en sus 1 379 visitas (eje logarítmico), coloreada por grupo SCL: clara (oscuro), sin clasificar (naranja), nube o sombra (gris); las letras marcan las cuatro visitas de arriba. Abajo a la izquierda, el año con más visitas claras (2025) con las dos bandas en cada visita, el segmento azul cuando el verde supera al infrarrojo (agua) y marrón en caso contrario (suelo), gris para las clases nubladas. Abajo a la derecha, el número de visitas en cada clase SCL.*
+cercano (B08), escalada por 10 000, y la clase de escena (SCL) que Sen2Cor
+asignó al píxel. El NDWI es la diferencia normalizada de las dos bandas, así
+que su signo solo dice cuál es mayor: verde por encima del infrarrojo se lee
+como agua, lo contrario como suelo. De las 1 379 visitas, 935 llevan clase
+de nube o sombra de nube, 156 quedaron sin clasificar por Sen2Cor y 288
+llevan clase clara (190 suelo desnudo, 97 agua, 1 vegetación). Esas 288 son
+las miradas útiles del píxel antes del filtro por escena de la sección 3; en
+ellas el infrarrojo ya cae en dos poblaciones, en torno a 100 cuando el
+píxel está bajo el agua y en torno a 1 000 cuando es suelo desnudo.
 
 **El umbral, y dónde queda el píxel respecto a él.** El histograma es la
 calibración del sitio: NDWI de los píxeles de cielo claro de las doce escenas
@@ -63,7 +44,7 @@ mismo eje: un grupo justo por debajo de 0 (seco) y una dispersión de 0 a 1,8
 +0,25 habría llamado secas a algunas visitas mojadas.
 
 ![El umbral sobre el píxel](figures/onepixel/cell07_0.png)
-*Figura 2. Histograma de NDWI de los píxeles de cielo claro de las 12 escenas más despejadas del sitio (marrón suelo, azul agua); línea negra discontinua, corte de Otsu (+0,25, clavado en el tope); línea roja, umbral adoptado (0); marcas rojas, las 288 visitas claras de este píxel.*
+*Figura 1. Histograma de NDWI de los píxeles de cielo claro de las 12 escenas más despejadas del sitio (marrón suelo, azul agua); línea negra discontinua, corte de Otsu (+0,25, clavado en el tope); línea roja alta, umbral adoptado (0). Las marcas rojas cortas al pie del histograma son una alfombra del registro del propio píxel: una marca por visita de cielo claro (288), colocada en el NDWI de esa visita, para leer su grupo seco (justo bajo 0) y su dispersión mojada (0 a 1,8) contra el corte de todo el sitio.*
 
 **El filtro de nubes, tal como cae sobre el píxel.** Dos filtros, a dos
 escalas. Primero la escena: una fecha sobrevive si como mucho el 10 % de la
@@ -71,22 +52,24 @@ escalas. Primero la escena: una fecha sobrevive si como mucho el 10 % de la
 no sobre el marco entero, y eso es lo que conserva escenas nubladas en el
 mar pero despejadas sobre el estuario; pasan 305 de 1 379 fechas. Después
 el píxel: en una escena conservada, la clase SCL de este píxel tiene que ser
-una clase clara (4-7, 12); si no, esa visita se descarta solo para este
+una clase clara (4, 5 o 6); si no, esa visita se descarta solo para este
 píxel. En la figura, los puntos grises son visitas de escenas rechazadas
 (1 074), los naranjas son escenas conservadas en las que este píxel estaba
-bajo nube o sombra (106), y los azules y marrones son las 199 observaciones
-que sobreviven, ya etiquetadas mojado o seco por el umbral. Fíjate en
-cuántos puntos naranjas quedan en NDWI ≈ 0,3-0,6, entre el grupo mojado: una
+bajo nube, sombra o sin clase clara (106), y los oscuros son las 199
+observaciones que sobreviven; el umbral en 0 (punteado) las etiquetará
+mojadas o secas. Fíjate en cuántos puntos naranjas quedan en NDWI ≈ 0,3-0,6,
+entre las supervivientes por encima de la línea: una
 nube fina sobre agua sigue leyendo "mojado" en el índice, y solo la clase
 SCL la detecta.
 
 ![El filtro de nubes sobre el píxel](figures/onepixel/cell10_0.png)
-*Figura 3. NDWI del píxel contra el tiempo, coloreado por lo que hizo el filtro de nubes con cada visita: gris, escena rechazada; naranja, escena aceptada pero píxel nublado según SCL; azul y marrón, las 199 observaciones que sobreviven, mojadas y secas.*
+*Figura 2. NDWI del píxel contra el tiempo, coloreado por lo que hizo el filtro de nubes con cada visita: gris, escena rechazada; naranja, escena aceptada pero este píxel sin clase SCL clara; oscuro, las 199 observaciones que sobreviven; línea punteada, el umbral (0).*
 
 **Dónde vive el píxel.** Frecuencia de agua en una ventana de 1,2 km
-alrededor del píxel (cuadro rojo), 7,9 km ría arriba. El marrón oscuro es
-tierra que nunca se moja, el verde oscuro el canal que siempre está mojado,
-y la banda pálida entre ambos es la llanura: píxeles mojados en unas visitas
+alrededor del píxel (cuadro rojo), 7,9 km ría arriba, en la escala del
+propio pipeline (blanco nunca mojado, azul oscuro siempre mojado). El blanco
+es tierra que nunca se moja, el azul oscuro el canal que siempre está
+mojado, y la banda de azules intermedios entre ambos es la llanura: píxeles mojados en unas visitas
 y secos en otras, ordenados por altura — cuanto más cerca del canal, más
 mojados. El píxel está en el borde interior de esa banda, en la orilla oeste
 del meandro, con WF = 0,61: mojado en seis visitas de cada diez. Por eso es
@@ -95,7 +78,7 @@ para que su registro mojado/seco localice el nivel, y está lo bastante río
 arriba para que el reloj importe.
 
 ![Dónde está el píxel: frecuencia de agua a su alrededor](figures/onepixel/cell13_0.png)
-*Figura 4. Frecuencia de agua en una ventana de 1,2 km alrededor del píxel (cuadro rojo): marrón nunca mojado, verde siempre mojado, la banda pálida es la llanura intermareal.*
+*Figura 3. Frecuencia de agua en una ventana de 1,2 km alrededor del píxel (cuadro rojo), en la escala del mapa de frecuencia de agua del pipeline: blanco nunca mojado, azul oscuro siempre mojado, los azules intermedios son la llanura intermareal.*
 
 **Dos cortes, tres clases: la decisión intermareal.** El histograma es la
 frecuencia de agua de todos los píxeles de la clase de transición. Tiene tres
@@ -112,21 +95,24 @@ rechazar lo que no encaje. Este píxel, con 0,61, está dentro de las dos
 ventanas: intermareal con cualquier lectura.
 
 ![Dos cortes, tres clases](figures/onepixel/cell12_0.png)
-*Figura 5. Histograma de frecuencia de agua de la clase de transición del sitio; discontinuas, los dos valles del Otsu de tres clases (0,21 y 0,66); rojas, la ventana adoptada (0,05-0,95); la línea gruesa, este píxel (0,61).*
+*Figura 4. Histograma de frecuencia de agua de la clase de transición del sitio; discontinuas, los dos valles del Otsu de tres clases (0,21 y 0,66); rojas, la ventana adoptada (0,05-0,95); la línea gruesa, este píxel (0,61).*
 
-**Las mismas 199 observaciones, vistas de dos maneras.** Izquierda, NDWI
-contra el tiempo: las visitas mojadas (azul) y secas (marrón) se alternan sin
-ningún patrón que un calendario explique. Derecha, los mismos puntos contra
-la marea oceánica en el instante de cada visita: el registro se convierte en
-una escalera — seco por debajo de unos −0,5 m, mojado por encima de 0 m,
-mezclado en medio. El escalón es la cota del píxel y la anchura de la zona
-mixta es su relieve sub-píxel más el ruido del nivel asignado a cada visita.
+**Las mismas 199 observaciones, ahora cada una con su nivel.** NDWI contra
+el tiempo: las visitas mojadas (azul) y secas (marrón) se alternan sin
+ningún patrón que un calendario explique. Lo que añade la etapa de marea no
+se ve aquí: cada punto lleva ahora la marea oceánica en el instante de su
+paso, de −2,27 a +1,22 m. Dibujado contra ese nivel en vez de contra la
+fecha (sección siguiente, panel central de la figura de los cinco relojes)
+el registro se convierte en una escalera — seco por debajo de unos −0,5 m,
+mojado por encima de 0 m, mezclado en medio. El escalón es la cota del píxel
+y la anchura de la zona mixta es su relieve sub-píxel más el ruido del nivel
+asignado a cada visita.
 Todo lo que sigue trata de leer bien ese escalón: MAREA pregunta si otro
 reloj en el eje de marea hace el escalón más nítido, y la inversión le ajusta
 una sigmoide.
 
 ![La marea en cada visita](figures/onepixel/cell15_0.png)
-*Figura 6. Las 199 observaciones del píxel: a la izquierda NDWI contra la fecha, a la derecha NDWI contra el nivel de marea del modelo en el instante de cada visita; azul mojado, marrón seco.*
+*Figura 5. Las 199 observaciones del píxel, NDWI contra la fecha, azul mojado y marrón seco; cada una lleva ya el nivel EOT20 en el instante de su paso, que es el eje x de todas las figuras a partir de aquí.*
 
 ## 1 · El mismo píxel bajo cinco relojes
 
@@ -137,7 +123,7 @@ se reajusta la sigmoide de NDWI (forma cerrada: cota z, dispersión sub-píxel
 σ, desplazamiento a, ganancia b).
 
 ![Curvas NDWI bajo cinco relojes](figures/onepixel/cell19_0.png)
-*Figura 7. Las mismas 199 observaciones bajo cinco relojes (τ = −30, 0, +24, +60, +90 min): cada panel desplaza el nivel de cada visita y reajusta la sigmoide NDWI (curva roja); la línea punteada es la cota z ajustada. Los parámetros de cada ajuste van en el título del panel.*
+*Figura 6. Las mismas 199 observaciones bajo cinco relojes (τ = −30, 0, +24, +60, +90 min): cada panel desplaza el nivel de cada visita y reajusta la sigmoide NDWI (curva roja); la línea punteada es la cota z ajustada. Los parámetros de cada ajuste van en el título del panel.*
 
 | τ (min) | z (m) | σ (m) | a | b | rms |
 |---|---|---|---|---|---|
@@ -238,7 +224,7 @@ superficie entera). La figura es $\ell(0; z, \sigma)$ para el reloj
 oceánico, con el máximo marcado.
 
 ![Superficie de perfilado para el reloj oceánico](figures/onepixel/cell22_0.png)
-*Figura 8. Superficie de log-verosimilitud ℓ(0; z, σ) del reloj oceánico sobre la rejilla de cotas candidatas (eje x) y anchuras candidatas (eje y); el círculo marca el máximo, z = −0,66 m, σ = 0,65 m, que es el par perfilado.*
+*Figura 7. Superficie de log-verosimilitud ℓ(0; z, σ) del reloj oceánico sobre la rejilla de cotas candidatas (eje x) y anchuras candidatas (eje y); el círculo marca el máximo, z = −0,66 m, σ = 0,65 m, que es el par perfilado.*
 
 **Lo mismo, dibujado.** Tres paneles, todos sobre las 199 visitas de este
 píxel. Izquierda, la regla del píxel: la probabilidad de leer mojado contra
@@ -258,7 +244,7 @@ reloj oceánico, 11 con el de banda. Esa cola es lo que lee la búsqueda del
 reloj.
 
 ![La verosimilitud, dibujada](figures/onepixel/likelihood_explained.png)
-*Figura 9. A, la regla del píxel P(mojado | h) con las 199 visitas sobre ella y tres visitas numeradas; B, el coste de una visita en función de u = (h − z)/σ, curva azul si leyó mojado y marrón si leyó seco; C, los 199 costes ordenados de mayor a menor con el reloj oceánico (gris) y con el reloj de banda +18 min (rojo).*
+*Figura 8. A, la regla del píxel P(mojado | h) con las 199 visitas sobre ella y tres visitas numeradas; B, el coste de una visita en función de u = (h − z)/σ, curva azul si leyó mojado y marrón si leyó seco; C, los 199 costes ordenados de mayor a menor con el reloj oceánico (gris) y con el reloj de banda +18 min (rojo).*
 
 ## 3 · La misma suma para cada reloj, y el óptimo
 
@@ -267,7 +253,7 @@ solo (199 visitas) y su banda entera (300 píxeles muestreados, escalados ÷25
 para compartir el eje).
 
 ![Log-verosimilitud contra el reloj candidato](figures/onepixel/cell24_0.png)
-*Figura 10. Arriba, log-verosimilitud perfilada relativa a τ = 0 para 31 relojes candidatos, para el píxel solo (azul) y para su banda de 300 píxeles (rojo, ÷25); la banda gris es el umbral de ±10 min y la línea roja vertical el óptimo de la banda (+18). Abajo, la cota z y la anchura σ perfiladas para cada reloj.*
+*Figura 9. Arriba, log-verosimilitud perfilada relativa a τ = 0 para 31 relojes candidatos, para el píxel solo (azul) y para su banda de 300 píxeles (rojo, ÷25); la banda gris es el umbral de ±10 min y la línea roja vertical el óptimo de la banda (+18). Abajo, la cota z y la anchura σ perfiladas para cada reloj.*
 
 * Píxel solo: mejor τ = **+24 min**. La curva es plana cerca del máximo: un
   píxel con 199 visitas apenas resuelve 20 minutos.
@@ -300,7 +286,7 @@ cerrada que usa cada producto) se ejecuta dos veces sobre las mismas 199
 visitas:
 
 ![Inversión con el reloj oceánico frente al reloj de banda](figures/onepixel/cell29_0.png)
-*Figura 11. La inversión de cotas (`invert_series`) sobre las mismas 199 observaciones con el reloj oceánico (izquierda, z = −0,204 m) y con el reloj de banda +18 min (derecha, z = −0,241 m); curva roja, la sigmoide ajustada; punteada, la cota.*
+*Figura 10. La inversión de cotas (`invert_series`) sobre las mismas 199 observaciones con el reloj oceánico (izquierda, z = −0,204 m) y con el reloj de banda +18 min (derecha, z = −0,241 m); curva roja, la sigmoide ajustada; punteada, la cota.*
 
 | reloj | z (m) | σ (m) |
 |---|---|---|
