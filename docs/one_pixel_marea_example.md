@@ -18,20 +18,34 @@ that level should be read on before the pixel's wet/dry record is inverted.
 * Each visit carries the EOT20 level at the overpass time (range −2.27 to
   +1.22 m).
 
-**What the cube holds for the pixel.** Two reflectance bands and a scene
-class, once per scene, for ten years. Top: green (B03) and near-infrared
-(B08), scaled by 10 000. The visits split into two crowds — a dense one
-near zero, where the pixel was seen through clear sky, and a scattered one
-between 2 500 and 15 000, which is cloud: a cloud is bright in both bands
-at once, so those points come in green-brown pairs at the same height.
-Bottom: the SCL class of each visit; red rows (3 cloud shadow, 8-10 cloud)
-are the visits the cloud screen will remove, blue rows (5 bare ground, 6
-water, 7 unclassified) the ones that survive. Even before any physics, the
-picture says the pixel alternates between water (6) and bare ground (5)
-from one clear visit to the next: a tidal flat.
+**What the cube holds for the pixel.** Three numbers per visit, once per
+scene, for ten years: the green (B03) and near-infrared (B08) reflectance,
+and the scene class (SCL) that Sen2Cor gave the pixel. Figure 1 shows them
+three ways. The top row is what one visit *is*: the NDWI image of the 1.2 km
+around the pixel (red square) on four dates chosen by rule, a firmly dry
+look, a firmly wet look, a cloud and a cloud shadow. On the dry date the
+channel is a thread and the flats are brown; on the wet date the estuary is
+full and the pixel is under water; under cloud the whole window is one flat
+value, no information at all; under cloud shadow the flats turn pale cyan,
+because a shadow reads like water in these two bands (the pixel's NDWI is
++0.10 there), which is why the SCL screen drops shadows as well as clouds.
+The middle row is the pixel's near-infrared at every one of its 1 379
+visits, on a log axis: the clear-class visits (dark) fall in two crowds,
+around 100 when the pixel is under water and around 1 000 when it is bare
+ground, and the cloud and shadow classes (grey) sit above both, mostly
+between 3 000 and 12 000. The 156 visits Sen2Cor left unclassified (orange)
+have ground-like values but no clear class, and the pipeline does not use
+them. The bottom left zooms into the year with most clear visits and shows
+both bands at each visit, joined by a segment: blue when green is above
+near-infrared (water), brown when near-infrared is above green (ground).
+That ordering is the whole detector: NDWI is the normalised difference of
+the two, and its sign says which one wins. The bottom right counts the
+classes: of 1 379 visits, 935 are cloud or shadow, 156 unclassified, and 288
+carry a clear class (190 bare ground, 97 water, 1 vegetation). Those 288 are
+the pixel's usable looks before the scene-level screen of section 3.
 
 ![The pixel's visits](figures/onepixel/cell05_0.png)
-*Figure 1. Top, green (B03) and near-infrared (B08) reflectance of the pixel at each of its 1 379 visits, 2016-2025; bottom, the SCL class of each visit (red = cloud or shadow, blue = clear class).*
+*Figure 1. Top, NDWI of the 1.2 km window around the pixel (red square) on four visits chosen by rule: a firmly dry look (lower-quartile NDWI of the bare-ground visits), a firmly wet look (upper quartile of the water visits), the median cloud and the median cloud shadow; each title gives the pixel's own three numbers on that date. Middle, the pixel's near-infrared reflectance at all 1 379 visits (log axis), coloured by SCL group: clear (dark), unclassified (orange), cloud or shadow (grey); letters mark the four visits above. Bottom left, the year with most clear visits (2025) with both bands at every visit, the segment blue when green exceeds near-infrared (water) and brown otherwise (ground), grey for cloudy classes. Bottom right, the number of visits in each SCL class.*
 
 **The threshold, and where the pixel sits against it.** The histogram is
 the site calibration: NDWI of the clear-sky pixels of the twelve clearest

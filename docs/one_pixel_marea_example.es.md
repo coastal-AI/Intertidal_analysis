@@ -19,21 +19,36 @@ píxel.
   visitas claras en 167 mojadas y 121 secas.
 * Cada visita lleva el nivel EOT20 en la hora de paso (rango −2,27 a +1,22 m).
 
-**Lo que el cubo guarda del píxel.** Dos bandas de reflectancia y una clase de
-escena, una vez por escena, durante diez años. Arriba: verde (B03) e
-infrarrojo cercano (B08), escalados por 10 000. Las visitas se separan en dos
-poblaciones: una densa cerca de cero, cuando el píxel se vio con cielo
-despejado, y otra dispersa entre 2 500 y 15 000, que es nube: una nube es
-brillante en las dos bandas a la vez, así que esos puntos aparecen en pares
-verde-marrón a la misma altura. Abajo: la clase SCL de cada visita; las filas
-rojas (3 sombra de nube, 8-10 nube) son las visitas que el filtro de nubes
-eliminará, las azules (5 suelo desnudo, 6 agua, 7 sin clasificar) las que
-sobreviven. Antes de ninguna física, la imagen ya dice que el píxel alterna
-entre agua (6) y suelo desnudo (5) de una visita clara a la siguiente: una
-llanura mareal.
+**Lo que el cubo guarda del píxel.** Tres números por visita, una vez por
+escena, durante diez años: la reflectancia en verde (B03) e infrarrojo
+cercano (B08), y la clase de escena (SCL) que Sen2Cor asignó al píxel. La
+Figura 1 los enseña de tres maneras. La fila de arriba es lo que *es* una
+visita: la imagen NDWI de los 1,2 km alrededor del píxel (cuadro rojo) en
+cuatro fechas elegidas por regla, una claramente seca, una claramente
+mojada, una nube y una sombra de nube. En la fecha seca el canal es un hilo
+y las llanuras son marrones; en la mojada la ría está llena y el píxel bajo
+el agua; bajo nube toda la ventana es un valor plano, ninguna información;
+bajo sombra de nube las llanuras se vuelven cian pálido, porque una sombra
+se lee como agua en estas dos bandas (el NDWI del píxel es +0,10 ahí), y por
+eso el filtro SCL descarta las sombras igual que las nubes. La fila central
+es el infrarrojo cercano del píxel en cada una de sus 1 379 visitas, en eje
+logarítmico: las visitas de clase clara (oscuro) caen en dos poblaciones,
+en torno a 100 cuando el píxel está bajo el agua y en torno a 1 000 cuando
+es suelo desnudo, y las clases de nube y sombra (gris) quedan por encima de
+ambas, casi todas entre 3 000 y 12 000. Las 156 visitas que Sen2Cor dejó sin
+clasificar (naranja) tienen valores de suelo pero no clase clara, y el
+pipeline no las usa. Abajo a la izquierda se amplía el año con más visitas
+claras y se ven las dos bandas en cada visita, unidas por un segmento: azul
+cuando el verde está por encima del infrarrojo (agua), marrón cuando el
+infrarrojo está por encima del verde (suelo). Ese orden es todo el detector:
+el NDWI es la diferencia normalizada de las dos, y su signo dice cuál gana.
+Abajo a la derecha se cuentan las clases: de 1 379 visitas, 935 son nube o
+sombra, 156 sin clasificar y 288 llevan clase clara (190 suelo desnudo, 97
+agua, 1 vegetación). Esas 288 son las miradas útiles del píxel antes del
+filtro por escena de la sección 3.
 
 ![Las visitas del píxel](figures/onepixel/cell05_0.png)
-*Figura 1. Arriba, reflectancia de las bandas verde (B03) e infrarrojo cercano (B08) del píxel en cada una de sus 1 379 visitas, 2016-2025; abajo, la clase SCL de cada visita (rojo = nube o sombra, azul = clase clara).*
+*Figura 1. Arriba, NDWI de la ventana de 1,2 km alrededor del píxel (cuadro rojo) en cuatro visitas elegidas por regla: una claramente seca (cuartil inferior del NDWI de las visitas de suelo desnudo), una claramente mojada (cuartil superior de las visitas de agua), la nube mediana y la sombra de nube mediana; cada título da los tres números del píxel en esa fecha. Centro, la reflectancia en infrarrojo cercano del píxel en sus 1 379 visitas (eje logarítmico), coloreada por grupo SCL: clara (oscuro), sin clasificar (naranja), nube o sombra (gris); las letras marcan las cuatro visitas de arriba. Abajo a la izquierda, el año con más visitas claras (2025) con las dos bandas en cada visita, el segmento azul cuando el verde supera al infrarrojo (agua) y marrón en caso contrario (suelo), gris para las clases nubladas. Abajo a la derecha, el número de visitas en cada clase SCL.*
 
 **El umbral, y dónde queda el píxel respecto a él.** El histograma es la
 calibración del sitio: NDWI de los píxeles de cielo claro de las doce escenas
