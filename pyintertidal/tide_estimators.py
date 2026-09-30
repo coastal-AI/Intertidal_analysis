@@ -405,10 +405,103 @@ def alpha_nll_profile(wet, clear, bank, tau, alpha_grid, z_grid, sg_grid):
     return np.asarray(out)
 
 
+def make_bands_fixed(s_km, length_km=3.0, min_px=500):
+    """Bands of fixed length along the mouth distance, merged forward when
+    too thin; returns (edges, centers, band_of_pixel) like :func:`make_bands`.
+
+    Band k spans [k L, (k+1) L) km. A band with fewer than ``min_px`` pixels
+    is merged with the next one (the last thin band with the previous), so
+    every band has enough pixels to fix its own clock; the number of bands
+    is set by the estuary's length, not chosen. Centres are the median s of
+    each band's pixels.
+    """
+    s = np.asarray(s_km, float)
+    fin = np.isfinite(s)
+    n_raw = int(np.floor(np.nanmax(s) / length_km)) + 1
+    raw = np.where(fin, np.floor(s / length_km).astype(int), -1)
+    raw = np.clip(raw, -1, n_raw - 1)
+    counts = np.bincount(raw[raw >= 0], minlength=n_raw)
+    # forward merge of thin bands
+    label = np.arange(n_raw)
+    k = 0
+    while k < n_raw:
+        j = k
+        while counts[label == label[k]].sum() < min_px and j + 1 < n_raw:
+            j += 1
+            label[label == label[j]] = label[k]
+        k = j + 1
+    # a thin last band joins the previous one
+    uniq = np.unique(label)
+    if len(uniq) > 1 and counts[label == uniq[-1]].sum() < min_px:
+        label[label == uniq[-1]] = uniq[-2]
+    uniq = np.unique(label)
+    remap = {u: i for i, u in enumerate(uniq)}
+    band = np.full(len(s), -1, int)
+    band[raw >= 0] = [remap[label[r]] for r in raw[raw >= 0]]
+    edges = np.array([k * length_km for k in range(n_raw + 1)])
+    centers = np.array([float(np.median(s[band == b])) for b in range(len(uniq))])
+    return edges, centers, band
+
+
+def smooth_lag_profile(centers_km, tau_min, s_query_km, bandwidth_km=3.0):
+    """The lag as a continuous function of the mouth distance: Gaussian
+    kernel smoothing of the band lags, anchored at tau = 0 at s = 0 and
+    made monotone non-decreasing along s.
+
+    Returns tau (min) at every ``s_query_km``; NaN where s is NaN.
+    """
+    c = np.concatenate([[0.0], np.asarray(centers_km, float)])
+    t = np.concatenate([[0.0], np.asarray(tau_min, float)])
+    s = np.asarray(s_query_km, float)
+    out = np.full(s.shape, np.nan)
+    fin = np.isfinite(s)
+    w = np.exp(-0.5 * ((s[fin][:, None] - c[None, :]) / bandwidth_km) ** 2)
+    out[fin] = (w * t[None, :]).sum(axis=1) / w.sum(axis=1)
+    # monotone along s (the kernel of a monotone sequence is monotone up to
+    # numerical spacing effects; enforce it exactly)
+    order = np.argsort(s[fin])
+    vals = out[fin][order]
+    out_fin = out[fin]
+    out_fin[order] = np.maximum.accumulate(vals)
+    out[fin] = np.maximum(out_fin, 0.0)
+    return out
+
+
+def bootstrap_lags(wet, clear, bank, band_of, centers_km, n_bands, n_boot=30,
+                   seed=7, **kwargs):
+    """Scene-bootstrap of the band lags: refit :func:`m2a_rasch` on
+    ``n_boot`` resamples of the scenes (with replacement) and return the
+    (n_boot, n_bands) array of lags. The 2.5 and 97.5 percentiles of each
+    column are the 95 % confidence interval of that band's lag.
+    """
+    rng = np.random.default_rng(seed)
+    T = wet.shape[0]
+    draws = [rng.integers(0, T, T) for _ in range(n_boot)]
+
+    def one(b):
+        idx = draws[b]
+        bk = ShiftBank(bank.taus, bank.H[:, idx])
+        r = m2a_rasch(wet[idx], clear[idx], bk, band_of, centers_km, n_bands,
+                      rng=np.random.default_rng(seed + 100 + b), **kwargs)
+        return r["tau"]
+
+    # the band likelihood is two matmuls that release the GIL, so threads
+    # give real parallelism without duplicating the record in memory
+    try:
+        import os
+        from joblib import Parallel, delayed
+        n_jobs = max(1, min(n_boot, (os.cpu_count() or 2) - 2))
+        taus = Parallel(n_jobs=n_jobs, prefer="threads")(delayed(one)(b) for b in range(n_boot))
+    except ImportError:
+        taus = [one(b) for b in range(n_boot)]
+    return np.asarray(taus, float)
+
+
 def m2a_rasch(wet, clear, bank, band_of, centers_km, n_bands, sigma0=0.20,
               alpha_bounds=(0.7, 1.4), tau_bounds=(-30.0, 120.0),
               z_points=60, rng=None, max_px_band=1200, verbose=False,
-              bank_by_band=None, fit_alpha=False, sg_grid=None):
+              bank_by_band=None, fit_alpha=False, sg_grid=None,
+              monotone=True):
     """Fit alpha(s), tau(s) on band centres by profiled Bernoulli likelihood.
 
     Mouth band pinned to (alpha=1, tau=0): the anchor. Free parameters are
@@ -447,12 +540,13 @@ def m2a_rasch(wet, clear, bank, band_of, centers_km, n_bands, sigma0=0.20,
     nf = n_bands - 1
 
     def unpack(theta):
-        if fit_alpha:
-            alpha = np.concatenate([[1.0], theta[:nf]])
-            tau = np.concatenate([[0.0], theta[nf:] * 60.0])
-        else:
-            alpha = np.ones(n_bands)
-            tau = np.concatenate([[0.0], theta * 60.0])
+        th_tau = theta[nf:] if fit_alpha else theta
+        # monotone: the free parameters are the INCREMENTS of the lag from
+        # one band to the next, each >= 0, so the profile can only grow
+        # inland (a propagation delay accumulates; causality is built in)
+        lags = np.cumsum(th_tau) if monotone else th_tau
+        tau = np.concatenate([[0.0], lags * 60.0])
+        alpha = np.concatenate([[1.0], theta[:nf]]) if fit_alpha else np.ones(n_bands)
         return alpha, tau
 
     def objective(theta):
@@ -472,7 +566,8 @@ def m2a_rasch(wet, clear, bank, band_of, centers_km, n_bands, sigma0=0.20,
 
     # tau is optimised in HOURS so every free parameter is O(1) and one
     # finite-difference step suits them all
-    tb = (tau_bounds[0] / 60.0, tau_bounds[1] / 60.0)
+    tb = ((0.0, tau_bounds[1] / 60.0) if monotone
+          else (tau_bounds[0] / 60.0, tau_bounds[1] / 60.0))
     if fit_alpha:
         x0 = np.concatenate([np.ones(nf), np.zeros(nf)])
         bounds = [alpha_bounds] * nf + [tb] * nf

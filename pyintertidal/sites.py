@@ -105,12 +105,68 @@ SITES = {
                     (-7.265, 43.585)],
         "tide_model": "EOT20",
     },
+    "arousa": {
+        "name": "Arousa",
+        "description": "Ría de Arousa (Rías Baixas) — the widest Galician "
+                       "ría: open, Bijagós-like geometry with large flats "
+                       "at Carril-Rianxo and Cambados.",
+        "polygon": [(-9.06, 42.44), (-8.64, 42.44), (-8.64, 42.76),
+                    (-9.06, 42.76)],
+        "tide_model": "EOT20",
+    },
     "urdaibai": {
         "name": "Urdaibai",
         "description": "Urdaibai / Mundaka (Basque Country) — UNESCO "
                        "biosphere reserve with extensive tidal flats.",
         "polygon": [(-2.72, 43.35), (-2.66, 43.35), (-2.66, 43.42),
                     (-2.72, 43.42)],
+        "tide_model": "EOT20",
+    },
+    "escalda": {
+        "name": "Escalda (Westerschelde)",
+        "description": "Westerschelde (Netherlands), Vlissingen to Terneuzen "
+                       "-- the project's gauge-instrumented site. Three IOC "
+                       "tide gauges sit inside the box: Vlissingen (vlis) and "
+                       "Breskens (brsk) at the mouth, Terneuzen (trnz) 15 km "
+                       "up the axis. That is what a tide-adjustment method "
+                       "needs to be judged on: the boundary comes from the "
+                       "mouth, the interior clock is measured from imagery, "
+                       "and the inner gauge, never used in the fit, says how "
+                       "close the estimate got. Cube at 20 m, 2023-2025.",
+        "polygon": [(3.55, 51.33), (3.85, 51.33), (3.85, 51.46),
+                    (3.55, 51.46)],
+        "tide_model": "EOT20",
+    },
+    "ems": {
+        "name": "Ems-Dollard",
+        "description": "Ems estuary and the Dollard (NL/DE) -- Wadden Sea "
+                       "flats with two IOC gauges on the axis: Borkum (bork) "
+                       "at the mouth, Delfzijl (delf) 28 km up the estuary. "
+                       "Gauge-judged site for the tide-adjustment comparison; "
+                       "cube at 20 m, 2023-2025.",
+        "polygon": [(6.80, 53.22), (7.30, 53.22), (7.30, 53.50),
+                    (6.80, 53.50)],
+        "tide_model": "EOT20",
+    },
+    "wadden": {
+        "name": "Wadden (Vlie-Harlingen)",
+        "description": "Dutch Wadden Sea behind the Vlie inlet -- the flats "
+                       "between Terschelling Noordzee (ters, sea side) and "
+                       "Harlingen (harl, 28 km in, behind the flats). "
+                       "Gauge-judged site; cube at 20 m, 2023-2025.",
+        "polygon": [(5.15, 53.15), (5.55, 53.15), (5.55, 53.45),
+                    (5.15, 53.45)],
+        "tide_model": "EOT20",
+    },
+    "ferrol": {
+        "name": "Ferrol",
+        "description": "Ria de Ferrol (Galicia) -- a deep Cantabrian-type "
+                       "ria with small inner flats and the only Spanish IOC "
+                       "gauge pair on one axis: Ferrol1 (fer1, outer) and "
+                       "Ferrol2 (fer2, inner, 6.4 km). Gauge-judged site; "
+                       "cube at 10 m, 2023-2025.",
+        "polygon": [(-8.36, 43.44), (-8.15, 43.44), (-8.15, 43.52),
+                    (-8.36, 43.52)],
         "tide_model": "EOT20",
     },
 }

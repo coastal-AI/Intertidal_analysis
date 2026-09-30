@@ -72,6 +72,8 @@ def band_lags_two_curves(wet, clear, h0, rate, rising, cols_by_band,
         h_up = float(np.median(h0[up]))
         h_down = float(np.median(h0[down]))
         gap = h_up - h_down
+        # the lag displaces the two curves by +/- v*tau in opposite
+        # directions, so the observed gap is 2*v*tau
         taus.append(gap / (2.0 * v))
         gaps.append(gap)
         n_used.append(int(half.sum()))
@@ -125,6 +127,8 @@ def main():
     nb = CFG["n_bandas"]
     edges, centers, band_all = te.make_bands(
         np.where(np.isfinite(s_tpl), s_tpl, np.nan), nb)
+    # identical seed and per-band cap as m2_real/p9/p9b: every gamma route
+    # scores the very same pixel subsample, so the routes are comparable
     rng = np.random.default_rng(CFG["seed"])
     rows = []
     for k in range(nb):

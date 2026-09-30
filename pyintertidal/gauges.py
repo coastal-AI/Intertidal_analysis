@@ -130,6 +130,53 @@ def compare_models(gauge, services, aoi, verbose=False):
     return rows
 
 
+def despike(df, window="61min", max_dev_m=0.75, max_abs_m=6.0,
+            harmonic_cap_m=2.5):
+    """Drop what an IOC record carries that is not sea level.
+
+    Two failure modes, two rules:
+
+    * **spikes** (-10 m sentinels for a few samples, 0.1-0.2 % of the
+      Scheldt records): a sample is out when it sits more than
+      ``max_dev_m`` from the rolling median of its ``window`` (time-based,
+      so irregular sampling is fine) or more than ``max_abs_m`` from the
+      record's median;
+    * **plateaus** (a stuck sensor: Ferrol1 wrote +4 m for days in 2023),
+      invisible to a rolling median: a sample is out when it sits more
+      than ``harmonic_cap_m`` from the record's own harmonic fit — a cap
+      on surge, which in these seas stays well inside 2.5 m. The fit is
+      done twice, the second time without the first pass's outliers.
+
+    Returns the tidy frame (time, level_m) without those rows."""
+    import pandas as pd
+
+    from .boundary import PERIODS_H, hours_since_epoch
+
+    s = pd.Series(df["level_m"].to_numpy(float),
+                  index=pd.DatetimeIndex(df["time"]))
+    s = s[~s.index.duplicated()].sort_index()
+    x = s - s.median()
+    rm = x.rolling(window, center=True).median()
+    ok = ((x - rm).abs() <= max_dev_m) & (x.abs() <= max_abs_m)
+    ok = ok.to_numpy()
+    if harmonic_cap_m is not None and ok.sum() > 5000:
+        t_h = hours_since_epoch(s.index)
+        y = x.to_numpy()
+        cols = [np.ones_like(t_h)]
+        for n in PERIODS_H:
+            w = 2 * np.pi / PERIODS_H[n]
+            cols += [np.cos(w * t_h), np.sin(w * t_h)]
+        A = np.column_stack(cols)
+        for _ in range(2):
+            fit = ok.copy()
+            step = max(1, int(fit.sum() // 200000))     # ~200k rows suffice
+            idx = np.flatnonzero(fit)[::step]
+            coef = np.linalg.lstsq(A[idx], y[idx], rcond=None)[0]
+            resid = y - A @ coef
+            ok = ok & (np.abs(resid) <= harmonic_cap_m)
+    return pd.DataFrame({"time": s.index[ok], "level_m": s.to_numpy()[ok]})
+
+
 def load_cached_ioc(code, cache_dir="data_v4/gauges"):
     """One cached IOC sea-level record as a tidy frame (time, level_m).
 

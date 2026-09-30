@@ -1,0 +1,474 @@
+% MAREA manuscript — working draft.
+% Build: bash build.sh   (MiKTeX; elsarticle, numbered citations, elsarticle-num)
+% Every number here traces to a notebook, a script or results/*.json; every
+% literature claim to literature_quotes.md (verbatim passages with pages).
+% Hard limit set by the author (2026-09-23): 12 pages in all, title,
+% abstract, references and acknowledgements included, with many figures.
+% Journal two-column layout (final,5p): the same text in the 12pt preprint
+% layout runs to more than twice the pages.
+\documentclass[final,5p,times,number]{elsarticle}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+\usepackage{etoolbox}
+% reference list in footnotesize, as the journal sets it (page limit)
+\AtBeginEnvironment{thebibliography}{\footnotesize}
+\makeatletter\@ifundefined{bibsep}{}{\setlength{\bibsep}{0pt plus 0.3ex}}\makeatother
+% the three results figures after the bibliography may share one page
+\setcounter{topnumber}{3}\setcounter{bottomnumber}{2}\setcounter{totalnumber}{4}
+\renewcommand{\topfraction}{0.95}\renewcommand{\bottomfraction}{0.95}
+\renewcommand{\textfraction}{0.05}\renewcommand{\floatpagefraction}{0.6}
+\graphicspath{{figures/}{../figures/}{../figures/tide_comparison/}{../figures/onepixel/}}
+
+% target journal is a placeholder until decided
+\journal{Remote Sensing of Environment}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{Timing the tide from space: intertidal topography from Sentinel-2
+  with the estuarine tide measured from the imagery itself}
+% alternative titles kept in draft.md
+
+% TODO: confirm names, order and affiliations
+\author[a]{Jorge Alias \'Alvarez\corref{cor1}}
+\author[b]{[Supervisor 1]}
+\author[c]{[Supervisor 2]}
+\cortext[cor1]{Corresponding author}
+\affiliation[a]{organization={[Affiliation 1]}, city={Oviedo}, country={Spain}}
+\affiliation[b]{organization={[Affiliation 2]}, country={Spain}}
+\affiliation[c]{organization={[Affiliation 3]}, country={Spain}}
+
+\begin{abstract}
+Satellite archives allow the topography of tidal flats, among the most
+extensive and most threatened coastal ecosystems, to be mapped by
+reading for every pixel the water level at which it floods. Every
+published implementation assigns each scene one water level from a tide
+model or gauge at one point. Inside an estuary that level is wrong: the
+tide arrives later and deformed the farther it travels up the channel,
+so the error grows inland and is systematic. MAREA measures this
+interior lag from the imagery itself. Each intertidal pixel is a binary
+tide gauge; for each 3-km band of along-channel distance the lag that
+best explains its ten-year wet/dry record maximises a profiled
+Bernoulli likelihood anchored at the mouth, the lags monotone by
+construction, each with a bootstrap interval. A binary archive measures
+the phase of the interior tide but not its amplitude or datum; only the
+phase is corrected. On four European estuaries with gauge pairs, MAREA
+measured lags of 63 and 129~min at the inner gauges of the Ems-Dollard
+and the Wadden Sea, where the gauges show 51 and 88, applied 7~min in
+the Westerschelde and none in the R\'ia de Ferrol, and cut the
+water-level error at the inner gauge by 42 and 46\,\% in the two large
+estuaries. Against the official Dutch bathymetry its maps reach 0.33 to
+0.44~m RMSE with slopes of 0.65 to 0.81, against 0.48 to 0.78~m for the
+published logistic alternative; against an RTK-GNSS survey in the
+R\'ia de Villaviciosa (Spain) the estimator reaches 0.19~m RMSE with a
+slope of 0.72, against 0.27~m and 0.39 for the alternative. The method
+needs no instrument inside the estuary; code, notebooks and negative
+results are released.
+\end{abstract}
+
+\begin{keyword}
+intertidal topography \sep tidal flats \sep Sentinel-2 \sep tidal
+propagation \sep estuaries \sep waterline method \sep tide models \sep
+profile likelihood \sep digital elevation model
+\end{keyword}
+
+\end{frontmatter}
+
+% Highlights (Elsevier asks for them as a separate file at submission; the
+% text is kept in draft.md, not in the manuscript body).
+
+\section{Introduction}
+
+Tidal flats (Fig.~\ref{fig:flats}) are among the most extensive and
+least mapped coastal ecosystems: the first global inventory found at
+least 127\,921~km$^2$ and a 16\,\% loss between 1984 and 2016
+\cite{murray2019}. They are productive and buffer the coast
+\cite{sagar2017}, and their elevation governs flooding, habitat and
+surge exposure, yet coastal topography is coarse, outdated or absent
+over much of the world \cite{almar2021} because surveying a mudflat is
+slow, expensive and often dangerous \cite{bell2016,sagar2017}. Global
+surface-water products ignore the tidal stage of each image
+\cite{pekel2016,fitton2021}, the orbit samples the tide unevenly
+\cite{eleveld2014} and clear low-tide scenes are scarce: four usable
+Sentinel-2 images a year at Santander Bay, on the coast studied here
+\cite{davies2024}.
+
+The archive offers a way round the survey: the tide scans the relief,
+and a dated image series is a series of yes/no questions about every
+pixel's elevation. Waterline methods \cite{mason1995,ryu2008} tag each
+scene's land--water contour with the water level at acquisition and
+interpolate between contours, with sub-pixel refinements
+\cite{bishoptaylor2019waterline,vos2019}, and have produced continental
+models \cite{sagar2017,bishoptaylor2019ecss,fitton2021}. Per-pixel
+methods fit a logistic curve to each pixel's response against water
+level, its midpoint the elevation, from X-band SAR \cite{catalao2017},
+Sentinel-2 near-infrared reflectance \cite{bue2020,granadeiro2021} or
+the water/land class \cite{chen2025}, or cross-correlate radar series with
+the wet/dry sequence of each candidate elevation \cite{bell2016}. These
+are the quantal-response ogives of Gaddum~\cite{gaddum1933} and
+Bliss~\cite{bliss1934}, the probit and logit of Finney and Berkson
+\cite{finney1947,berkson1944}: a shoreline pixel is a mixture whose
+index tracks its water fraction
+\cite{rover2010,feyisa2014,bishoptaylor2019waterline}, the cumulative
+distribution of its internal relief, with the elevation at its 50\,\%
+point.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.49\columnwidth]{figures/fig1_wadden_walk_cc0.jpg}\hfill
+\includegraphics[width=0.49\columnwidth]{figures/fig1_wadden_groyne_cc0.jpg}
+\caption{Tidal flats at low water (German Wadden Sea, Wangerooge, August
+2019). Left, a guided walk across flats that the next high water will
+cover; right, the edge of the flat at a groyne, with gulls and waders on
+the exposed mud. Photographs by Rhetos, Wikimedia Commons, CC0 1.0.}
+\label{fig:flats}
+\end{figure}
+
+All share one input: the water level of each scene, from a tide model or
+gauge at one point, applied to the whole scene or cell
+\cite{sagar2017,bishoptaylor2019ecss,bue2020,fitton2021,granadeiro2021,chen2025}.
+The caveat is on record: a single instantaneous level ``is no doubt a
+simplification of reality'' \cite{sagar2017}; accuracy falls with
+distance from the modelling point, with lags in estuaries
+\cite{bishoptaylor2019ecss}; part of a $-0.51$~m bias on the Tagus
+comes from ``different tide height values for the same image
+acquisition time'' \cite{bue2020}; phase differences exceed one hour
+within one Sentinel-2 scene \cite{granadeiro2021}; a mean absolute
+error fell from 0.64 to 0.46~m with a closer gauge \cite{chen2025}; and
+a shore-based radar measured a bias of 0.12~m within 0.75~km of the
+gauge and about 0.5~m beyond \cite{bell2016}. Every reported survey
+accuracy, from $\pm 0.39$~m \cite{bishoptaylor2019ecss} to 0.57~m
+\cite{sagar2017}, carries this error.
+
+Global tide models cannot remove it (Fig.~\ref{fig:schematic}): they
+stop at the coast. FES2014
+\cite{lyard2021}, EOT20 \cite{hartdavis2021} and TPXO \cite{egbert2002}
+reach about 2~cm in the open ocean but diverge near the coast
+\cite{hartdavis2021}. EOT20 discards altimetry within 3 to 7~km of the
+coast and holds no observation inside an estuary; FES2014 resolves at
+best 1.5~km in estuaries, sees no water shallower than 10~m,
+down-weights coastal gauges and calls estuaries and deltas an open
+problem \cite{lyard2021}. Inter-model differences exceed 30~cm near
+coasts, with metre-level errors at individual gauges \cite{wang2025},
+and the best regional ensemble still leaves 0.29 to 0.36~m at sheltered
+inlets, with ``visible sharp elevation discontinuities'' traced to a
+phase error \cite{bishoptaylor2026}. Inside an estuary the tide arrives
+later the farther it travels, amplified by convergence, damped by
+friction and distorted in shallow water
+\cite{friedrichs1994,savenije2005}, so a level read at the mouth is
+wrong inland by an amount that grows with distance and repeats in every
+scene.
+
+Two studies read tidal information from the imagery itself. Granadeiro
+et al.~\cite{granadeiro2021} fit separate logistic curves to rising and
+ebbing scenes and take the lag that reconciles the two elevations,
+giving cotidal lines over the Bijag\'os archipelago within 6.6~min of
+the official values at five stations; it returns one lag per location,
+needs a reference site with a known tide and was tested on an open
+archipelago, not an estuary. Bishop-Taylor et
+al.~\cite{bishoptaylor2026} rank ten global tide models by the
+correlation of each pixel's NDWI with the modelled tide, which reads
+phase but could rank a model highly ``even if it greatly misrepresented
+tidal amplitude'', and leave estuarine amplification and damping
+uncovered. Neither estimates the interior lag with a statistical model
+of the pixel, states what a wet/dry archive can identify, or tests a
+measured lag against sampling noise.
+
+This paper does those three things. MAREA treats every intertidal pixel
+as a binary tide gauge, a Rasch-type model with scenes as persons and
+pixels as items \cite{rasch1960,engelhard2021}, and measures the phase
+lag of the estuarine tide from the Sentinel-2 archive alone: per 3-km
+band of along-channel distance, the lag that best explains the ten-year
+wet/dry record maximises a profiled Bernoulli likelihood, each pixel's
+elevation and width refitted under every candidate lag
+\cite{golub1973,kaufman1975}, anchored at the mouth to a boundary that
+never includes the judge gauge. Binary data identify phase but not gain
+or datum; the lags are monotone inland by construction and each carries
+a bootstrap interval. Validation uses four European estuaries with
+gauge pairs, the official Rijkswaterstaat bathymetry at the Dutch
+sites, and the R\'ia de Villaviciosa (Spain) with an RTK-GNSS survey,
+against the method of Granadeiro et al.~\cite{granadeiro2021}
+reimplemented on the same pixels.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_schematic.png}
+\caption{The error the method measures. (a) On a rising tide the water
+surface inside an estuary slopes down inland because the tide arrives
+late; the single level every published method reads at the mouth
+(dashed) is wrong by an amount that grows with distance. (b) On the ebb
+the interior still lags, so the sign of the error flips with the limb.
+(c) The lag $\tau$ grows with the distance $s$ from the mouth; MAREA
+measures one lag per 3-km band of $s$.}
+\label{fig:schematic}
+\end{figure}
+
+\section{Methods}\label{sec:methods}
+
+\subsection{Study sites and data}\label{sec:sites}
+
+\subsubsection{Sites}
+
+The method was developed on the R\'ia de Villaviciosa and its interior
+clock tested on four other estuaries (Fig.~\ref{fig:sites},
+Table~\ref{tab:sites}). Villaviciosa is a 7~km drowned valley on the
+Cantabrian coast of Spain, one channel with mudflats on both banks; its
+ten-year archive at 10~m (1\,379 scenes) was the test bed of every stage
+and holds the only field survey, an RTK-GNSS transect. The r\'ia has no
+tide gauge, so its boundary is the ocean model alone, and the measured
+lag on the transect is a few minutes: Villaviciosa validates the
+estimator more than the clock.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.60\textwidth]{figures/fig_sites.png}
+\caption{Study sites. (a) The five sites on the Atlantic and North Sea
+coasts of Europe (Natural Earth coastline). (b)--(f) Each site on a clear
+low-water Sentinel-2 scene from its datacube, as a false-colour composite
+(near-infrared, green, green: water dark, exposed sediment grey,
+vegetation red). Dashed line, area of interest; yellow outline, intertidal
+zone retained by the product; circles, tide gauges feeding the boundary;
+star, gauge held out as judge; a gauge outside the frame is marked at the
+nearest edge with its distance. In (b) the magenta points are the
+development subset of the RTK-GNSS survey. Scene dates are in the panel
+titles.}
+\label{fig:sites}
+\end{figure*}
+
+The four test sites were chosen by one criterion: two tide gauges on
+one tidal axis, one at the mouth to feed the boundary and one inside to
+judge, never entering any fit. The R\'ia de Ferrol (Galicia), short and
+deep, is the negative control: the tide should arrive almost unchanged.
+The Westerschelde is the funnel mouth of the Scheldt between Vlissingen
+and Terneuzen; the Ems-Dollard (Netherlands and Germany) is a 35~km
+estuary whose inner basin, the Dollard, is a mudflat bay behind a
+constricted channel; the Wadden site is the Vlie basin between
+Terschelling and Harlingen.
+
+\begin{table*}[t]
+\centering
+\caption{Study sites. Scenes are all Sentinel-2 L2A acquisitions in the
+period at the stated resolution, before cloud screening; intertidal
+pixels have water frequency between 0.10 and 0.90 and at least 30 clear
+observations; the judge's distance is the geodesic distance through the
+water from the sea edge of the site.}
+\label{tab:sites}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrrrlll@{}}
+\toprule
+site & res. & period & scenes & intertidal px & boundary gauges & judge (km) \\
+\midrule
+R\'ia de Villaviciosa (ES)$^{a}$ & 10 m & 2016--25 & 1\,379 & --- & none (EOT20 only) & none \\
+R\'ia de Ferrol (ES) & 10 m & 2023--25 & 461 & 103\,759 & Ferrol1 & Ferrol2 (10.1) \\
+Westerschelde (NL)$^{b}$ & 20 m & 2023--25 & 464 & 73\,764 & Vlissingen, Breskens & Terneuzen (21.9) \\
+Ems-Dollard (NL/DE)$^{b}$ & 20 m & 2023--25 & 462 & 477\,745 & Borkum & Delfzijl (24.4) \\
+Wadden, Vlie basin (NL)$^{b}$ & 20 m & 2023--25 & 462 & 367\,076 & Terschelling & Harlingen (18.3) \\
+\bottomrule
+\multicolumn{7}{@{}l@{}}{$^{a}$ elevation truth: RTK-GNSS survey. $^{b}$ elevation truth: Rijkswaterstaat Vaklodingen.}
+\end{tabular}}
+\end{table*}
+
+Beyond the five sites, the pipeline ran unattended on 130 cells of
+10~km along the north coast of Spain, from the R\'ia de Ribadeo to the
+Bidasoa (Fig.~\ref{fig:census}), 286~km$^2$ of intertidal ground with a
+median of 461 scenes per cell; under the detection rule then in force,
+108 cells applied an interior lag and 21 kept the uniform level, with a
+median largest lag of 24~min per cell. The census is released with the
+code; its cells are not validated here.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_census.png}
+\caption{The north-coast campaign: 130 cells of 10~km along the
+Cantabrian and Galician coast of Spain, coloured by the verdict of the
+unattended run (interior lag applied, or uniform level kept), with the
+two Spanish study sites marked.}
+\label{fig:census}
+\end{figure*}
+
+\subsubsection{Sentinel-2 archive}
+
+All imagery is Sentinel-2 Level-2A surface reflectance \cite{drusch2012},
+processed with Sen2Cor \cite{mainknorn2017}, from the Copernicus Data
+Space Ecosystem via openEO. Every acquisition of the period, with no
+cloud selection, enters a datacube of three layers per scene, the bands
+B03 (green) and B08 (near-infrared) at their native 10~m and the scene
+classification layer SCL; Villaviciosa and Ferrol stay at 10~m, the
+much larger Dutch sites are resampled to 20~m at download. The water
+index is the NDWI of McFeeters~\cite{mcfeeters1996},
+$(\mathrm{B03}-\mathrm{B08})/(\mathrm{B03}+\mathrm{B08})$, preferred to
+its short-wave infrared variant \cite{xu2006} because both bands are
+native 10~m and SWIR indices read wet sediment as water
+\cite{bishoptaylor2019waterline,bishoptaylor2026}. Acquisition instants
+come from the catalogue metadata, not the nominal overpass time; the
+difference reaches minutes, hence centimetres of tide.
+
+One openEO batch job per site builds the cube once, server-side; every
+later stage of the released library streams it from disk in time blocks
+of bounded memory, so a ten-year archive fits a laptop and cells run in
+parallel. Scenes are screened by the cloudy share of the
+transition zone, the pixels neither always land nor always water, not
+of the whole frame, and within a kept scene every cloudy pixel is
+masked by the scene classification (Fig.~\ref{fig:clouds}): a cloud
+over the hills costs nothing, a cloud over the flat costs observations,
+not the scene. At Villaviciosa 305 of 1\,379 scenes pass the 10\,\%
+rule over the transition zone; the same rule over the frame would keep
+307, but a different set: 25 scenes with a cloudy frame and a clear
+flat enter, 27 with a clear frame and a cloudy flat leave. On the Dutch
+frames, mostly sea and flat, the two rules nearly coincide (66 against
+67 scenes on the Westerschelde, 48 against 45 on the Ems); there the
+frame rule left the comparison method 11 rising scenes on the
+Westerschelde, one short of the 12 its fit needs.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{fig_clouds.png}
+\caption{Cloud screening over the transition zone, R\'ia de
+Villaviciosa. (a) A kept scene in true colour, clouds over the hills and
+a clear r\'ia; (b) its Sentinel-2 scene classification; (c) the
+reference map of the archive: stable water, stable land and the
+transition zone between them, the only pixels the screening looks at;
+(d) the cloud mask of that scene laid over the transition zone: the
+share of the zone under cloud is what the rule reads; (e) every scene of
+the archive by the cloudy share of the frame and of the transition zone,
+with the 10\,\% rules and the number of scenes each keeps.}
+\label{fig:clouds}
+\end{figure*}
+
+\subsubsection{Tides}
+
+The ocean boundary is EOT20 \cite{hartdavis2021}, evaluated with pyTMD
+\cite{sutterley2025,fitzpatrick2024} at a fixed point in each mouth
+channel at each acquisition instant. Tide-gauge records, minute-scale
+for 2023--2025 from the IOC Sea Level Station Monitoring Facility
+\cite{ioc2026}, are cleaned of spikes and outliers by a rolling-median
+rule, demeaned, and left with their gaps over one hour open; the
+Vlissingen record is missing for eighteen months. A boundary is the
+model alone, the $N$ nearest gauges with inverse-square-distance
+weights, or their consensus, the plain mean of two; the choice is
+stated with every result, and a site's judge gauge never enters its
+boundary.
+
+\subsubsection{Elevation truth}
+
+For the Dutch sites the truth is the Vaklodingen of Rijkswaterstaat
+\cite{rws_vaklodingen}, grids from echo-sounding and airborne laser
+altimetry at 20~m relative to NAP; 32 sheets of different survey years
+cover the three sites, the Dollard last in 2020. For Villaviciosa it is
+an RTK-GNSS survey: 361 fixed solutions of 1.3~cm nominal precision
+along a 0.75~km transect at the lowest spring tide of the month. Before
+any elevation product existed, 35\,\% of the surveyed pixel blocks were
+sealed under a runtime guard; all numbers here use the development
+subset. The 5~m national LiDAR (PNOA) is a second reference at the two
+Spanish sites, with the caveat of Section~\ref{sec:validation}: over
+the flats it records the water surface at flight time. All truths are
+in datums other than the tide model's, so every comparison removes and
+reports the median offset.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{fig_pipeline.png}
+\caption{The pipeline on the Westerschelde, 2023--2025. (a) Dated
+scenes of the archive; (b) each scene reduced to wet/dry, NDWI above
+the threshold on clear-sky pixels; (c) one pixel's record against the
+water level at the mouth at each visit, with its fitted transition;
+(d) the interior clock: bands of geodesic distance from the mouth and
+one lag per band with its bootstrap interval; (e) the elevation map,
+inverted pixel by pixel on the corrected clock.}
+\label{fig:pipeline}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{fig_water.png}
+\caption{Water detection on the R\'ia de Ferrol, 2023--2025. (a) NDWI
+of the clear-sky pixels of the twelve clearest scenes and the adopted
+threshold: land dominates the histogram and turbid estuarine water sits
+below the textbook 0.1, so the split is set at 0 at every site; (b) the
+water frequency, framed by the study polygon; (c) the water frequency
+of the transition pixels, the multi-Otsu cuts between the three classes
+and the adopted window, wider than the cuts because the surveyed flats
+of Villaviciosa lie mostly in the rarely wet class
+(Section~\ref{sec:pixel}).}
+\label{fig:water}
+\end{figure*}
+
+\input{drafts/methods_2_2_to_2_5}
+
+% Validation (2.6) and the whole of Section 3 (results skeleton); the
+% numbers in its tables are refilled from the notebook outputs after each
+% re-execution of the pipeline.
+\input{drafts/validation_2_6_and_results}
+
+\section{Conclusion}\label{sec:conclusions}
+Every waterline product assigns a scene one water level; inside an
+estuary that level is wrong by the interior lag. A decade of Sentinel-2
+wet/dry readings measures that lag with no instrument in the estuary:
+one profiled likelihood per band of distance from the mouth, monotone by
+construction, with a bootstrap interval. At four European estuaries the
+measured lags follow the held-out gauges, 0~min against 4, 7 against
+19, 63 against 51 and 129 against 88, and applying them cut the
+water-level error at the inner gauge by 13, 42 and 46\,\% where a lag
+exists. Against the Dutch Vaklodingen the MAREA maps are closer at all
+three sites, 0.33 to 0.44~m RMSE with slopes of 0.65 to 0.81, against
+0.48 to 0.78~m for the published logistic alternative; the RTK-GNSS
+survey of Villaviciosa gives 0.19~m against 0.27~m. What the archive
+cannot measure, the gain and datum of the interior tide, is stated as
+such. Code and notebooks are released; a pressure-sensor campaign will
+close the on-site validation.
+
+\section*{Code and data availability}
+The library (\texttt{pyintertidal}), the executed pipeline notebooks,
+the validation scripts, the pre-registered configurations and every
+result file are released at [repository and archive DOI --- TO FILL].
+The code regenerates the inputs from open sources (Sentinel-2 L2A through
+openEO, IOC gauge records, the Vaklodingen, the PNOA LiDAR, EOT20); the
+development split of the RTK-GNSS survey is supplied, the reserved split
+stays sealed under a runtime guard.
+
+% Only cited entries are listed (page limit); marea.bib keeps the rest.
+\bibliographystyle{elsarticle-num}
+\bibliography{marea}
+
+% ---- figures placed after the bibliography, in the order of the text
+\begin{figure*}[!tbp]
+\centering
+\includegraphics[width=\textwidth]{fig_lag_external.png}
+\caption{The interior lag against the gauge pairs. Lag between the mouth
+gauge and the inner gauge in reaching the same level, 2023--2025, at the
+25th, 50th and 75th percentile of the mouth's level, rising and falling
+limb (mean over paired cycles, bars: standard error); the lag MAREA
+applies at the inner gauge (line) with the 95\,\% bootstrap interval of
+its band (shading); no delay at zero.}
+\label{fig:lag_external}
+\end{figure*}
+
+\begin{figure*}[!tbp]
+\centering
+\includegraphics[width=\textwidth]{fig_rtk_onsite.png}
+\caption{Elevation against the RTK-GNSS survey, Villaviciosa development
+subset. (a), (b) Each map on the RTK elevation, both centred on their
+medians, with the OLS line (dark) and the 1:1 line (grey). (c) The
+R\'ia on the low-water scene, intertidal zone outlined, surveyed points
+in pink; (d) the survey, with the straight stretch of (e) in white and
+its start at 0~m. (e) Profile along that stretch: the RTK points joined
+in walking order and the two maps at the pixels the route crosses, each
+series centred.}
+\label{fig:rtk_onsite}
+\end{figure*}
+
+\begin{figure*}[!tbp]
+\centering
+\includegraphics[width=\textwidth]{fig_vaklodingen_bands.png}
+\caption{RMSE against the Vaklodingen by band of distance from the mouth,
+median-centred, for the two maps at the three Dutch sites.}
+\label{fig:vaklodingen_bands}
+\end{figure*}
+
+\end{document}

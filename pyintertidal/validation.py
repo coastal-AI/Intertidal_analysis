@@ -53,14 +53,42 @@ def download_mdt_ign(bbox, out_path, coverage="Elevacion4258_5",
     west, south = tf.transform(bbox["west"], bbox["south"])
     east, north = tf.transform(bbox["east"], bbox["north"])
 
-    params = [
-        ("service", "WCS"), ("version", "2.0.1"), ("request", "GetCoverage"),
-        ("coverageId", coverage),
-        ("subset", f"Lat({south},{north})"),
-        ("subset", f"Long({west},{east})"),
-        ("format", "image/tiff"),
-    ]
-    resp = requests.get(IGN_MDT_WCS, params=params, timeout=timeout)
+    def fetch(w, s, e, n):
+        params = [
+            ("service", "WCS"), ("version", "2.0.1"), ("request", "GetCoverage"),
+            ("coverageId", coverage),
+            ("subset", f"Lat({s},{n})"),
+            ("subset", f"Long({w},{e})"),
+            ("format", "image/tiff"),
+        ]
+        return requests.get(IGN_MDT_WCS, params=params, timeout=timeout)
+
+    resp = fetch(west, south, east, north)
+    if resp.status_code == 400 and b"MAXSIZE" in resp.content:
+        # The server refuses more than 4096 px per side: split the box along
+        # its longer side, fetch the halves (recursively) and mosaic them.
+        import tempfile
+        from rasterio.merge import merge
+
+        halves = ([(west, south, 0.5 * (west + east), north), (0.5 * (west + east), south, east, north)]
+                  if (east - west) >= (north - south) else
+                  [(west, south, east, 0.5 * (south + north)), (west, 0.5 * (south + north), east, north)])
+        tmp = tempfile.mkdtemp(prefix="mdt_ign_")
+        parts = []
+        for i, (w, s, e, n) in enumerate(halves):
+            part = os.path.join(tmp, f"part{i}.tif")
+            download_mdt_ign({"west": w, "south": s, "east": e, "north": n, "crs": "EPSG:4258"},
+                             part, coverage=coverage, timeout=timeout, force=True)
+            parts.append(part)
+        srcs = [rasterio.open(p) for p in parts]
+        mosaic, tr = merge(srcs)
+        meta = srcs[0].meta.copy()
+        meta.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=tr)
+        for s_ in srcs:
+            s_.close()
+        with rasterio.open(out_path, "w", **meta) as dst:
+            dst.write(mosaic)
+        return out_path
     resp.raise_for_status()
     with open(out_path, "wb") as fh:
         fh.write(resp.content)

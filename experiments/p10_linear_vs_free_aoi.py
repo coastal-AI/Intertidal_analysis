@@ -45,6 +45,9 @@ SITES = {
     "vadehavet": "ndwi_cube_vadehavet_2019_2021.nc",
     "aveiro": "ndwi_cube_aveiro_2023-2025.nc",
 }
+# widened twice (8 -> 16 -> 32) after the ML optimum pinned at the grid
+# edge: a capped grid silently regularises gamma and flatters the linear
+# model (phase log, P10) — the cap is NOT a tunable
 GAMMA_GRID = np.arange(-2.0, 32.0 + 0.5, 0.5)
 SUB_PX_BAND = 2000
 

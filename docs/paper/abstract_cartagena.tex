@@ -1,0 +1,116 @@
+% Resumen para CARTOGRASS 2026, Simposio Ibérico de Cartografía y Seguimiento
+% de Praderas Marinas (Cartagena, 24-26 de noviembre de 2026; cartograss.eu).
+% Normas: máximo 300 palabras; español, portugués o inglés; título, autores y
+% afiliaciones, texto libre, hasta cinco palabras clave; sólo pósteres (A0
+% vertical); plazo 30 de septiembre de 2026.
+% Versión elegida entre tres redacciones (2026-09-25): arranque por el
+% gradiente ecológico (decímetros de elevación = horas de emersión), método y
+% validación con cifras, cierre en hábitat potencial. Números del manuscrito
+% (docs/paper, ejecuciones del 23-25 de septiembre de 2026).
+% Compilar:  pdflatex abstract_cartagena.tex
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,english]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\pagestyle{empty}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+\selectlanguage{spanish}
+
+\begin{center}
+{\large\bfseries Topografía e hidroperíodo intermareales desde Sentinel-2 con
+corrección de la propagación de la marea: capa base para el hábitat potencial
+de \emph{Zostera noltei}}\\[0.5em]
+[Autores --- POR RELLENAR]\\
+{\small [Afiliaciones --- POR RELLENAR]; correspondencia: [correo]}\\[0.3em]
+{\small CARTOGRASS 2026, Cartagena, 24--26 de noviembre. Modalidad: póster.}
+\end{center}
+
+\textbf{Resumen.} En una llanura intermareal, pocos decímetros de elevación
+cambian en horas el tiempo de emersión por ciclo de marea. Ese hidroperíodo
+gobierna desecación y luz y ordena la zonación de \emph{Zostera noltei} en
+las rías cantábricas y gallegas. Esa topografía casi nunca está medida:
+levantarla es costoso y el LiDAR aéreo devuelve la superficie del agua, no el
+fondo, allí donde vuela sobre la llanura inundada.
+
+MAREA aplica el método de la línea de agua al archivo Sentinel-2 (10 m): con
+la lectura mojado/seco de cada adquisición y su nivel de marea, un modelo
+probit invierte la cota de cada píxel. Los productos publicados asignan un
+solo nivel de agua por imagen, de un modelo oceánico o un mareógrafo; en un
+estuario la onda de marea se retrasa y deforma al propagarse, y el error de
+cota crece hacia el interior. MAREA estima ese retardo del propio archivo, sin
+mareógrafos interiores: cada píxel actúa como mareógrafo binario y, por bandas
+de 3 km desde la bocana, el retardo se obtiene por máxima verosimilitud,
+monótono hacia el interior, con intervalo bootstrap.
+
+La validación es independiente. Con pares de mareógrafos en cuatro estuarios,
+los retardos estimados reproducen el orden de los medidos (MAREA/medido, min:
+Ferrol 0/+4; Escalda +7/+19; Ems-Dollard +63/+51; Vlie +129/+88) y aplicarlos
+reduce el error del nivel interior un 13--46\,\%. Frente a RTK-GNSS en la
+ría de Villaviciosa: RMSE 0,19 m, pendiente 0,72, $r$ 0,86 (alternativa
+logística publicada: 0,27 m y 0,39); frente a la batimetría Vaklodingen en
+tres estuarios holandeses: 0,33--0,44 m.
+
+Ejecutado sin supervisión en 130 celdas de 10 km de la costa cantábrica y
+gallega (286 km$^2$ intermareales), entrega elevación, hidroperíodo y zonación
+por píxel, con código y datos abiertos: una capa base para
+cartografiar y monitorizar el hábitat potencial de \emph{Z.\ noltei}.
+
+\textbf{Palabras clave:} hidroperíodo; línea de agua; propagación de la marea;
+Sentinel-2; \emph{Zostera noltei}.
+
+\vspace{1.2em}
+\hrule
+\vspace{1.2em}
+
+\selectlanguage{english}
+
+\begin{center}
+{\large\bfseries Intertidal topography and hydroperiod from Sentinel-2 with
+tide-propagation correction: a base layer for the potential habitat of
+\emph{Zostera noltei}}\\[0.5em]
+[Authors --- TO FILL]\\
+{\small [Affiliations --- TO FILL]; corresponding author: [e-mail]}
+\end{center}
+
+\textbf{Abstract.} On an intertidal flat, a few decimetres of elevation change
+the emersion time per tidal cycle by hours. That hydroperiod governs
+desiccation and light and orders the zonation of \emph{Zostera noltei} in the
+Cantabrian and Galician rias. This topography is almost never measured:
+surveying it is costly and airborne LiDAR returns the water surface, not the
+bed, wherever it flies over the flooded flat.
+
+MAREA applies the waterline method to the Sentinel-2 archive (10 m): from the
+wet/dry reading of each acquisition and its tide level, a probit model inverts
+the elevation of each pixel. Published products assign a single water level
+per image, from an ocean tide model or a tide gauge; inside an estuary the
+tidal wave is delayed and deformed as it propagates, and the elevation error
+grows landward. MAREA estimates that delay from the archive itself, without
+inner tide gauges: each pixel acts as a binary tide gauge and, in 3 km bands
+of distance from the mouth, the delay is obtained by maximum likelihood,
+monotone landward, with a bootstrap interval.
+
+Validation is independent. Against tide-gauge pairs in four estuaries, the
+estimated delays reproduce the order of the measured ones (MAREA/measured,
+min: Ferrol 0/+4; Scheldt +7/+19; Ems-Dollard +63/+51; Vlie +129/+88) and
+applying them reduces the inner water-level error by 13--46\,\%. Against
+RTK-GNSS in the Ría de Villaviciosa: RMSE 0.19 m, slope 0.72, $r$ 0.86
+(published logistic alternative: 0.27 m and 0.39); against the Vaklodingen
+bathymetry in three Dutch estuaries: 0.33--0.44 m.
+
+Run unsupervised over 130 cells of 10 km along the Cantabrian and Galician
+coast (286 km$^2$ of intertidal), it delivers per-pixel elevation, hydroperiod
+and zonation, with open code and data: a base layer for mapping
+and monitoring the potential habitat of \emph{Z.\ noltei}.
+
+\textbf{Keywords:} hydroperiod; waterline method; tide propagation;
+Sentinel-2; \emph{Zostera noltei}.
+
+\end{document}

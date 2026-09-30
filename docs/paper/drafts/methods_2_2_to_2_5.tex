@@ -1,0 +1,173 @@
+% Draft of Sections 2.2-2.5 (Methods). Body text only; to be pasted into
+% main.tex in place of the four "(to be written)" placeholders.
+% Sources: docs/METHOD.md, docs/one_pixel_marea_example.md,
+% docs/tide_adjustment_comparison.md (1, 5), docs/prior_art_granadeiro.md,
+% pyintertidal/marea.py, pyintertidal/tide_estimators.py,
+% pyintertidal/elevation.py, configs/m2.yaml, experiments/sota_granadeiro.py,
+% experiments/e0_escalda_prep.py.
+
+\subsection{The pixel model and the elevation inversion}\label{sec:pixel}
+
+For a shoreline pixel with flooded fraction $f$, linear mixing of the
+McFeeters water index~\cite{mcfeeters1996} gives
+\begin{equation}\label{eq:mix}
+\mathrm{NDWI} = (1-f)\,\mathrm{NDWI}_{\mathrm{dry}} + f\,\mathrm{NDWI}_{\mathrm{wet}}
+= a + b\,f ,
+\end{equation}
+where the dry level $a$ and the dry-to-wet jump $b$ are fitted per
+pixel, which normalises albedo between pixels. At water level $h$,
+$f(h) = \Pr(\text{internal elevation} \le h)$ is the cumulative
+distribution of the pixel's relief, assumed Gaussian with mean $z$, its
+median elevation, and spread $\sigma$, its roughness:
+\begin{equation}\label{eq:pixel}
+\mathrm{NDWI}(h) = a + b\,\Phi\!\left(\frac{h - z}{\sigma}\right),
+\end{equation}
+with $\Phi(u) = (2\pi)^{-1/2}\int_{-\infty}^{u} e^{-v^{2}/2}\,\mathrm{d}v$
+the standard normal distribution function; the midpoint $h = z$ is the
+elevation. Eq.~\eqref{eq:pixel} is the probit ogive of
+quantal-response analysis \cite{bliss1934,finney1947}, the Gaussian
+counterpart of the per-pixel methods' logistic \cite{berkson1944}. The
+fitted $\sigma$ also absorbs the water-level error of each scene.
+
+The inversion (\texttt{invert\_series}) fits Eq.~\eqref{eq:pixel} to
+each pixel's clear observations by least squares: for each candidate
+$(z, \sigma)$ the linear $(a, b)$ is solved in closed form, $z$ runs
+over 50 points between the lowest and highest level of the series,
+$\sigma$ over the archive's eight relief atoms (0.03, 0.06, 0.10, 0.15,
+0.22, 0.32, 0.45 and 0.65~m), and the pair with the smallest residual is
+kept. A pixel is left blank with fewer than 8 clear observations, a
+contrast $b$ outside $(0.15, 2.5)$ or a dry level $|a| \ge 2.5$.
+
+A scene is kept if at most 10\,\% of the transition zone is cloudy; an
+observation is used only where Sen2Cor reads vegetation, bare ground or
+water (the campaign extraction also admits unclassified). The wet/dry
+label is $\mathrm{NDWI} > 0$: Otsu's threshold \cite{otsu1979} on the
+twelve clearest development-site scenes lands at $+0.25$, the top of its
+allowed range; zero is preferred because turbid estuarine water reads
+lower than clear water. The intertidal zone is delimited by water
+frequency, the wet fraction of a pixel's clear observations. A
+three-class Otsu split of the transition pixels separates ground, flat
+and channel, with valleys at 0.21 and 0.66 in Villaviciosa, and
+confirms that the archive holds three populations; but the flats reach
+far into the rarely wet class: of the 181 intertidal pixels the
+development RTK survey covers, only 79 lie inside the Otsu window
+against 130 inside 0.05--0.95. The window is therefore set by what the
+inversion
+can resolve, a pixel with enough clear observations on both sides of
+its transition, and opened to 0.05--0.95. The four test-site products
+use the fixed window and minimum count of Section~\ref{sec:sites}. Elevations are fitted within an epoch,
+2023--2025 for the products of Section~\ref{sec:results}.
+
+\subsection{The interior clock}\label{sec:clock}
+
+The interior tide is measured per band of along-channel distance $s$
+from the mouth: $s$ is the geodesic distance, the minimum-cost
+eight-connected path over the permanent-water and intertidal masks
+times the pixel size, from the permanent-water pixels (water frequency
+at least 0.90) on the image border on the sides declared as sea.
+Intertidal pixels are split into 3-km bands along $s$; a band with fewer
+than 500 pixels is merged with the next. Each band sits at the median
+$s$ of its pixels, and at most 1\,200 of them, drawn at random with a
+fixed seed, enter the likelihood.
+
+% fig:method removed from the paper (its panels are in the pipeline and
+% likelihood figures); experiments/paper_fig_method.py is kept.
+
+
+Each observation is reduced to its binary label $y_{pt} \in \{0,1\}$ and
+the amplitudes of Eq.~\eqref{eq:pixel} are fixed at 0 and 1, leaving two
+parameters per pixel: a Rasch-type model \cite{rasch1960,engelhard2021}
+(scenes as persons, pixels as items). Under a candidate clock $\tau_k$
+for band $k$ the level at scene $t$ is $h(t-\tau_k)$, pixel $p$ is wet
+with probability $P_{pt} = \Phi\big((h(t-\tau_k) - z_p)/\sigma_p\big)$,
+and the profiled Bernoulli log-likelihood of the band is
+\begin{equation}\label{eq:profile}
+\ell_k(\tau_k) = \sum_{p \in k}\; \max_{z_p,\,\sigma_p}\; \sum_{t}
+\Big[\, y_{pt}\log P_{pt} + (1-y_{pt})\log(1-P_{pt}) \Big],
+\end{equation}
+where $t$ runs over the pixel's clear scenes. The inner maximum is the
+profiling of variable projection \cite{golub1973,kaufman1975}: every
+pixel re-fits its own $(z_p, \sigma_p)$ under each clock, so clocks are
+decided only by what terrain cannot absorb, the reordering of the tide
+across dates (Fig.~\ref{fig:likelihood}). The grid is 60 points of $z_p$
+over the boundary's tidal range plus 0.3~m on either side, about 8~cm
+apart, and, in the product, the six interior relief atoms, 0.06 to
+0.45~m, for $\sigma_p$; probabilities are clipped at $10^{-4}$, and a
+pixel needs at least six clear scenes.
+
+The boundary is evaluated once at every acquisition instant shifted by
+the sixteen values $-45, -30, \ldots, 180$~min of the shift bank, and
+$h(t-\tau)$ is interpolated linearly between them. The mouth band is
+pinned at $\tau_0 = 0$. The free parameters are the increments between
+successive bands, $\tau_k = \sum_{j \le k} \delta_j$ with every
+$\delta_j \ge 0$, so the profile is monotone non-decreasing inland. The
+negative of Eq.~\eqref{eq:profile}, summed over bands and normalised per
+observation, is minimised with L-BFGS-B \cite{byrd1995} in SciPy
+\cite{virtanen2020}, the increments in hours, bounded between 0 and
+$+180$~min and started at zero.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{fig_likelihood.png}
+\caption{What the clock does to the likelihood, on the Ems-Dollard band
+containing the Delfzijl gauge. (a) One pixel of the band on the ocean
+clock: its NDWI at each visit against the water level at the mouth,
+coloured by the reading (wet above 0, dry below), and the transition
+$a + b\,\Phi((h - z)/\sigma)$ with the $(z, \sigma)$ profiled by the
+binary likelihood; wet and dry readings overlap over a wide range of
+levels. (b) The same pixel on the band's clock: the readings separate,
+the transition sharpens and the pixel's negative log-likelihood (cost)
+falls. (c) The band's profiled
+negative log-likelihood against the lag, relative to its minimum, with
+the fitted lag, its 95\,\% bootstrap interval and the ocean clock.}
+\label{fig:likelihood}
+\end{figure*}
+
+\subsection{Identifiability and adoption}\label{sec:adoption}
+
+The interior tide may also be amplified or damped: with a gain $\alpha$
+and a datum shift, $h_{\mathrm{int}}(t) = \alpha\,h(t-\tau) + \mathrm{datum}$.
+Binary data cannot read $\alpha$: with $P = \Phi\big((\alpha h - z)/\sigma\big)$,
+multiplying $\alpha$, $z$ and $\sigma$ by one constant $c$ gives
+\begin{equation}\label{eq:affine}
+\frac{(c\alpha)\,h - (cz)}{c\sigma} = \frac{\alpha h - z}{\sigma},
+\end{equation}
+so the likelihood is unchanged, and a datum shift is absorbed by $z$.
+Only the phase survives, so it is measured from the imagery; gain and
+datum come from the boundary. The check is executable: with a gain of
+1.0--1.3 planted in the simulator, the negative log-likelihood profile
+in $\alpha$, with $(z, \sigma)$ profiled on grids scaling with $\alpha$,
+must be flat.
+
+Each band lag carries a scene-bootstrap interval: the scenes are
+resampled with replacement thirty times, the profile refitted on each,
+and the 2.5th and 97.5th percentiles of the thirty $\tau_k$ are its
+95\,\% confidence interval; an interval containing zero means the lag is
+not distinguishable from none. No threshold is applied and no lag
+discarded; the interval says which values carry information. On replica
+archives with the pixels, cloud masks and acquisition instants of a real
+site but a uniform tide with no interior lag, the estimator returns lags
+of the order of ten minutes; the experiments are released with the code.
+
+Each pixel receives the band profile smoothed along $s$ with a Gaussian
+kernel of the band length, anchored at $\tau = 0$ at the mouth and kept
+monotone, evaluated at the pixel's own distance and rounded to the
+minute. The inversion of Section~\ref{sec:pixel} is then run once with
+the boundary evaluated at the exactly shifted instants $t - \tau$, not
+the bank's 15-min interpolation, and the $z$ grid spanning the unshifted
+boundary range everywhere. The product stores the band lags, their
+intervals and the lag every pixel received.
+
+\subsection{The comparison method}\label{sec:granadeiro}
+
+The elevation maps are compared with those of the published method of
+Granadeiro et al.~\cite{granadeiro2021}, which fits a logistic with
+four parameters to standardised near-infrared reflectance against water
+height
+per pixel, the inflection being the elevation, and reads a tidal-stage
+lag per pixel from the disagreement between its rising and ebbing fits,
+extended over the flat by a thin-plate spline. It was reimplemented from
+the paper, not their code, with SciPy \cite{virtanen2020} for the fits,
+and run on the same pixels, scenes and boundary as MAREA; the
+reimplementation and its declared substitutions are released with the
+code.

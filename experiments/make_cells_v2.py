@@ -130,6 +130,8 @@ def main():
     from affine import Affine
 
     ways = fetch_coastline()
+    # everything below works in a locally metric frame (km): lon/lat scaled
+    # by KX/KY so buffers and areas are true kilometres at this latitude
     lines = [LineString([(x * KX, y * KY) for x, y in w])
              for w in ways if len(w) >= 2]
     merged = linemerge(unary_union(lines))
@@ -179,6 +181,8 @@ def main():
     dgrid = np.full(inside.shape, np.inf)
     dgrid[inside] = dist
 
+    # blobs far from the trunk are estuary interiors: reassign each one
+    # WHOLE to its majority bin so no ria gets split lengthwise
     comp, ncomp = ndimage.label(inside & (dgrid > INTERIOR_DIST_KM))
     for ci in range(1, ncomp + 1):
         m = comp == ci
@@ -241,6 +245,8 @@ def main():
     print(f"{len(out)} cells; bbox km2 median {np.median(bb):.0f} "
           f"max {max(bb):.0f} total {sum(bb):.0f}")
 
+    # checkpoints from the v1 post-mortem: each named ria must fall inside
+    # a single cell (v1's rectangles cut several of them in half)
     from shapely.geometry import Point
     checks = {"Villaviciosa mouth": (-5.385, 43.535),
               "Villaviciosa interior": (-5.395, 43.505),

@@ -1,0 +1,256 @@
+{
+ "experiment": "v7_waterline_contour",
+ "stage": "preflight",
+ "site": "villaviciosa",
+ "record": "SENSITIVITY (NIDEM on MAREA's 97-scene record), ITEM pixel-quality mask",
+ "record_rule": "SENSITIVITY (NIDEM on MAREA's 97-scene record): 2023-2025 epoch of the notebook's cloud-filtered usable dates (cell 23), with overpass time and finite level (the scored no-delay / MAREA record)",
+ "boundary": "PyTMDBoundary EOT20 at aoi.centroid (43.50902, -5.41613)",
+ "truth_used": "none",
+ "mode": "sensitivity",
+ "status": "passed",
+ "guard": "review round 2 (2026-09-29), fixed from no truth before any Ems composite or score: before the cube is streamed, N_j(p) = valid observations with a finite NDWI per interval are counted on keep (since the revision of 2026-09-29: from a truth-free pre-pass of the record scenes under the run's own pixel mask, waterline_contour.stream_scene_quality, with the pre-pass SCL asserted to reproduce the extraction's C). If the expected valid share on keep (N_j >= 1 in all 9 intervals) is below MIN_VALID_SHARE = 0.01, the run stops with NoClearObservationsInIntervalError, writes nidem_preflight.json and scores nothing (the analogue of the empty-interval stop; NIDEM has no rule for either). It drops no scene and redefines no interval, so it changes no product where it passes; after streaming, the counts are asserted equal to the composites' count on keep.",
+ "pixel_mask": {
+  "rule": "item",
+  "masked_scl": [
+   0,
+   1,
+   3,
+   8,
+   9,
+   10
+  ],
+  "valid_scl": [
+   2,
+   4,
+   5,
+   6,
+   7,
+   11
+  ],
+  "nan_scl": "masked (SCL 0 no data; contiguity)",
+  "source": [
+   "Sagar et al. 2017 p.155: 'Each tile was then processed using the PQ bitmasks to exclude pixels flagged as cloud, cloud shadow, or saturated in any of the bands.' (also p.161: 'the pixel quality process masks clouds, cloud shadow or saturated pixels')",
+   "ITEM v2.0.0 product description, DEA Knowledge Hub, processing step 5: 'Each tile observation is masked for pixel quality based on the DEA PQA layer to exclude pixels flagged for cloud, band saturation and contiguity.' (retrieved 2026-09-29)",
+   "NIDEM_generation.py (GeoscienceAustralia/nidem, master): applies no pixel mask of its own (it consumes the ITEM rasters); it opens the ls*_pq_albers products only to list observation times (interval_uncertainty, L767-850). The ITEM v2 generation code is not public (searched 2026-09-29), so the flag list comes from the two documents above; they agree with the mapping requested."
+  ]
+ },
+ "n_scenes": 97,
+ "LOT_m": -2.172457695007324,
+ "HOT_m": 1.146200180053711,
+ "OTR_m": 3.318657875061035,
+ "edges_m (e_0..e_10; interval 9 = (e_8, e_10])": [
+  -2.172457695007324,
+  -1.8405919075012207,
+  -1.5087261199951172,
+  -1.1768603324890137,
+  -0.8449945449829102,
+  -0.5131287574768066,
+  -0.1812629699707029,
+  0.1506028175354004,
+  0.4824686050415039,
+  0.8143343925476074,
+  1.146200180053711
+ ],
+ "interval_sizes |S_j|": [
+  5,
+  6,
+  13,
+  10,
+  11,
+  14,
+  7,
+  8,
+  23
+ ],
+ "Z_j_m": [
+  -1.9654310941696167,
+  -1.6562718749046326,
+  -1.2708494663238525,
+  -1.0400528311729431,
+  -0.7194339632987976,
+  -0.33696675300598145,
+  0.06655793637037277,
+  0.3873030096292496,
+  0.7129002213478088
+ ],
+ "U_j_m (ddof=1)": [
+  0.12500158314423582,
+  0.06494783274741275,
+  0.0866439837852595,
+  0.09002907892804027,
+  0.10137995796338573,
+  0.10484391309893026,
+  0.12382938887659743,
+  0.12960470828069326,
+  0.14471263135628218
+ ],
+ "coverage_on_keep (pre-pass: pixel mask & finite NDWI)": {
+  "px": 32120,
+  "share_px_with_ge1_clear_obs": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "median_N_j": [
+   5.0,
+   6.0,
+   13.0,
+   10.0,
+   11.0,
+   14.0,
+   7.0,
+   8.0,
+   23.0
+  ],
+  "intervals_with_zero_clear_obs": [],
+  "intervals_below_floor": [],
+  "expected_valid_px": 32120,
+  "expected_valid_share": 1.0,
+  "min_valid_share": 0.01,
+  "passed": true
+ },
+ "valid_finite_obs_total_per_interval_on_keep": [
+  159583,
+  192011,
+  413305,
+  309312,
+  348345,
+  440587,
+  220382,
+  253787,
+  717118
+ ],
+ "scene_quality_prepass (record scenes)": {
+  "rule": "item",
+  "frame_px": 837225,
+  "keep_px": 32120,
+  "n_scenes": 97,
+  "observations_on_keep (pixel mask & finite NDWI)": 3054430,
+  "marea_observations_on_keep (C & finite NDWI)": 2971339,
+  "observations_in_both": 2971339,
+  "observations_added_vs_marea_C": 83091,
+  "observations_removed_vs_marea_C": 0,
+  "frame_scl_zero_px_total (expected 0: no data is NaN)": 0,
+  "frame_px_with_B03_or_B08_le_-999 (raw DN <= 1)": 0,
+  "frame_px_with_B03_or_B08_lt_-999 (raw DN <= 0; expected 0)": 0,
+  "frame_load_ard_good_fraction_percentiles": {
+   "p0": 0.6702081280420437,
+   "p5": 0.8712639971333871,
+   "p25": 0.9760828928902028,
+   "p50": 0.9993693451581116,
+   "p75": 0.9999665561826271,
+   "p95": 1.0,
+   "p100": 1.0
+  },
+  "frame_item_valid_share_percentiles (info)": {
+   "p0": 0.6702081280420437,
+   "p5": 0.8712639971333871,
+   "p25": 0.9760828928902028,
+   "p50": 0.9993693451581116,
+   "p75": 0.9999665561826271,
+   "p95": 1.0,
+   "p100": 1.0
+  },
+  "frame_no_data_share_percentiles": {
+   "p0": 0.0,
+   "p5": 0.0,
+   "p25": 0.0,
+   "p50": 0.0,
+   "p75": 0.0,
+   "p95": 0.0,
+   "p100": 0.0
+  },
+  "seconds": 10.11574101448059
+ },
+ "lowest_5_scenes": [
+  {
+   "date": "2025-03-31",
+   "t_real": "2025-03-31 11:06:51",
+   "cube_time_index": 1241,
+   "interval": 1,
+   "h_m": -2.172457695007324,
+   "valid_finite_share_on_keep": 0.9910647571606476
+  },
+  {
+   "date": "2024-09-20",
+   "t_real": "2024-09-20 11:21:09",
+   "cube_time_index": 1164,
+   "interval": 1,
+   "h_m": -2.055654287338257,
+   "valid_finite_share_on_keep": 0.9956724782067248
+  },
+  {
+   "date": "2024-10-20",
+   "t_real": "2024-10-20 11:21:19",
+   "cube_time_index": 1176,
+   "interval": 1,
+   "h_m": -1.9654310941696167,
+   "valid_finite_share_on_keep": 0.9997509339975094
+  },
+  {
+   "date": "2023-10-01",
+   "t_real": "2023-10-01 11:21:21",
+   "cube_time_index": 1022,
+   "interval": 1,
+   "h_m": -1.889742374420166,
+   "valid_finite_share_on_keep": 0.9832814445828144
+  },
+  {
+   "date": "2024-08-23",
+   "t_real": "2024-08-23 11:06:21",
+   "cube_time_index": 1153,
+   "interval": 1,
+   "h_m": -1.8706344366073608,
+   "valid_finite_share_on_keep": 0.9985678704856787
+  }
+ ],
+ "highest_5_scenes": [
+  {
+   "date": "2025-05-23",
+   "t_real": "2025-05-23 11:21:31",
+   "cube_time_index": 1268,
+   "interval": 9,
+   "h_m": 1.146200180053711,
+   "valid_finite_share_on_keep": 0.9186176836861768
+  },
+  {
+   "date": "2025-12-14",
+   "t_real": "2025-12-14 11:23:59",
+   "cube_time_index": 1370,
+   "interval": 9,
+   "h_m": 0.9418407678604126,
+   "valid_finite_share_on_keep": 0.9992839352428393
+  },
+  {
+   "date": "2025-09-17",
+   "t_real": "2025-09-17 11:07:31",
+   "cube_time_index": 1326,
+   "interval": 9,
+   "h_m": 0.8931139707565308,
+   "valid_finite_share_on_keep": 0.9985056039850561
+  },
+  {
+   "date": "2024-10-15",
+   "t_real": "2024-10-15 11:21:11",
+   "cube_time_index": 1174,
+   "interval": 9,
+   "h_m": 0.8901530504226685,
+   "valid_finite_share_on_keep": 0.8505603985056039
+  },
+  {
+   "date": "2025-10-17",
+   "t_real": "2025-10-17 11:11:01",
+   "cube_time_index": 1341,
+   "interval": 9,
+   "h_m": 0.8646537661552429,
+   "valid_finite_share_on_keep": 0.9992839352428393
+  }
+ ],
+ "scenes_of_intervals_below_floor": {}
+}

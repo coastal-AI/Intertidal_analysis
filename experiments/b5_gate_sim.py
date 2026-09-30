@@ -45,6 +45,8 @@ class PlantedHysteresis(Mechanism):
     def __init__(self, bank, tide0, tau_up_px, tau_dn_px):
         self.bank = bank
         self.tide0 = np.asarray(tide0, float)
+        # clocks quantised to the bank's 2-min grid so the planted truth
+        # is exactly representable by the estimator's own machinery
         self.tu = np.round(np.asarray(tau_up_px, float) / 2.0) * 2.0
         self.td = np.round(np.asarray(tau_dn_px, float) / 2.0) * 2.0
 
@@ -52,6 +54,7 @@ class PlantedHysteresis(Mechanism):
         jit = h - self.tide0
         T, P = len(h), len(self.tu)
         out = np.empty((T, P))
+        # evaluate the bank once per distinct clock value, not per pixel
         for tv in np.unique(np.concatenate([self.tu, self.td])):
             hv = self.bank.at(tv) + jit
             m_up = self.tu == tv
@@ -110,6 +113,8 @@ def main():
     nb = CFG2["n_bandas"]
     edges, centers, band_all = te.make_bands(
         np.where(np.isfinite(s_all), s_all, np.nan), nb)
+    # same per-band 2000-px subsample recipe as m2_real, fresh seed: the
+    # gate's pixel draw is independent of the real-archive run
     rng = np.random.default_rng(CFG2["seed"] + 50)
     rows = []
     for k in range(nb):
@@ -129,6 +134,7 @@ def main():
     td_true = np.array([tau_dn_px[band_of == k].mean() for k in range(nb)])
 
     lo, hi = float(h0.min()), float(h0.max())
+    # band 0 (mouth) stays out of every verdict: tau = 0 there by anchor
     inner = slice(1, nb)
     verdict = {}
 
@@ -176,6 +182,8 @@ def main():
               f"  z 2-clock {np.round(rm2, 3)} "
               f"({time.time()-t0:.0f} s)", flush=True)
 
+    # (a) clocks: the up/down SPLIT must be recovered where adopted —
+    # the split is exactly what a single clock cannot represent
     vh = verdict["con_histeresis"]
     ad = np.asarray(vh["adoptado"], bool)[inner]
     split_hat = (np.asarray(vh["tau_dn_hat"])
@@ -187,6 +195,8 @@ def main():
     mej = (np.asarray(vh["rmse_z_1reloj"][1:])
            - np.asarray(vh["rmse_z_2relojes"][1:]))
     ok_bite = bool(mej.mean() > 0)
+    # (c) control world without hysteresis: adopting clocks there is a
+    # false positive, and any elevation damage is charged to the method
     v0 = verdict["sin_histeresis"]
     esp = int(np.asarray(v0["adoptado"], bool)[inner].sum())
     dano = float(np.nanmax(np.asarray(v0["rmse_z_2relojes"][1:])

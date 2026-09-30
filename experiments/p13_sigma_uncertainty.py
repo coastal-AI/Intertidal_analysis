@@ -115,11 +115,13 @@ def main():
         if j0 % 40000 == 0:
             print(f"  {j0}/{P} ({time.time()-t0:.0f} s)", flush=True)
 
+    # the Cramer-Rao bar: noise-to-contrast ratio, times the blur, divided
+    # by the effective number of waterline crossings actually observed
     sigma_z = se_all * sg_all / (b_all * np.sqrt(np.maximum(sphi2, 1e-9)))
     valid = (np.isfinite(sigma_z) & np.isfinite(z_all)
              & np.isfinite(z_ref) & (sphi2 > 0.5))
     e = z_all[valid] - z_ref[valid]
-    e = e - np.median(e)
+    e = e - np.median(e)      # datum removed: the bar claims spread, not offset
     u = e / sigma_z[valid]
     cov68 = float((np.abs(u) < 1.0).mean())
     cov95 = float((np.abs(u) < 1.96).mean())

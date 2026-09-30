@@ -68,6 +68,9 @@ def main():
         wet = C & fin & (Y > NDWI_THR)
         dry = C & fin & (Y <= NDWI_THR)
         h2 = h0[:, None]
+        # bracket: the highest tide ever seen dry bounds z from below, the
+        # lowest tide ever seen wet bounds it from above; +/-inf marks
+        # pixels never observed on one side (excluded just after)
         zmin = np.where(dry, h2, -np.inf).max(axis=0)
         zmax = np.where(wet, h2, np.inf).min(axis=0)
         ok_b = np.isfinite(zmin) & np.isfinite(zmax) \

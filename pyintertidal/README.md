@@ -5,8 +5,36 @@ is, how often it floods, how high it stands, how long it is submerged, and how
 it changes. Built on Sentinel-2 (via openEO / Copernicus Data Space) and
 global tide models.
 
-> **Status: provisional.** The package is complete and tested, but the
-> function catalogue is still being curated — see [`CATALOG.md`](CATALOG.md).
+> The full function catalogue, module by module — including what lives
+> in `legacy/` and what was deliberately not ported — is in
+> [`CATALOG.md`](CATALOG.md).
+
+## The layers, at a glance
+
+```mermaid
+flowchart TD
+    subgraph L1["1 · study area & data"]
+        aoi["aoi · sites"] --- cube["cube · raster · scenes · net · overpass"]
+    end
+    subgraph L2["2 · water & base products"]
+        water["water · marsh"] --- stab["stability · frequency · coverage"]
+    end
+    subgraph L3["3 · tides"]
+        tides["tides · tidemodels · gauges"] --- est["boundary · boundary_correction ·<br>estuary · operator · tide_estimators · marea"]
+    end
+    subgraph L4["4 · elevation & science"]
+        elev["elevation (HSR) · terrain"] --- sci["hydroperiod · hypsometry · morphodynamics"]
+    end
+    subgraph L5["5 · trust & output"]
+        val["validation · simulator · seal · rtk"] --- out["viz · explain · report · export · mosaic"]
+    end
+    L1 --> L2 --> L3 --> L4 --> L5
+```
+
+Each box is one module with one job; the full function-by-function
+reference is [`CATALOG.md`](CATALOG.md). Dependencies only point upward
+in this diagram — an earlier layer never imports a later one — which is
+what lets a study notebook use any layer in isolation.
 
 ## Why it looks the way it does
 

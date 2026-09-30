@@ -1,0 +1,548 @@
+{
+ "experiment": "v7_waterline_contour",
+ "site": "villaviciosa",
+ "record": "primary: ITEM all-observations record, ITEM pixel-quality mask",
+ "mode": "primary",
+ "record_rule": "PRIMARY: all 2023-2025 cube scenes with an overpass time and a finite level (ITEM all-observations rule)",
+ "boundary": "PyTMDBoundary EOT20 at aoi.centroid (43.50902, -5.41613)",
+ "scenes_without_overpass_time": 0,
+ "scenes_with_nonfinite_level": 0,
+ "record_dates_first_last": [
+  "2023-01-01",
+  "2025-12-29"
+ ],
+ "cube": {
+  "path": "ndwi_cube_villaviciosa_grande_10y.nc",
+  "bytes": 3092569908,
+  "mtime": 1786454449.3447993,
+  "shape": [
+   915,
+   915
+  ],
+  "transform": [
+   10.0,
+   0.0,
+   301020.0,
+   0.0,
+   -10.0,
+   4824840.0
+  ]
+ },
+ "pixel_mask": {
+  "rule": "item",
+  "masked_scl": [
+   0,
+   1,
+   3,
+   8,
+   9,
+   10
+  ],
+  "valid_scl": [
+   2,
+   4,
+   5,
+   6,
+   7,
+   11
+  ],
+  "nan_scl": "masked (SCL 0 no data; contiguity)",
+  "source": [
+   "Sagar et al. 2017 p.155: 'Each tile was then processed using the PQ bitmasks to exclude pixels flagged as cloud, cloud shadow, or saturated in any of the bands.' (also p.161: 'the pixel quality process masks clouds, cloud shadow or saturated pixels')",
+   "ITEM v2.0.0 product description, DEA Knowledge Hub, processing step 5: 'Each tile observation is masked for pixel quality based on the DEA PQA layer to exclude pixels flagged for cloud, band saturation and contiguity.' (retrieved 2026-09-29)",
+   "NIDEM_generation.py (GeoscienceAustralia/nidem, master): applies no pixel mask of its own (it consumes the ITEM rasters); it opens the ls*_pq_albers products only to list observation times (interval_uncertainty, L767-850). The ITEM v2 generation code is not public (searched 2026-09-29), so the flag list comes from the two documents above; they agree with the mapping requested."
+  ]
+ },
+ "frozen_constants": {
+  "reference": "Sagar et al. 2017 RSE 195:153-169; Bishop-Taylor et al. 2019 ECSS 223:115-128",
+  "authors_principle": "binding (revision of 2026-09-29): every method works on the same archive (same cube, Sentinel-2 L2A, same resolution, 2023-2025, same boundary tide) and is scored on the same pixels with the same truth and metrics; on top of that, EACH METHOD APPLIES ITS OWN PUBLISHED RULES (scene selection and pixel masks), replicated faithfully to its paper or repository.",
+  "record": "ITEM all-observations rule at every site (revision of 2026-09-29, C): every 2023-2025 cube scene with an overpass time and a finite boundary level; no scene-level cloud filter. Villaviciosa: 465 scenes (EOT20 at aoi.centroid); MAREA's 97-scene cloud-filtered record is the labelled SENSITIVITY 'NIDEM on MAREA's 97-scene record'. Dutch sites: every cube scene (unchanged). Sources: Sagar et al. 2017 Fig. 3 (all tiles are used 'regardless of data completeness or quality'); ITEM v2.0 processing step 3 ('All observations within the nominated cell/polygon and time period is attributed with a tidal height'); NIDEM_generation.py interval_uncertainty (L767-850: every dataset of ls5/ls7/ls8_pq_albers in the period, grouped by solar day, no cloud-cover filter).",
+  "intervals": "10 uniform intervals of OTR = max(h)-min(h) over all record scenes, top two merged -> 9",
+  "bin_edges": "lowest closed [e0,e1], others right-closed (e_{k-1},e_k]",
+  "Z_j": "median of h over all scenes of interval j (cloudy included)",
+  "U_j": "std of h over interval j, ddof=1",
+  "composite": "per-pixel median NDWI over the valid observations of the run's pixel mask (PRIMARY: ITEM PQ mask mapped to SCL, see pixel_quality_mask_item; VARIANT: load_ard's), NDWI = (B03-B08)/(B03+B08), NaN where B03+B08==0",
+  "pixel_quality_mask_item": {
+   "status": "PRIMARY pixel mask since the revision of 2026-09-29 (A); replaces MAREA's clear set SCL {4,5,6,7}. Written before any run under it.",
+   "masked_scl": [
+    0,
+    1,
+    3,
+    8,
+    9,
+    10
+   ],
+   "valid_scl": [
+    2,
+    4,
+    5,
+    6,
+    7,
+    11
+   ],
+   "mapping": {
+    "cloud": "SCL 8 cloud medium probability, 9 cloud high probability, 10 thin cirrus",
+    "cloud shadow": "SCL 3 cloud shadows",
+    "band saturation": "SCL 1 saturated or defective",
+    "contiguity (all bands have data)": "SCL 0 no data = NaN SCL in our cubes (openEO fill); a NaN band gives a NaN NDWI, never an observation",
+    "not masked by ITEM": "SCL 2 dark area pixels / topographic cast shadows (ESA renamed the class at processing baseline 04.00; not cloud shadow), 4 vegetation, 5 bare soil, 6 water, 7 unclassified, 11 snow or ice"
+   },
+   "sources": [
+    "Sagar et al. 2017 p.155: 'Each tile was then processed using the PQ bitmasks to exclude pixels flagged as cloud, cloud shadow, or saturated in any of the bands.' (also p.161: 'the pixel quality process masks clouds, cloud shadow or saturated pixels')",
+    "ITEM v2.0.0 product description, DEA Knowledge Hub, processing step 5: 'Each tile observation is masked for pixel quality based on the DEA PQA layer to exclude pixels flagged for cloud, band saturation and contiguity.' (retrieved 2026-09-29)",
+    "NIDEM_generation.py (GeoscienceAustralia/nidem, master): applies no pixel mask of its own (it consumes the ITEM rasters); it opens the ls*_pq_albers products only to list observation times (interval_uncertainty, L767-850). The ITEM v2 generation code is not public (searched 2026-09-29), so the flag list comes from the two documents above; they agree with the mapping requested."
+   ],
+   "ndwi": "unchanged: (B03-B08)/(B03+B08), NaN where the sum is 0",
+   "verification": "mapping verified against the sources above; no source shows otherwise. The union of the two lists (cloud, cloud shadow, saturation, contiguity) is used."
+  },
+  "valid": ">=1 valid obs (pixel mask & finite NDWI) in every interval",
+  "water": "median NDWI > 0 (tie = land)",
+  "R": "sum of 9 land flags (0..9)",
+  "conf": "mean over intervals of NDWI std (ddof=0)",
+  "gap_fill": "binary_dilation(valid, 2 iterations), nearest-valid fill, NaN beyond (contouring only)",
+  "contours": "skimage find_contours at 0.5..8.5, mask + NaN-vertex drop + 1e-12 KeyError retry, >=2 vertices, keyed by level; level k-0.5 tagged Z_k, U_k",
+  "tin": "scipy griddata linear over all vertices in (row, col) pixel-index space, no +0.5 px shift",
+  "unfiltered": "DEM where R (before gap fill) in 1..8",
+  "filtered": "unfiltered where conf <= 0.25 (PRIMARY)",
+  "lag": "none",
+  "supplementary_filtered_bounded": "review round 1 (2026-09-29), rule fixed before scoring it: conf recomputed with every valid NDWI clipped to [-1, 1] (the NBAR range on which 0.25 was defined); filtered_bounded = unfiltered where this conf <= 0.25. Medians, R, contours and DEM unchanged. SUPPLEMENTARY only; the primary stays 'filtered'.",
+  "extraction_check": "revision of 2026-09-29 (A): at every keep pixel of every record scene, SCL in {4,5,6,7} is asserted equal to the extraction's C and the raw NDWI to the extraction's Y (NaN equal to NaN), so the NDWI is compared in particular wherever both masks are valid; the observations the run's mask adds to / removes from MAREA's C on keep are counted (pre-pass and streaming counts asserted equal).",
+  "preflight_guard": "review round 2 (2026-09-29), fixed from no truth before any Ems composite or score: before the cube is streamed, N_j(p) = valid observations with a finite NDWI per interval are counted on keep (since the revision of 2026-09-29: from a truth-free pre-pass of the record scenes under the run's own pixel mask, waterline_contour.stream_scene_quality, with the pre-pass SCL asserted to reproduce the extraction's C). If the expected valid share on keep (N_j >= 1 in all 9 intervals) is below MIN_VALID_SHARE = 0.01, the run stops with NoClearObservationsInIntervalError, writes nidem_preflight.json and scores nothing (the analogue of the empty-interval stop; NIDEM has no rule for either). It drops no scene and redefines no interval, so it changes no product where it passes; after streaming, the counts are asserted equal to the composites' count on keep.",
+  "decision_a_primary_not_computable": "orchestrator decision (a), 2026-09-29, truth-blind (made before any Ems truth was read): the PRIMARY stays the ITEM rule at every site and is never relaxed. Where its pre-flight stops (first seen at Ems under the superseded clear mask: the only scene of interval 1, 2024-12-10, was clear on 27 of 477,745 keep px), the primary is reported NOT COMPUTABLE: product 'NIDEM (ITEM rule)', n = 0, with the reason in a note column of the site's metrics CSV and in nidem_diagnostics.json. Since the revision of 2026-09-29 the Ems pre-flight is re-run under the ITEM pixel mask and decides again.",
+  "variant_s2_scene_rule": {
+   "name": "NIDEM, Sentinel-2 scene rule",
+   "status": "LABELLED VARIANT, not the primary. Orchestrator decision (b), 2026-09-29, truth-blind; recorded here before the variant was run at any site and before any Ems truth was read. Made LITERAL load_ard by the revision of 2026-09-29 (B), recorded before any run under it.",
+   "rule": "drop a record scene iff its full-frame good fraction < S2_SCENE_MIN_GOODDATA; good fraction = share of ALL H x W pixels of the cube frame whose SCL is NOT in {1,3,8,9,10} (literal load_ard: no data, NaN SCL here and SCL 0 there, counts as GOOD; 2 and 11 are good; the bands and the NDWI are not looked at); keep iff >= the threshold. Pixel mask of the variant = load_ard's: SCL {1,3,8,9,10} masked, SCL no data NOT masked, band no data NaN, and raw DN <= 1 in B03 or B08 masked (cube value <= -999). Then OTR, intervals, Z_j, U_j, per-pixel composites, ITEM validity, pre-flight guard, gap fill, contours, TIN, unfiltered/filtered/bounded products exactly as the primary, on the retained scenes and on the primary record of the site (Villaviciosa: the 465-scene record). If its pre-flight stops, it is reported NOT COMPUTABLE and not relaxed further.",
+   "constant": "pyintertidal.waterline_contour.S2_SCENE_MIN_GOODDATA = 0.5",
+   "min_gooddata": 0.5,
+   "comparison": "keep iff good fraction >= 0.5 (load_ard: keep = (data_perc >= min_gooddata))",
+   "extent": "the whole loaded frame (load_ard divides the good-pixel count by pq_mask.shape[1] * pq_mask.shape[2], every pixel of the loaded area); ours = the full cube frame, not keep",
+   "source_notebook": "Digital Earth Africa sandbox notebook 'Modelling intertidal elevation using tidal data and Sentinel-2', https://docs.digitalearthafrica.org/en/latest/sandbox/notebooks/Real_world_examples/Intertidal_elevation_S2.html ; source https://github.com/digitalearthafrica/deafrica-sandbox-notebooks/blob/main/Real_world_examples/Intertidal_elevation_S2.ipynb (main @ 0ecfbebd7c48ad8da334272fbd16eef38aa43e11, 2026-09-02)",
+   "source_load_ard": "https://github.com/digitalearthafrica/deafrica-sandbox-notebooks/blob/main/Tools/deafrica_tools/datahandling.py (load_ard; main @ a309e7c4b09a98d6e9776a568d3943d546d80c82, 2024-12-02)",
+   "retrieved": "2026-09-29",
+   "quoted_notebook_cell_15": "s2_ds = load_ard(dc=dc, products=['s2_l2a_c1'], output_crs=output_crs, min_gooddata=0.5, group_by='solar_day', dask_chunks={}, **query)",
+   "quoted_notebook_query": "'measurements': ['red', 'green', 'blue', 'nir']",
+   "quoted_load_ard": [
+    "categories_to_mask_s2=[\"cloud high probability\", \"cloud medium probability\", \"thin cirrus\", \"cloud shadows\", \"saturated or defective\"]",
+    "pq_mask = odc.algo.enum_to_bool(mask=ds[fmask_band], categories=categories_to_mask_s2)",
+    "data_perc = (~pq_mask).sum(axis=[1, 2], dtype=\"int32\") / (pq_mask.shape[1] * pq_mask.shape[2])",
+    "keep = (data_perc >= min_gooddata).persist()",
+    "ds = ds.sel(time=keep)",
+    "# Remove sentinel-2 pixels valued 1 (scene edges, terrain shadow)",
+    "valid_data_mask = (ds_data > 1).to_array(dim=\"band\").all(dim=\"band\")",
+    "ds_data =  odc.algo.keep_good_only(ds_data, where=valid_data_mask)",
+    "ds_data = odc.algo.erase_bad(ds_data, where=mask)   # mask = pq_mask",
+    "ds[band] = ds[band] - 1000   # s2_l2a_c1 rescale (after masking)"
+   ],
+   "class_mapping": "load_ard's default S2 bad classes = SCL {1 saturated or defective, 3 cloud shadows, 8 cloud medium probability, 9 cloud high probability, 10 thin cirrus} (DE Africa s2_l2a_c1 flags_definition, SCL nodata 0; enum_to_bool is np.isin). Good there = everything else, including 0 'no data' (so pixels outside the swath count as good in the scene rule), 2 dark area pixels, 11 snow or ice. Our cubes store SCL no data as NaN, which np.isin does not match, so NaN counts as good exactly like SCL 0 in load_ard.",
+   "pixel_mask_check_against_source": "Confirmed against the quoted lines: the per-pixel mask is erase_bad(pq_mask) (SCL {1,3,8,9,10}) plus band nodata -> NaN (to_float), AS REQUESTED, and in addition load_ard @ a309e7c L544-547 keeps only pixels with raw DN > 1 in EVERY loaded band (the notebook loads red, green, blue, nir). Following the source, the variant applies that rule to the two bands our cubes hold (B03 green, B08 nir): raw DN = value + 1000 (BOA_ADD_OFFSET -1000, DN 0 stored as NaN), so DN > 1 <=> value > -999. Red and blue are not in the cubes; their DN <= 1 pixels cannot be masked (documented deviation)."
+  },
+  "revision_2026_09_29_published_rules": {
+   "recorded": "2026-09-29, before any run under these rules; truth-blind",
+   "A_pixel_mask": "PRIMARY pixel mask = ITEM's PQ mask mapped to SCL (pixel_quality_mask_item); replaces MAREA's clear set {4,5,6,7}. The extraction check compares NDWI where both masks are valid (in fact at every keep px) and counts added / removed observations vs MAREA's C.",
+   "B_variant": "VARIANT = literal load_ard: scene good fraction = SCL not in {1,3,8,9,10} over all frame pixels, no data counted good; pixel mask = load_ard's (variant_s2_scene_rule).",
+   "C_record": "Villaviciosa PRIMARY = all 465 2023-2025 scenes (ITEM all-observations rule); the 97-scene MAREA record becomes the labelled sensitivity 'NIDEM on MAREA's 97-scene record'. Dutch primaries unchanged (all scenes); Ems primary re-evaluated by its truth-free pre-flight.",
+   "D_unchanged": "intervals, thresholds, contouring, TIN, filters, bounded supplementary, pre-flight guard (rule and floor) unchanged"
+  },
+  "history": {
+   "superseded_2026_09_29": [
+    "pixel mask = MAREA's clear set SCL {4,5,6,7} (spec step 2, 'so all three methods see the same observations'): superseded by A (each method applies its own published pixel mask)",
+    "variant good fraction = share of frame px with SCL in {4,5,6,7}, no data NOT good, pixel mask {4,5,6,7}: superseded by B (literal load_ard); the old statistic is still reported per scene (clear_scl_fraction, information only)",
+    "Villaviciosa PRIMARY = MAREA's 97-scene record and the all-scenes 465-scene run as SENSITIVITY (products_marea/nidem/sensitivity_all_scenes): superseded by C; the Villaviciosa variant caveat (rule acting on an already cloud-filtered record) no longer applies because the variant now acts on the 465-scene primary record"
+   ],
+   "backup_of_superseded_outputs": "small files (json/csv) and sources copied to the session scratchpad nidem_backup_before_literal/ before the re-runs"
+  }
+ },
+ "extraction_check": {
+  "scene_px_compared (SCL->C and NDWI, every keep px)": 14935800,
+  "ndwi_values_compared_where_both_masks_valid": 4816989,
+  "marea_clear_but_nan_ndwi": 382,
+  "observations_on_keep (pixel mask & finite NDWI)": 4947348,
+  "marea_observations_on_keep (C & finite NDWI)": 4816607,
+  "observations_in_both": 4816607,
+  "observations_added_vs_marea_C": 130741,
+  "observations_removed_vs_marea_C": 0,
+  "result": "identical (SCL->C, raw NDWI)"
+ },
+ "scene_quality_prepass (record scenes)": {
+  "rule": "item",
+  "frame_px": 837225,
+  "keep_px": 32120,
+  "n_scenes": 465,
+  "observations_on_keep (pixel mask & finite NDWI)": 4947348,
+  "marea_observations_on_keep (C & finite NDWI)": 4816607,
+  "observations_in_both": 4816607,
+  "observations_added_vs_marea_C": 130741,
+  "observations_removed_vs_marea_C": 0,
+  "frame_scl_zero_px_total (expected 0: no data is NaN)": 0,
+  "frame_px_with_B03_or_B08_le_-999 (raw DN <= 1)": 0,
+  "frame_px_with_B03_or_B08_lt_-999 (raw DN <= 0; expected 0)": 0,
+  "frame_load_ard_good_fraction_percentiles": {
+   "p0": 0.0,
+   "p5": 0.0,
+   "p25": 0.0,
+   "p50": 0.06569560154080445,
+   "p75": 0.8165714115082564,
+   "p95": 0.9999665561826271,
+   "p100": 1.0
+  },
+  "frame_item_valid_share_percentiles (info)": {
+   "p0": 0.0,
+   "p5": 0.0,
+   "p25": 0.0,
+   "p50": 0.06569560154080445,
+   "p75": 0.8165714115082564,
+   "p95": 0.9999665561826271,
+   "p100": 1.0
+  },
+  "frame_no_data_share_percentiles": {
+   "p0": 0.0,
+   "p5": 0.0,
+   "p25": 0.0,
+   "p50": 0.0,
+   "p75": 0.0,
+   "p95": 0.0,
+   "p100": 0.0
+  },
+  "seconds": 58.44713497161865
+ },
+ "preflight": {
+  "status": "passed",
+  "guard": "review round 2 (2026-09-29), fixed from no truth before any Ems composite or score: before the cube is streamed, N_j(p) = valid observations with a finite NDWI per interval are counted on keep (since the revision of 2026-09-29: from a truth-free pre-pass of the record scenes under the run's own pixel mask, waterline_contour.stream_scene_quality, with the pre-pass SCL asserted to reproduce the extraction's C). If the expected valid share on keep (N_j >= 1 in all 9 intervals) is below MIN_VALID_SHARE = 0.01, the run stops with NoClearObservationsInIntervalError, writes nidem_preflight.json and scores nothing (the analogue of the empty-interval stop; NIDEM has no rule for either). It drops no scene and redefines no interval, so it changes no product where it passes; after streaming, the counts are asserted equal to the composites' count on keep.",
+  "coverage_on_keep (pre-pass: pixel mask & finite NDWI)": {
+   "px": 32120,
+   "share_px_with_ge1_clear_obs": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "median_N_j": [
+    8.0,
+    13.0,
+    23.0,
+    16.0,
+    16.0,
+    19.0,
+    14.0,
+    17.0,
+    22.0
+   ],
+   "intervals_with_zero_clear_obs": [],
+   "intervals_below_floor": [],
+   "expected_valid_px": 32120,
+   "expected_valid_share": 1.0,
+   "min_valid_share": 0.01,
+   "passed": true
+  }
+ },
+ "row_block": 256,
+ "n_scenes": 465,
+ "LOT_m": -2.172457695007324,
+ "HOT_m": 1.3674728870391846,
+ "OTR_m": 3.539930582046509,
+ "edges_m (e_0..e_10; interval 9 = (e_8, e_10])": [
+  -2.172457695007324,
+  -1.8184646368026733,
+  -1.4644715785980225,
+  -1.1104785203933714,
+  -0.7564854621887207,
+  -0.4024924039840698,
+  -0.0484993457794185,
+  0.3054937124252324,
+  0.6594867706298828,
+  1.0134798288345337,
+  1.3674728870391846
+ ],
+ "interval_sizes |S_j|": [
+  19,
+  44,
+  64,
+  55,
+  40,
+  50,
+  43,
+  69,
+  81
+ ],
+ "Z_j_m (median tide of interval)": [
+  -1.9654310941696167,
+  -1.6233516335487366,
+  -1.3040398359298706,
+  -0.92518150806427,
+  -0.6018476188182831,
+  -0.22475598007440567,
+  0.13468654453754425,
+  0.5226280093193054,
+  0.8349304795265198
+ ],
+ "U_j_m (SD ddof=1 of interval tides)": [
+  0.0886074762952888,
+  0.09360243118638997,
+  0.09288779868337321,
+  0.10236675641453347,
+  0.1073373699744426,
+  0.10367504999583542,
+  0.10573599095369848,
+  0.10241058823449595,
+  0.1820143742119283
+ ],
+ "contour_spacing_m (Z_{j+1}-Z_j)": [
+  0.3420794606208801,
+  0.31931179761886597,
+  0.3788583278656006,
+  0.32333388924598694,
+  0.3770916387438774,
+  0.3594425246119499,
+  0.38794146478176117,
+  0.31230247020721436
+ ],
+ "N_j_valid_obs_on_keep_percentiles": {
+  "p0": [
+   5.0,
+   9.0,
+   15.0,
+   11.0,
+   9.0,
+   12.0,
+   9.0,
+   13.0,
+   16.0
+  ],
+  "p5": [
+   7.0,
+   10.0,
+   21.0,
+   14.0,
+   14.0,
+   14.0,
+   11.0,
+   14.0,
+   19.0
+  ],
+  "p25": [
+   8.0,
+   11.0,
+   22.0,
+   15.0,
+   15.0,
+   17.0,
+   13.0,
+   16.0,
+   21.0
+  ],
+  "p50": [
+   8.0,
+   13.0,
+   23.0,
+   16.0,
+   16.0,
+   19.0,
+   14.0,
+   17.0,
+   22.0
+  ],
+  "p75": [
+   10.0,
+   14.0,
+   25.0,
+   18.0,
+   17.0,
+   22.0,
+   15.0,
+   21.0,
+   27.0
+  ],
+  "p95": [
+   12.0,
+   17.0,
+   28.0,
+   21.0,
+   18.0,
+   24.0,
+   19.0,
+   25.0,
+   33.0
+  ],
+  "p100": [
+   13.0,
+   20.0,
+   32.0,
+   23.0,
+   20.0,
+   27.0,
+   22.0,
+   29.0,
+   37.0
+  ]
+ },
+ "min_over_intervals_N_j_on_keep_percentiles": {
+  "p0": 5.0,
+  "p5": 7.0,
+  "p25": 8.0,
+  "p50": 8.0,
+  "p75": 10.0,
+  "p95": 12.0,
+  "p100": 13.0
+ },
+ "share_keep_with_N_j_ge_3_all_intervals (Fitton rule, info only)": 1.0,
+ "non_monotone_share_of_valid_keep": 0.02459526774595268,
+ "non_monotone_share_of_valid_full_frame": 0.0009662874376660994,
+ "coverage_on_keep": {
+  "keep_px": 32120,
+  "valid": 1.0,
+  "R_in_1_8": 0.8344022415940224,
+  "R_in_1_8_and_conf_le_0.25": 0.686986301369863,
+  "unfiltered_finite": 0.8344022415940224,
+  "filtered_finite": 0.686986301369863,
+  "R_eq_0": 0.10722291407222914,
+  "R_eq_9": 0.05837484433374844,
+  "R_eq_0_of_valid": 0.10722291407222914,
+  "R_eq_9_of_valid": 0.05837484433374844,
+  "conf_pass_rate_within_R_1_8": 0.8233274877803067
+ },
+ "R_histogram_on_keep (0..9)": [
+  3444,
+  1118,
+  1525,
+  1689,
+  2226,
+  3205,
+  3655,
+  9184,
+  4199,
+  1875
+ ],
+ "full_frame": {
+  "px": 837225,
+  "valid": 837225,
+  "R_in_1_8": 27317,
+  "unfiltered_finite": 27317,
+  "filtered_finite": 22380
+ },
+ "contours_per_level": {
+  "0.5": {
+   "lines": 31,
+   "vertices": 3150
+  },
+  "1.5": {
+   "lines": 37,
+   "vertices": 3321
+  },
+  "2.5": {
+   "lines": 34,
+   "vertices": 3558
+  },
+  "3.5": {
+   "lines": 47,
+   "vertices": 4112
+  },
+  "4.5": {
+   "lines": 41,
+   "vertices": 4513
+  },
+  "5.5": {
+   "lines": 76,
+   "vertices": 5274
+  },
+  "6.5": {
+   "lines": 107,
+   "vertices": 6069
+  },
+  "7.5": {
+   "lines": 122,
+   "vertices": 7171
+  },
+  "8.5": {
+   "lines": 116,
+   "vertices": 6621
+  }
+ },
+ "empty_levels": [],
+ "n_vertices": 43789,
+ "ndwi_out_of_range": {
+  "note": "The 0.25 threshold was defined on NBAR NDWI in [-1, 1] (Bishop-Taylor et al. 2019, p.118). These cubes hold offset-harmonised L2A reflectances, which can be negative; |NDWI| > 1 iff B03 and B08 have opposite signs, unbounded as B03 + B08 -> 0. PRIMARY 'filtered' keeps the published statistic on raw NDWI. SUPPLEMENTARY 'filtered_bounded' recomputes only the confidence with NDWI clipped to [-1, 1]; medians, R and the DEM are identical. NDWI < -1 observations (B03 > 0 > B08, |B08| > B03, typically dark water) still enter the raw medians with a land sign in both products (and in MAREA's Y).",
+  "bound": 1.0,
+  "valid_finite_obs_on_keep": 4947348,
+  "obs_ndwi_gt_+1_on_keep": 151512,
+  "obs_ndwi_lt_-1_on_keep": 6523,
+  "share_obs_abs_ndwi_gt_1_on_keep": 0.03194337653223505,
+  "share_keep_px_with_ge1_abs_ndwi_gt_1_obs": 0.6166562889165629,
+  "conf_failing_R_1_8_keep_px": 4735,
+  "conf_failing_R_1_8_keep_px_with_abs_ndwi_gt_1_obs": 4636,
+  "share_of_conf_failing_R_1_8_keep_px_with_abs_ndwi_gt_1_obs": 0.9790918690601901,
+  "conf_pass_rate_within_R_1_8_on_keep (raw NDWI, PRIMARY)": 0.8233274877803067,
+  "conf_pass_rate_within_R_1_8_on_keep (NDWI clipped to [-1,1], SUPPLEMENTARY)": 0.900115667325846,
+  "filtered_bounded_finite_share_of_keep": 0.7510585305105854,
+  "full_frame": {
+   "valid_finite_obs": 134993284,
+   "obs_ndwi_gt_+1": 1944718,
+   "obs_ndwi_lt_-1": 627153,
+   "share_obs_abs_ndwi_gt_1": 0.019051844090258594,
+   "max_abs_ndwi": 691.0,
+   "filtered_bounded_finite": 24453,
+   "filtered_px_not_in_filtered_bounded (nesting check, expect 0)": 0
+  }
+ },
+ "scoring": {
+  "dev_points": 270,
+  "dev_points_reserved_hidden": 91,
+  "dev_points_in_keep": 194,
+  "finite_points": {
+   "no delay": 194,
+   "MAREA": 194,
+   "Granadeiro": 163,
+   "NIDEM": 194,
+   "NIDEM unfiltered": 194,
+   "NIDEM bounded-conf": 194,
+   "NIDEM full frame": 195,
+   "NIDEM unfiltered full frame": 195
+  },
+  "common4_points": 163,
+  "pair_nidem_marea_points": 194,
+  "pair_nidem_nodelay_points": 194,
+  "reproduction_max_abs_diff": 8.326672684688674e-17,
+  "product_records": {
+   "no delay": "scored 97-scene 2023-2025 record (cloud-filtered usable dates of notebook cell 23; EOT20 at aoi.centroid)",
+   "MAREA": "scored 97-scene 2023-2025 record (cloud-filtered usable dates of notebook cell 23; EOT20 at aoi.centroid)",
+   "Granadeiro": "own 98-scene 2023-2025 record (sota_granadeiro 'scene' rule: scene cloud <= 10 %, nodata <= 2 %, overpass time; Eq. 1 cosine heights from EOT20 at the bbox centre)",
+   "NIDEM": "PRIMARY: all 465 2023-2025 cube scenes with an overpass time and a finite level (ITEM all-observations rule; EOT20 at aoi.centroid); ITEM pixel-quality mask"
+  }
+ },
+ "written": [
+  "products_marea/nidem\\nidem_preflight.json",
+  "products_marea/nidem\\nidem.npz",
+  "products_marea/nidem\\nidem_filtered.tif",
+  "products_marea/nidem\\nidem_unfiltered.tif",
+  "products_marea/nidem\\nidem_uncertainty.tif",
+  "products_marea/nidem\\item_confidence.tif",
+  "products_marea/nidem\\nidem_filtered_bounded_conf.tif",
+  "products_marea/nidem\\item_confidence_bounded.tif",
+  "products_marea/nidem\\item_relative_extents.tif",
+  "products_marea/nidem\\rtk_metrics_with_nidem.csv"
+ ],
+ "runtime_s": {
+  "record_s": 20.343696117401123,
+  "scene_quality_prepass_s": 58.44713497161865,
+  "load_check_C_s": 0.12838125228881836,
+  "preflight_s": 0.06587743759155273,
+  "load_check_Y_s": 1.0351767539978027,
+  "composites_s": 59.88486337661743,
+  "nidem_s": 3.879863977432251,
+  "scoring_s": 0.11303472518920898,
+  "total_s": 149.62098383903503
+ },
+ "peak_memory_mb (process peak working set)": 640.98828125,
+ "inputs_sha256": {
+  "products_marea/marea_extract.npz": "68bfa4ae5c5e28779740a805f5b720236e83ef959adbda2aad5cac2cfd057a21",
+  "products_marea/overpass_times.json": "3a26b84e1e10d28279dc2667c24e5cc72950bb00e5882692c1857c612cc61c1b",
+  "intertidal_topography_villaviciosa.ipynb": "877d7f7a264bee5f4bbdc7dbb2f6445f6ce133a1bd0518fed5b01800d226fb86",
+  "products_marea/external_products.npz": "83f5688e67334fabf0d36467ba8bcf65bb45aa7a11fdbcda72f5010b31998c6d",
+  "products_marea/rtk_onsite_metrics.csv": "854bb9ffd073a7813a587f688df671c45db96f4b039dc8dd5bedd4a8f82aa3ed"
+ }
+}

@@ -74,6 +74,8 @@ def model4(theta, h):
 
 def fit_px(y, h, m0, w_inf, lo, hi):
     """Both models on the same observations; returns thetas or None."""
+    # both models share the same robust starting guesses and the same z
+    # bounds: the comparison is between shapes, not initialisations
     a0 = float(np.percentile(y, 10))
     w0_0 = float(np.percentile(y, 90))
     z0 = float(np.median(h))
@@ -135,7 +137,9 @@ def main():
         "time")["tide_height"].to_numpy(float)
     T, P = Y.shape
     lo, hi = float(h.min()) - 0.3, float(h.max()) + 0.3
-    n_train = int(TRAIN_FRAC * T)          # chronological split
+    # chronological split, not random: the OOS judge only ever sees
+    # scenes strictly later than everything the fit saw
+    n_train = int(TRAIN_FRAC * T)
     tr, te = slice(0, n_train), slice(n_train, T)
     print(f"{T} scenes ({n_train} train / {T-n_train} test) x {P:,} px "
           f"({time.time()-t0:.0f} s)", flush=True)
@@ -192,6 +196,7 @@ def main():
                 "n": int(m.sum())}
     s4, s6 = score_z(res["z4"]), score_z(res["z6"])
 
+    # pre-registered gate (see docstring): adoption needs BOTH conditions
     gate_i = frac_better > 0.5
     gate_ii = (s6["rmse_centrado"] <= s4["rmse_centrado"] + 0.005
                and s6["pendiente"] >= s4["pendiente"] - 0.01)

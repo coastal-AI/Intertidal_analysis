@@ -1,5 +1,9 @@
 """MAREA campaign for the north coast: every cell, none inspected by hand.
 
+SUPERSEDED by campaign_north_v2.py (clearer structure, terrain-following
+cells, no environment variables); kept verbatim as the first working
+version of the campaign.
+
 Reads north_coast_cells.json (the cells defined for the campaign), and for
 each cell: ensures its cube (downloads are SERIAL — CDSE allows exactly one
 connection; that incident is in the institutional memory), then processes it

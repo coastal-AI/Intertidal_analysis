@@ -55,8 +55,15 @@ def _session_with_retries():
     return session
 
 
-def get_overpass_times(bbox, time_extent, verbose=True):
+def get_overpass_times(bbox, time_extent, verbose=True, retries=4):
     """Real UTC acquisition time of every Sentinel-2 L2A scene over an AOI.
+
+    A catalogue outage used to come back as an EMPTY or PARTIAL dict —
+    scenes silently lost their time and the estimators downstream fitted
+    fewer scenes, or nothing (2026-09-15/16, three runs at once; Ferrol
+    kept 262 of 461 dates). Now any failed page makes the whole search
+    retry, ``retries`` times with a growing pause, and after the last
+    failure it RAISES instead of returning a short answer.
 
     Parameters
     ----------
@@ -98,50 +105,69 @@ def get_overpass_times(bbox, time_extent, verbose=True):
         "limit": 100,          # small pages: fewer timeouts on long ranges
     }
 
-    session = _session_with_retries()
-    url = STAC_SEARCH
-    try:
-        page, max_pages = 0, 50            # safety stop against paging loops
-        while url and page < max_pages:
-            try:
-                resp = session.post(url, json=body, timeout=120)
-                resp.raise_for_status()
-                data = resp.json()
-                page += 1
+    import time as _time
+    for attempt in range(max(1, int(retries))):
+        overpass.clear()
+        session = _session_with_retries()
+        url = STAC_SEARCH
+        first_page_failed = False
+        try:
+            page, max_pages = 0, 50        # safety stop against paging loops
+            while url and page < max_pages:
+                try:
+                    resp = session.post(url, json=body, timeout=120)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    page += 1
 
-                features = data.get("features", [])
-                if not features and page == 1:
+                    features = data.get("features", [])
+                    if not features and page == 1:
+                        if verbose:
+                            print(f"[overpass] no scenes found for {bbox_list} "
+                                  f"in {time_extent}")
+                        break
+
+                    for feature in features:
+                        title = (feature["properties"].get("title", "")
+                                 or feature.get("id", ""))
+                        if "MSIL2A" not in title:          # keep L2A only
+                            continue
+                        match = re.search(r"_(\d{8}T\d{6})_", title)
+                        if not match:
+                            continue
+                        dt = datetime.strptime(match.group(1), "%Y%m%dT%H%M%S")
+                        overpass.setdefault(dt.strftime("%Y-%m-%d"), dt)
+
+                    nxt = next((lk for lk in data.get("links", [])
+                                if lk.get("rel") == "next"), None)
+                    if nxt:
+                        url = nxt.get("href", STAC_SEARCH)
+                        body = nxt.get("body", body)
+                    else:
+                        url = None
+                except requests.exceptions.RequestException as exc:
                     if verbose:
-                        print(f"[overpass] no scenes found for {bbox_list} "
-                              f"in {time_extent}")
+                        print(f"[overpass] STAC request failed (page {page}): {exc}")
+                    # any lost page means lost scenes: the whole search is
+                    # retried (a partial answer once passed as complete —
+                    # Ferrol, 262 of 461 dates — and nothing downstream
+                    # could tell)
+                    first_page_failed = True
                     break
-
-                for feature in features:
-                    title = (feature["properties"].get("title", "")
-                             or feature.get("id", ""))
-                    if "MSIL2A" not in title:          # keep L2A only
-                        continue
-                    match = re.search(r"_(\d{8}T\d{6})_", title)
-                    if not match:
-                        continue
-                    dt = datetime.strptime(match.group(1), "%Y%m%dT%H%M%S")
-                    overpass.setdefault(dt.strftime("%Y-%m-%d"), dt)
-
-                nxt = next((lk for lk in data.get("links", [])
-                            if lk.get("rel") == "next"), None)
-                if nxt:
-                    url = nxt.get("href", STAC_SEARCH)
-                    body = nxt.get("body", body)
-                else:
-                    url = None
-            except requests.exceptions.RequestException as exc:
-                if verbose:
-                    print(f"[overpass] STAC request failed (page {page}): {exc}")
-                if page == 1:
-                    raise                    # nothing retrieved at all
-                break                        # keep what we already have
-    finally:
-        session.close()
+        finally:
+            session.close()
+        if not first_page_failed:
+            break
+        if attempt + 1 < retries:
+            pause = 30 * (attempt + 1)
+            if verbose:
+                print(f"[overpass] retrying in {pause} s "
+                      f"({attempt + 2}/{retries})")
+            _time.sleep(pause)
+    else:
+        raise RuntimeError("[overpass] the Sentinel-2 catalogue did not "
+                           "answer after "
+                           f"{retries} attempts; no acquisition times")
 
     if not overpass and verbose:
         print("[overpass] no acquisition times retrieved — check that the AOI "

@@ -60,6 +60,7 @@ def band_lags(wet, clear, bank, cols_by_band, min_cover=50):
             scores.append(spearmanr(f[m], h[m]).statistic)
         scores = np.asarray(scores)
         i = int(np.nanargmax(scores))
+        # parabolic refinement around the argmax: sub-grid tau resolution
         taus.append(te._parabolic_argmax(scores, TAU_GRID))
         rhos.append(float(scores[i]))
     return np.asarray(taus), np.asarray(rhos)
@@ -113,6 +114,8 @@ def main():
     nb = CFG["n_bandas"]
     edges, centers, band_all = te.make_bands(
         np.where(np.isfinite(s_tpl), s_tpl, np.nan), nb)
+    # identical seed and per-band cap as m2_real/p9/p9c: every gamma route
+    # scores the very same pixel subsample, so the routes are comparable
     rng = np.random.default_rng(CFG["seed"])
     rows = []
     for k in range(nb):

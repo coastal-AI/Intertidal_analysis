@@ -47,6 +47,7 @@ OUT = os.path.join("results", "m0_baseline")
 
 
 def boot_slope(y, v, rng, n=N_BOOT):
+    # bootstrap over points (pairs resampled together): CI of the slope
     idx = rng.integers(0, len(y), (n, len(y)))
     sl = np.array([np.polyfit(y[i], v[i], 1)[0] for i in idx])
     return float(np.polyfit(y, v, 1)[0]), np.percentile(sl, [2.5, 97.5])

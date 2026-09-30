@@ -46,7 +46,6 @@ The pipeline, module by module
 :mod:`~pyintertidal.hydroperiod` submergence time and ecological zonation
 :mod:`~pyintertidal.hypsometry` area–elevation signature of the estuary
 :mod:`~pyintertidal.morphodynamics` change between epochs, sediment budgets
-:mod:`~pyintertidal.shoreline` waterlines and shoreline change
 :mod:`~pyintertidal.marsh`    flooded vegetation (salt marsh)
 :mod:`~pyintertidal.validation` LiDAR references, metrics, field transects
 :mod:`~pyintertidal.gauges`   tide-gauge comparison
@@ -119,7 +118,6 @@ from . import tidecheck
 from . import hydroperiod
 from . import hypsometry
 from . import morphodynamics
-from . import shoreline
 from . import marsh
 from . import gauges
 from . import boundary, estuary
@@ -154,6 +152,6 @@ __all__ = [
     "transect_profile",
     "sites", "scenes", "water", "terrain", "coverage", "tidecheck",
     "hydroperiod",
-    "hypsometry", "morphodynamics", "shoreline", "marsh", "gauges",
+    "hypsometry", "morphodynamics", "marsh", "gauges",
     "boundary", "estuary", "validation", "viz", "explain", "mosaic", "export", "report", "net",
 ]
