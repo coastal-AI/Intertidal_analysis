@@ -2,10 +2,18 @@
 """Download the Dutch validation cubes on the validation grid (10 m).
 
 The same cube as cell 8 of the comparison notebooks:
-``SentinelCube(aoi, 2023-2025, water="ndwi", resolution=DUTCH_RES_M)``.
-Each cube is one openEO batch job on the Copernicus Data Space. The file is
-downloaded next to the target and renamed only when complete. An existing
-cube is never downloaded again.
+``SentinelCube(aoi, 2023-2025, water="ndwi", resolution=DUTCH_RES_M)``,
+fetched as ONE openEO batch job PER YEAR on the Copernicus Data Space and
+merged. A single 3-year job at 10 m failed on the backend (2026-10-01: the
+Wadden lost its Spark executors after 68 min), so each year is a third of
+the size, asks for more executor memory, and a failed year is the only thing
+to repeat: finished years stay cached as part files.
+
+The yearly windows tile the original period exactly, [2023-01-01, 2025-12-31)
+with openEO's end-exclusive temporal extent, so the merged cube holds the same
+scenes as one 3-year job. The merge streams scene by scene and keeps the
+storage of the downloaded cubes (int16, fill -32768, zlib 6, 1 x 256 x 256
+chunks); it checks the grids are identical and the dates strictly increasing.
 
 The script also checks that ``products_<site>_10m/overpass_times.json``
 covers every scene of the cube. The notebooks read the overpass times from
@@ -31,12 +39,56 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 import pyintertidal as pit  # noqa: E402
 from pyintertidal import SentinelCube  # noqa: E402
 from experiments.validation_grid import (DUTCH_PERIOD, DUTCH_RES_M, DUTCH_SITES,  # noqa: E402
                                          dutch_cube, dutch_products)
+
+#: yearly windows, end-exclusive like openEO's temporal extent; together they
+#: are exactly the 3-year extent of one job, ("2023-01-01", "2025-12-31")
+YEARS = (("2023-01-01", "2024-01-01"), ("2024-01-01", "2025-01-01"),
+         ("2025-01-01", DUTCH_PERIOD[1]))
+#: more room per Spark executor than the backend default
+JOB_OPTIONS = {"executor-memory": "4G", "executor-memoryOverhead": "4G"}
+BANDS = ("B03", "B08", "SCL")
+
+
+def part_path(site, year_start):
+    return dutch_cube(site).replace(".nc", f".part{year_start[:4]}.nc")
+
+
+def merge_parts(parts, out):
+    """Concatenate the yearly cubes along time into ``out`` (streamed)."""
+    import xarray as xr
+
+    dss = [xr.open_dataset(p, chunks={}) for p in parts]
+    tdim = "t" if "t" in dss[0].dims else "time"
+    for p, d in zip(parts[1:], dss[1:]):
+        assert np.array_equal(d["x"].values, dss[0]["x"].values), f"{p}: x grid differs"
+        assert np.array_equal(d["y"].values, dss[0]["y"].values), f"{p}: y grid differs"
+    ds = xr.concat(dss, dim=tdim, data_vars="minimal", coords="minimal", compat="override")
+    t = ds[tdim].values
+    assert np.all(np.diff(t) > np.timedelta64(0, "ns")), "dates not strictly increasing across years"
+    enc = {}
+    for v in BANDS:
+        e = dss[0][v].encoding
+        enc[v] = {k: e[k] for k in ("dtype", "zlib", "complevel", "shuffle", "chunksizes", "_FillValue")
+                  if k in e}
+    te = dss[0][tdim].encoding
+    enc[tdim] = {k: te[k] for k in ("units", "calendar", "dtype") if k in te}
+    tmp = out + ".merge"
+    ds.chunk({tdim: 1}).to_netcdf(tmp, encoding=enc)
+    for d in dss:
+        d.close()
+    with xr.open_dataset(tmp) as chk:
+        assert chk.sizes[tdim] == len(t), "merged cube lost scenes"
+    os.replace(tmp, out)
+    for p in parts:
+        os.remove(p)
+    return len(t)
 
 
 def check_overpass(site, dates):
@@ -79,19 +131,29 @@ def main(argv=None):
     bad = {}
     for site in a.sites:
         aoi = pit.sites.get(site)
-        cube = SentinelCube(aoi, DUTCH_PERIOD, water="ndwi", cache_path=dutch_cube(site),
-                            resolution=DUTCH_RES_M)
-        if not cube.cached:
-            conn = conn or pit.scenes.connect(interactive=False)
-            t0 = time.time()
-            cube.ensure(conn)
-            print(f"[{site}] downloaded in {(time.time() - t0) / 60:.0f} min")
-        transform, _ = cube.grid
-        H, W = cube.shape
-        print(f"[{site}] {dutch_cube(site)}: {len(cube.dates)} scenes, {H} x {W} px "
-              f"@ {abs(transform.a):g} m")
+        final = SentinelCube(aoi, DUTCH_PERIOD, water="ndwi", cache_path=dutch_cube(site),
+                             resolution=DUTCH_RES_M)
+        if not final.cached:
+            parts = []
+            for y0, y1 in YEARS:
+                part = SentinelCube(aoi, (y0, y1), water="ndwi", cache_path=part_path(site, y0),
+                                    resolution=DUTCH_RES_M)
+                if not part.cached:
+                    conn = conn or pit.scenes.connect(interactive=False)
+                    t0 = time.time()
+                    part.ensure(conn, job_options=JOB_OPTIONS)
+                    print(f"[{site}] {y0[:4]} downloaded in {(time.time() - t0) / 60:.0f} min", flush=True)
+                else:
+                    print(f"[{site}] {y0[:4]} already downloaded", flush=True)
+                parts.append(part.cache_path)
+            n = merge_parts(parts, dutch_cube(site))
+            print(f"[{site}] merged {len(parts)} years -> {dutch_cube(site)} ({n} scenes)", flush=True)
+        transform, _ = final.grid
+        H, W = final.shape
+        print(f"[{site}] {dutch_cube(site)}: {len(final.dates)} scenes, {H} x {W} px "
+              f"@ {abs(transform.a):g} m", flush=True)
         assert abs(abs(transform.a) - DUTCH_RES_M) < 1e-6, "cube grid is not the validation grid"
-        missing = check_overpass(site, list(cube.dates))
+        missing = check_overpass(site, list(final.dates))
         if missing:
             bad[site] = missing
     if bad:

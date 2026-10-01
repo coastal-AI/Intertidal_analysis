@@ -203,11 +203,12 @@ class SentinelCube:
                   f"(truncated download?) — it will be fetched again")
             return False
 
-    def ensure(self, connection=None, verbose=True):
+    def ensure(self, connection=None, verbose=True, job_options=None):
         """Download the cube if — and only if — it is not cached yet.
 
         One OpenEO batch job: ``load_collection`` → resample to the target
         grid → ``save_result(netCDF)`` → download. Returns ``self``.
+        ``job_options`` (e.g. executor memory) is passed to the backend as is.
         """
         if self.cached:
             if verbose:
@@ -232,7 +233,8 @@ class SentinelCube:
         except Exception:
             pass
         job = cube.save_result(format="netCDF").create_job(
-            title=f"pyintertidal_cube_{self.aoi.name}")
+            title=f"pyintertidal_cube_{self.aoi.name}",
+            **({"job_options": job_options} if job_options else {}))
         # Record the id BEFORE blocking on it. `start_and_wait` can run for an
         # hour; if the process dies in that window — a killed campaign, a
         # laptop that slept — the backend job carries on with nobody holding a
