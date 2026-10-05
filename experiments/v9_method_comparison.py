@@ -111,22 +111,23 @@ def load_nidem(path, keep):
     return z["filtered_keep"].astype(float), n_sc, "ok"
 
 
-GRAN_KEYS = ("final_keep", "dem_keep", "final_dem_keep", "z_keep")
+#: the product file experiments/v8_granadeiro2021.py writes; the same folder
+#: also holds caches (boundary_1min_cache.npz, ...) that are not products
+GRAN_FILE = "granadeiro2021.npz"
+GRAN_KEY = "final_keep"
 
 
 def load_granadeiro(path, keep):
     """The faithful Granadeiro final DEM on the keep pixels, or None."""
-    files = sorted(glob.glob(os.path.join(path, "*.npz")))
-    if not files:
+    f = os.path.join(path, GRAN_FILE)
+    if not os.path.exists(f):
         return None, None, "missing"
-    z = np.load(files[0], allow_pickle=True)
-    key = next((k for k in GRAN_KEYS if k in z.files), None)
-    if key is None:
-        raise KeyError(f"{files[0]}: none of {GRAN_KEYS} in {z.files}")
-    if "keep" in z.files:
-        assert np.array_equal(z["keep"], keep), f"{files[0]}: keep differs from the extraction"
-    v = z[key].astype(float)
-    assert v.shape == keep.shape, (files[0], v.shape, keep.shape)
+    z = np.load(f, allow_pickle=True)
+    if GRAN_KEY not in z.files:
+        raise KeyError(f"{f}: no {GRAN_KEY!r} in {z.files}")
+    assert np.array_equal(z["keep"], keep), f"{f}: keep differs from the extraction"
+    v = z[GRAN_KEY].astype(float)
+    assert v.shape == keep.shape, (f, v.shape, keep.shape)
     n_sc = None
     for k in ("scene_dates", "dates", "used_dates"):
         if k in z.files:
