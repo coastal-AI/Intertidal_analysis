@@ -65,11 +65,32 @@ this module makes that explicit rather than leaving it to be discovered.
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 
 #: Fixed reference instant for every phase in this package. Any constant
 #: would do; what matters is that it is the SAME one everywhere.
 EPOCH = np.datetime64("1992-01-01T00:00:00")
+
+
+def model_tides(**kwargs):
+    """``eo_tides.model.model_tides`` with the standard streams left intact.
+
+    eo-tides calls ``colorama.init()`` on every prediction, and each call
+    wraps ``sys.stdout``/``sys.stderr`` once more. A notebook that predicts
+    once per distinct lag (the Wadden at 10 m: ~140 lags) ends with ~140
+    nested wrappers and the next print raises RecursionError
+    (2026-10-02). The streams are restored after the call; the
+    prediction itself is untouched.
+    """
+    from eo_tides.model import model_tides as _model_tides
+
+    out, err = sys.stdout, sys.stderr
+    try:
+        return _model_tides(**kwargs)
+    finally:
+        sys.stdout, sys.stderr = out, err
 
 
 def hours_since_epoch(times):
@@ -167,7 +188,6 @@ class PyTMDBoundary(BoundaryProvider):
 
     def levels(self, times):
         import pandas as pd
-        from eo_tides.model import model_tides
 
         idx = pd.DatetimeIndex(pd.to_datetime(times))
         if idx.tz is not None:

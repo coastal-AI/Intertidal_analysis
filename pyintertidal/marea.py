@@ -139,7 +139,7 @@ def build_bank(lat, lon, times, bank_taus=None, model="EOT20",
     Returns ``(bank, rising)``.
     """
     import pandas as pd
-    from eo_tides.model import model_tides
+    from .boundary import model_tides          # keeps sys.stdout intact (eo-tides/colorama)
     from . import tide_estimators as te
 
     bank_taus = list(BANK_TAUS if bank_taus is None else bank_taus)
