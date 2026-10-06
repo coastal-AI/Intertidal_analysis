@@ -193,16 +193,25 @@ def score_villaviciosa(cfg):
     common = np.ones(len(zt), bool)
     for p in main_present:
         common &= np.isfinite(samp[p])
+    # the notebook (and the reproduction above) scores ellipsoidal heights;
+    # the table uses the national datum when the survey carries it, so the
+    # bias is the product zero against Alicante (RMSE, slope and r are
+    # median-centred and change only by the geoid's few-cm spatial variation)
+    if "elev_alicante" in dev:
+        zt_t, datum = np.asarray(dev["elev_alicante"], float), "Alicante (REDNAP orthometric)"
+    else:
+        zt_t, datum = zt, "ETRS89 ellipsoidal"
     rows = []
     for name, v in samp.items():
         for subset, sel in (("all", np.ones(len(zt), bool)), ("common", common)):
-            f = ev.ols_against_truth(zt, np.where(sel, v, np.nan))
+            f = ev.ols_against_truth(zt_t, np.where(sel, v, np.nan))
             rows.append({"site": "villaviciosa", "product": name, "subset": subset,
                          "rule": records[name][0], "scenes": records[name][1],
                          **({k: f[k] for k in ("n", "rmse_m", "slope", "r", "bias_m")} if f else
                             {"n": int(np.sum(np.isfinite(v) & sel)), "rmse_m": np.nan, "slope": np.nan,
                              "r": np.nan, "bias_m": np.nan})})
-    return pd.DataFrame(rows), {"common_members": main_present, "common_n": int(common.sum())}
+    return pd.DataFrame(rows), {"common_members": main_present, "common_n": int(common.sum()),
+                                "truth_datum": datum}
 
 
 def score_dutch(site, cfg):
