@@ -41,6 +41,8 @@ MDT02 = "data_v4/truth/pnoa/MDT02-WGS84-0015-3-COB2.tif"
 WATER_STD_M = 0.005          # a 3 x 3 window of 2 m pixels flatter than this is a water surface
 MIN_GROUND = 0.8             # a 10 m cell needs this share of ground pixels
 OUT = "docs/paper/tables"
+#: when set, Granadeiro rows print this text instead of numbers (numbers.json keeps them)
+GRAN_STATUS = None
 MAIN = ("no delay", "MAREA", "NIDEM", "Granadeiro")
 LABEL = {"no delay": "no delay", "MAREA": "MAREA", "NIDEM": "NIDEM",
          "Granadeiro": "Granadeiro et al.\\ (2021)"}
@@ -88,6 +90,11 @@ def rtk_table(cmp_dir, numbers):
     info = json.load(open(f"{cmp_dir}/summary.json"))["villaviciosa"]
     rows = []
     for p, a in method_rows(df).items():
+        if p == "Granadeiro" and GRAN_STATUS:
+            if a is not None and a["n"]:
+                numbers.setdefault("rtk", {})[p] = {k: float(a[k]) for k in ("n", "rmse_m", "slope", "r", "bias_m")}
+            rows.append(f"{LABEL[p]} & \\multicolumn{{6}}{{l}}{{{GRAN_STATUS}}} \\\\")
+            continue
         if a is None or not a["n"]:
             state = "not run" if a is None or str(a["scenes"]) == "missing" else "not computable"
             rows.append(f"{LABEL[p]} & \\multicolumn{{6}}{{l}}{{{state}}} \\\\")
@@ -113,6 +120,12 @@ def external_table(cmp_dir, numbers):
         allr, comr = method_rows(df, "all"), method_rows(df, "common")
         for p in MAIN:
             a, c = allr[p], comr[p]
+            if p == "Granadeiro" and GRAN_STATUS:
+                if a is not None and a["n"]:
+                    numbers.setdefault("vaklodingen", {}).setdefault(site, {})[p] = {
+                        "n": float(a["n"]), "rmse_m": float(a["rmse_m"]), "slope": float(a["slope"]), "r": float(a["r"])}
+                rows.append(f"{LABEL[p]} & \\multicolumn{{6}}{{l}}{{{GRAN_STATUS}}} \\\\")
+                continue
             if a is None or str(a["scenes"]) == "missing":        # v9: no product file yet
                 rows.append(f"{LABEL[p]} & \\multicolumn{{6}}{{l}}{{not run}} \\\\")
                 continue
@@ -125,6 +138,50 @@ def external_table(cmp_dir, numbers):
             numbers.setdefault("vaklodingen", {}).setdefault(site, {})[p] = {
                 "n": float(a["n"]), "rmse_m": float(a["rmse_m"]), "slope": float(a["slope"]),
                 "r": float(a["r"]), "rmse_common_m": float(c["rmse_m"]) if c is not None else None}
+        numbers["vaklodingen"].setdefault(site, {})["common_n"] = nc
+        rows.append("\\midrule")
+    return rows[:-1]
+
+
+def external_table_nidem_csv(root, suf, numbers):
+    """Vaklodingen rows from the CSVs the NIDEM run writes next to the
+    notebook's (``vaklodingen_metrics_with_nidem.csv``): no delay and MAREA
+    reproduced from the notebook to 1e-9, NIDEM primary, and the common
+    subset of exactly these three (two at the Ems, where NIDEM is not
+    computable). Used while Granadeiro is under review, so the common subset
+    does not depend on it; the 'all' rows equal v9's."""
+    rows = []
+    for site, name in DUTCH.items():
+        tag = PAIRS[site][4]
+        pdir = f"{root}/{PAIRS[site][3].format(suf=suf)}"
+        f = f"{pdir}/comparison_{tag}/vaklodingen_metrics_with_nidem.csv"
+        if not os.path.exists(f):
+            continue
+        df = pd.read_csv(f)
+        n_rec = json.load(open(f"{pdir}/marea_{tag}/result.json"))["n_escenas"]
+        diag = json.load(open(f"{pdir}/nidem_{tag}/nidem_diagnostics.json", encoding="utf-8"))
+        com = df[df["subset"].str.startswith("common3")]
+        if com.empty:
+            com = df[df["subset"].str.startswith("common2")]
+        nc = int(com["n"].iloc[0])
+        rows.append(f"\\multicolumn{{7}}{{@{{}}l}}{{\\emph{{{name}}} (common subset $n_c$ = {fmt_n(nc)})}} \\\\")
+        for p in MAIN:
+            if p == "Granadeiro":
+                rows.append(f"{LABEL[p]} & \\multicolumn{{6}}{{l}}{{{GRAN_STATUS or 'not run'}}} \\\\")
+                continue
+            a = df[(df["product"] == p) & (df["subset"] == "all")]
+            c = com[com["product"] == p]
+            sc = n_rec if p != "NIDEM" else diag.get("n_scenes")
+            if a.empty or not a["n"].iloc[0]:
+                rows.append(f"{LABEL[p]} & {scenes(sc)} & \\multicolumn{{5}}{{l}}{{not computable$^{{b}}$}} \\\\")
+                continue
+            a = a.iloc[0]
+            cc = float(c["rmse_m"].iloc[0]) if len(c) else np.nan
+            rows.append(f"{LABEL[p]} & {scenes(sc)} & {fmt_n(a['n'])} & {fmt(a['rmse_m'])} & "
+                        f"{fmt(a['slope'], 2)} & {fmt(a['r'], 2)} & {fmt(cc)} \\\\")
+            numbers.setdefault("vaklodingen", {}).setdefault(site, {})[p] = {
+                "scenes": sc, "n": float(a["n"]), "rmse_m": float(a["rmse_m"]), "slope": float(a["slope"]),
+                "r": float(a["r"]), "rmse_common_m": cc}
         numbers["vaklodingen"].setdefault(site, {})["common_n"] = nc
         rows.append("\\midrule")
     return rows[:-1]
@@ -204,6 +261,11 @@ def lidar_table(root, numbers):
             continue
         a = ols_against_truth(truth.ravel(), v.ravel())
         c = ols_against_truth(truth[common], v[common])
+        numbers["lidar"][p] = {"n": a["n"], "rmse_m": a["rmse_m"], "slope": a["slope"], "r": a["r"],
+                               "bias_m": a["bias_m"], "rmse_common_m": c["rmse_m"]}
+        if p == "Granadeiro" and GRAN_STATUS:
+            rows.append(f"{LABEL[p]} & \\multicolumn{{6}}{{l}}{{{GRAN_STATUS}}} \\\\")
+            continue
         rows.append(f"{LABEL[p]} & {fmt_n(a['n'])} & {fmt(a['rmse_m'])} & {fmt(a['slope'], 2)} & "
                     f"{fmt(a['r'], 2)} & {fmt(c['rmse_m'])} & {fmt(a['bias_m'], 2)} \\\\")
         numbers["lidar"][p] = {"n": a["n"], "rmse_m": a["rmse_m"], "slope": a["slope"], "r": a["r"],
@@ -303,13 +365,18 @@ def main(argv=None):
     ap.add_argument("--dutch-res", type=int, default=10, help="10 (products_<site>_10m) or 20")
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--skip-lidar", action="store_true")
+    ap.add_argument("--granadeiro-status", default=None,
+                    help="print this text in the Granadeiro rows instead of numbers (e.g. 'under review')")
     a = ap.parse_args(argv)
+    global GRAN_STATUS
+    GRAN_STATUS = a.granadeiro_status
     suf = "" if a.dutch_res == 20 else f"_{a.dutch_res}m"
     cmp_dir = a.comparison_dir or f"{a.root}/results/method_comparison"
     os.makedirs(a.out, exist_ok=True)
     numbers = {"root": os.path.abspath(a.root), "comparison_dir": os.path.abspath(cmp_dir),
                "dutch_res_m": a.dutch_res}
-    tables = {"rtk": rtk_table(cmp_dir, numbers), "external": external_table(cmp_dir, numbers),
+    tables = {"rtk": rtk_table(cmp_dir, numbers), "external": (external_table_nidem_csv(a.root, suf, numbers) if a.granadeiro_status
+                           else external_table(cmp_dir, numbers)),
               "lag": lag_table(a.root, suf, numbers), "stations": stations_table(a.root, numbers)}
     if not a.skip_lidar:
         tables["lidar"] = lidar_table(a.root, numbers)

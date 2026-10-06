@@ -1,13 +1,12 @@
-% MAREA — validation only: design, results to date and the planned
-% pressure-sensor campaign. Standalone; numbers are those of the paper draft
-% (docs/paper/drafts/validation_2_6_and_results.tex), which trace to the CSVs
-% the pipeline notebooks write:
-%   Villaviciosa RTK: products_marea/rtk_onsite_metrics.csv (run 2026-09-24)
-%   gauge pairs:      products_<site>/comparison_*/lag_pair_metrics.csv,
-%                     judge_metrics.csv (runs 2026-09-23)
-%   external elevation: lidar_metrics.csv, vaklodingen_metrics.csv (2026-09-23)
-%   Villaviciosa bands and lags: products_marea/marea.npz
-% Compile:  pdflatex validation_summary.tex
+% MAREA — validation only: design, results of the 10 m run and the planned
+% pressure-sensor campaign. Standalone. Every table row is written by
+%   python -m experiments.v10_validation_report --root results/server_10m \
+%          --dutch-res 10 --granadeiro-status "under review"
+% into docs/paper/tables/*_rows.tex (numbers.json holds every figure the text
+% quotes), from the 10 m validation run on the group server (2026-10-01..06):
+% notebooks (MAREA, no delay), experiments/v7 (NIDEM), v8 (Granadeiro,
+% under review), v9 (scores, reproducing every notebook to 1e-16).
+% Compile from docs/paper:  pdflatex validation_summary.tex (twice)
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[english]{babel}
@@ -21,10 +20,13 @@
 
 \setlength{\parskip}{0.4em}
 \setlength{\parindent}{0pt}
+% table rows written by experiments/v10_validation_report.py; \input is not
+% safe inside a tabular, the TeX primitive is
+\makeatletter\newcommand\inputrows[1]{\@@input #1 }\makeatother
 
 \title{MAREA: validation design, results to date\\and the pressure-sensor campaign}
 \author{Jorge Al\'ias (AIC, Universidad de Oviedo) \and Fernando Garc\'ia-Gonz\'alez (IEO-CSIC) \and Pablo Gonz\'alez (AIC, Universidad de Oviedo)}
-\date{Working document, September 2026}
+\date{Working document, 6 October 2026}
 
 \begin{document}
 \maketitle
@@ -46,12 +48,12 @@ Each quantity is tested on site, in the R\'ia de Villaviciosa, and
 externally, against records and surveys made by others
 (Table~\ref{tab:blocks}). Nothing that judges a result enters a fit: the
 inner tide gauges are never used as boundary, and a quarter of the
-Villaviciosa RTK-GNSS survey was sealed as a test set before any
-elevation product existed.
+Villaviciosa RTK-GNSS points (91 of 361) was sealed as a test set before
+any elevation product existed.
 
 \begin{table}[H]
 \centering
-\caption{The four validation blocks.}
+\caption{The validation blocks.}
 \label{tab:blocks}
 \small
 \setlength{\tabcolsep}{4pt}
@@ -60,37 +62,38 @@ elevation product existed.
 \toprule
 block & reference & sites & metric & status \\
 \midrule
-lag, on site & pressure sensors along the r\'ia & Villaviciosa & lag in reaching the same level; & planned \\
- & & & level error with and without the lag & (Section~\ref{sec:pressure}) \\
-lag, external & tide-gauge pairs: mouth and & Ferrol, Westerschelde, & same as above & provisional \\
+lag, on site & pressure sensors along the r\'ia & Villaviciosa & error of the level difference & planned \\
+ & & & mouth--station, $E(\tau)$ & (Section~\ref{sec:pressure}) \\
+lag, external & tide-gauge pairs: mouth and & Ferrol, Westerschelde, & same as above & 10~m run \\
  & inner gauge held out & Ems-Dollard, Wadden & & \\
-elevation, on site & RTK-GNSS survey & Villaviciosa & RMSE, slope $b$, $r$ & confirmed \\
-elevation, external & Vaklodingen bathymetric & Westerschelde, Ems-Dollard, & RMSE, slope $b$, $r$ & provisional \\
+elevation, on site & RTK-GNSS survey (points) & Villaviciosa & RMSE, slope $b$, $r$, bias & 10~m run \\
+elevation, on site & IGN PNOA LiDAR, 2~m (whole map) & Villaviciosa & RMSE, slope $b$, $r$, bias & 10~m run \\
+elevation, external & Vaklodingen bathymetric & Westerschelde, Ems-Dollard, & RMSE, slope $b$, $r$ & 10~m run \\
  & and intertidal survey (NL) & Wadden Sea & & \\
 \bottomrule
 \end{tabular}}
 \end{table}
 
-\section{Metrics}
+\section{Metrics, datums and methods compared}
 
-\paragraph{Lag.} Between a station at the mouth and a station inside, the
-lag in reaching the same level is the mean, over paired tidal cycles, of
-$t^{\mathrm{in}}_c - t^{\mathrm{mouth}}_c$: the instants at which both
-records cross the same level on the same limb (rising or falling), at the
-25th, 50th and 75th percentile of the mouth's level. It is compared with
-the lag MAREA applies at the inner station's distance from the mouth and
-with the 95\,\% bootstrap interval of its section.
-
-\paragraph{Effect of the lag on the water level.} The level predicted at
-the inner station is the boundary tide $h_B$ read $\tau$ minutes earlier;
-its error against the recorded level $h^{\mathrm{in}}$ is
+\paragraph{Lag.} Between a gauge at the mouth (level $h_M$) and a gauge
+inside ($h_I$), each centred on its own mean over 2023--2025, the
+measured level difference is $m(t) = h_M(t) - h_I(t)$. A lag $\tau$
+predicts it as $p_\tau(t) = h_M(t) - h_M(t-\tau)$: the inner level is the
+mouth's, $\tau$ minutes later. The error of that prediction,
 \begin{equation}
-\mathrm{RMSE}_h = \sqrt{\frac{1}{N}\sum_{t}\big(d(t) - \operatorname{median}d\big)^2},
-\qquad d(t) = h_B(t-\tau) - h^{\mathrm{in}}(t),
-\label{eq:level}
+E(\tau) = \sqrt{\frac{1}{N}\sum_{t}\big(m(t) - p_\tau(t)\big)^2}
+        = \sqrt{\frac{1}{N}\sum_{t}\big(h_M(t-\tau) - h_I(t)\big)^2},
+\label{eq:lag}
 \end{equation}
-computed with $\tau = 0$ (the single level every published method assumes)
-and with MAREA's lag.
+over every 10-min instant of 2023--2025 with both records, is reported for
+no lag ($\tau = 0$: one uniform level over the estuary), for the lag MAREA
+applies at the inner gauge, and for the best constant lag, which no lag
+can beat. The slope $b$ and correlation $r$ of $p_\tau$ on $m$ say
+whether MAREA's lag gives the right size ($b = 1$; below 1 the lag is too
+short, above 1 too long) and shape of the difference. The lag between the
+gauges in reaching the same level (mean over paired tidal cycles, both
+limbs, three levels) is given for reference.
 
 \paragraph{Elevation.} Product and truth are on different vertical datums,
 so each series is centred on its own median, $y_i = z_i -
@@ -108,93 +111,186 @@ compresses it ($b < 1$); $r$, how much of it the map explains. Only truth
 within the range of tide levels the archive sampled ($\pm 0.25$~m) is
 scored.
 
-\section{Results to date}
+\paragraph{Datums.} The maps are referenced to the boundary tide: the EOT20
+ocean tide model, whose zero is the mean sea surface. The Villaviciosa
+RTK-GNSS survey and the PNOA LiDAR are both in the Spanish national datum
+(REDNAP, mean sea level at Alicante): the survey's ellipsoidal heights
+were converted with the IGN geoid EGM08-REDNAP ($N \approx 52.74$~m in
+Villaviciosa). In that common datum the LiDAR and the RTK agree to a
+median difference of 0.00~m (centred RMSE 0.12~m, $r = 0.98$, on the 270
+development points), so the two are interchangeable references. Because
+every metric is median-centred, the datum changes only the bias, which in
+Villaviciosa measures where the maps' zero lies against the national
+datum. Tide gauges are compared after removing their own mean; the
+Vaklodingen (NAP) enter only through centred metrics.
 
-\subsection{Elevation on site: RTK-GNSS survey, R\'ia de Villaviciosa (confirmed)}
+\paragraph{Methods compared.} Every method works on the same archive
+(Sentinel-2 L2A cube of the site, 2023--2025, 10~m grid at every site, the
+same boundary tide) and is scored on the same pixels (the intertidal
+record of the MAREA extraction), against the same truth, with the same
+metrics. On top of that, each method applies its own published rules for
+selecting scenes and masking pixels:
+\begin{itemize}
+\item \textbf{No delay}: MAREA's elevation inversion with the lag set to
+  zero, on MAREA's record. It isolates what the lag contributes.
+\item \textbf{MAREA}: the same inversion with the interior lag. Its record
+  keeps a scene when the whole frame is at most 5\,\% cloudy or, failing
+  that, when the transition zone (the pixels that change between water and
+  land) is at most 10\,\% cloudy; clouds inside kept scenes are masked per
+  pixel.
+\item \textbf{NIDEM} (Bishop-Taylor et al., 2019; ITEM, Sagar et al.,
+  2017): waterline-contour interpolation over tide intervals with ITEM's
+  all-observations rule and pixel-quality mask.
+\item \textbf{Granadeiro et al.\ (2021)}, faithful reimplementation (their
+  logistic fit with \texttt{nplr}, lag sample, \texttt{mgcv} GAM and scene
+  rule, $<10\,\%$ cloud over the frame; Sen2Cor instead of ACOLITE). It has
+  been run at every site, but its outputs show signs of an input problem
+  (an NDWI dispersion above its theoretical maximum of 1 in the intertidal
+  mask, near-constant preliminary elevations); its scores are withheld
+  until that is resolved.
+\end{itemize}
+Each method is scored on every pixel it resolves (\emph{all}) and on the
+pixels every reported method resolves (\emph{common}), the fair
+head-to-head.
+
+\section{Results of the 10 m run}
+
+\subsection{Elevation on site: RTK-GNSS survey, R\'ia de Villaviciosa}
 
 The survey holds 361 fixed points taken at the lowest spring low water of
-the month; the development subset is scored here, the test subset stays
-sealed. Both maps share the same archive, epoch (2023--2025) and boundary
-(EOT20 at the mouth).
+the month; the 270 development points are scored here (194 fall on the
+mapped intertidal pixels), the test points stay sealed.
 
 \begin{table}[H]
 \centering
 \caption{Elevation against the RTK-GNSS survey, Villaviciosa development
-subset. $n$: surveyed points the map resolves; RMSE, $b$, $r$ as in
-Eq.~\eqref{eq:elev}; bias: ellipsoidal heights against the tide-model
-datum, removed before scoring.}
+subset, heights in the Alicante datum. Scenes: number each method's own
+rule keeps; $n$: surveyed points the map resolves (the same 194 for every
+method); RMSE, $b$, $r$ as in Eq.~\eqref{eq:elev}; bias: median of map
+minus survey, the position of the maps' zero against the national datum.}
 \label{tab:rtk}
 \small
-\begin{tabular}{@{}lrrrrr@{}}
+\begin{tabular}{@{}lrrrrrr@{}}
 \toprule
-method & $n$ & RMSE (m) & $b$ & $r$ & bias (m) \\
+method & scenes & $n$ & RMSE (m) & $b$ & $r$ & bias (m) \\
 \midrule
-MAREA & 194 & 0.193 & 0.72 & 0.86 & $-52.8$ \\
-Granadeiro et al.\ (2021), reimplemented & 163 & 0.275 & 0.39 & 0.63 & $-53.3$ \\
+\inputrows{tables/rtk_rows.tex}
 \bottomrule
 \end{tabular}
 \end{table}
 
-The lag applied on the surveyed pixels is 5~min in median and 16 at most:
-Villaviciosa tests the elevation estimator more than the lag, which is
-why the on-site lag campaign of Section~\ref{sec:pressure} is needed.
+MAREA and its no-delay twin are the most accurate maps on the surveyed
+flats (0.19~m), NIDEM follows at 0.23~m, although it reproduces the relief
+better ($b = 0.85$ against 0.73). The maps' zero lies 0.08~m above the
+Alicante datum. The lag applied on the surveyed pixels is a few minutes:
+Villaviciosa tests the elevation estimator more than the lag, which is why
+the on-site lag campaign of Section~\ref{sec:pressure} is needed.
 
-\subsection{Lag against tide-gauge pairs (provisional)}
+\subsection{Elevation on site: LiDAR over the whole map, R\'ia de Villaviciosa}
+
+The IGN PNOA LiDAR DTM (2~m, second coverage, Alicante datum) covers the
+whole r\'ia. A LiDAR returns the water surface where water stood during
+the flight, so water is removed at 2~m first: a 6-m window flatter than
+5~mm is a water surface (7\,\% of the pixels, mostly two flight strips with
+water at $-0.97$ and $-0.57$~m). Each 10~m cell is the mean of its ground
+pixels, kept when ground covers at least 80\,\% of the cell. A one-pixel
+shift of the LiDAR raises MAREA's error in every direction, so the two
+grids are co-registered.
 
 \begin{table}[H]
 \centering
-\caption{Interior lag against tide-gauge pairs, 2023--2025. Lag between
-the mouth and the inner gauge in reaching the same level (positive: inner
-gauge later); lag MAREA applies at the inner gauge, a single value, with
-in brackets the 95\,\% bootstrap confidence interval of the 3-km section
-that contains the gauge (30 resamplings of the scenes); RMS difference between both gauges at
-the same instant (the error of one uniform level); level error at the
-inner gauge from the boundary, Eq.~\eqref{eq:level}, without and with the
-lag.}
+\caption{Elevation against the PNOA LiDAR DTM, Villaviciosa, on 10~m cells.
+$n$, RMSE, $b$, $r$ on every cell each map resolves; RMSE common on the
+19\,198 cells every method resolves; bias against the Alicante datum.}
+\label{tab:lidar}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+method & $n$ & RMSE (m) & $b$ & $r$ & RMSE common (m) & bias (m) \\
+\midrule
+\inputrows{tables/lidar_rows.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the cells every method resolves, the three maps agree with the LiDAR to
+within 1~cm of each other (0.29--0.30~m), with NIDEM again closer to the
+full relief ($b = 0.81$). MAREA and no delay map about 6\,000 cells more
+than NIDEM, the lowest ground beside the channels; those cells carry most
+of their higher error over all cells (0.45~m), and are where a per-pixel
+quality filter for MAREA is needed. Near the RTK points the maps and the
+LiDAR agree to about 0.12~m: the surveyed flats are the easier part of the
+map.
+
+\subsection{Lag against tide-gauge pairs}
+
+\begin{table}[H]
+\centering
+\caption{Interior lag against tide-gauge pairs, 2023--2025. Scenes:
+MAREA's record. Lag between the gauges in reaching the same level
+(positive: inner gauge later); lag MAREA applies at the inner gauge, with
+in brackets the 95\,\% bootstrap interval of its 3-km section (30
+resamplings of the scenes). $E$: error of the predicted level difference
+between mouth and inner gauge, Eq.~\eqref{eq:lag}, without lag, with
+MAREA's lag and with the best constant lag (in brackets, that lag). $b$,
+$r$: slope and correlation of MAREA's predicted difference on the measured
+one ($b < 1$: lag too short; $b > 1$: too long).}
 \label{tab:lag}
 \small
 \setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{@{}lrrrr@{}}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
- & lag, gauges & lag, MAREA (min) & same instant, & level error (m): \\
-site (inner gauge, km) & (min) & [95\,\% CI of band] & RMS (m) & no lag $\to$ MAREA \\
+ & & lag, gauges & lag, MAREA (min) & $E$ (m) & $E$ (m) & $E$ (m), best & & \\
+site (inner gauge, km) & scenes & (min) & [95\,\% CI of band] & no lag & MAREA & (lag, min) & $b$ & $r$ \\
 \midrule
-Ferrol (Ferrol2, 10.1) & $+4$ & $0$ $[0, +2]$ & 0.10 & $0.112 \to 0.112$ \\
-Westerschelde (Terneuzen, 21.9) & $+19$ & $+7$ $[+4, +17]$ & 0.28 & $0.356 \to 0.311$ \\
-Ems-Dollard (Delfzijl, 24.4) & $+51$ & $+63$ $[+54, +72]$ & 0.50 & $0.620 \to 0.358$ \\
-Wadden Sea, Vlie (Harlingen, 18.3) & $+88$ & $+129$ $[+123, +138]$ & 0.53 & $0.562 \to 0.303$ \\
+\inputrows{tables/lag_rows.tex}
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
-\subsection{Elevation against the Vaklodingen (provisional)}
+Where the tide reaches the inner gauge late (Westerschelde, Ems-Dollard,
+Wadden), MAREA's lag removes most of the error of a uniform level: from
+0.28 to 0.20~m, 0.50 to 0.26~m and 0.53 to 0.23~m, that is 48, 73 and
+81\,\% of it. In the Ems-Dollard it is close to the best any constant lag
+achieves (0.26 against 0.25~m). In the Westerschelde the lag is too short
+(8 against 20~min, $b = 0.30$) and in the Wadden too long (121 against
+93~min, $b = 1.21$). In Ferrol, with no lag to measure (4~min), MAREA
+applies none.
+
+\subsection{Elevation against the Vaklodingen}
 
 \begin{table}[H]
 \centering
-\caption{Elevation against the Rijkswaterstaat Vaklodingen, the
-official bathymetric and intertidal survey of the Dutch coast (20~m
-grid, NAP), on all intertidal pixels each map resolves,
-Eq.~\eqref{eq:elev}.}
+\caption{Elevation against the Rijkswaterstaat Vaklodingen, the official
+bathymetric and intertidal survey of the Dutch coast (20~m cells, NAP),
+Eq.~\eqref{eq:elev}. Maps on a 10~m grid. Scenes: number each method's own
+rule keeps. $n$, RMSE, $b$, $r$ on every intertidal pixel each map
+resolves; last column, RMSE on the pixels every reported method resolves
+(common subset, $n_c$). $^{b}$~Not computable with its own rule: the
+lowest tide interval holds one scene, valid on almost no pixel.}
 \label{tab:external}
 \small
-\begin{tabular}{@{}lrrrr@{}}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrr@{}}
 \toprule
-method & $n$ & RMSE (m) & $b$ & $r$ \\
+method & scenes & $n$ & RMSE (m) & $b$ & $r$ & RMSE common (m) \\
 \midrule
-\multicolumn{5}{@{}l}{\emph{Westerschelde}, Vaklodingen} \\
-MAREA & 62\,181 & 0.435 & 0.76 & 0.92 \\
-Granadeiro & 45\,005 & 0.777 & 0.78 & 0.77 \\
-\midrule
-\multicolumn{5}{@{}l}{\emph{Ems-Dollard}, Vaklodingen} \\
-MAREA & 412\,565 & 0.363 & 0.65 & 0.84 \\
-Granadeiro & 98\,953 & 0.531 & 0.39 & 0.58 \\
-\midrule
-\multicolumn{5}{@{}l}{\emph{Wadden Sea (Vlie)}, Vaklodingen} \\
-MAREA & 348\,894 & 0.329 & 0.81 & 0.68 \\
-Granadeiro & 65\,576 & 0.477 & 0.65 & 0.44 \\
+\inputrows{tables/external_rows.tex}
 \bottomrule
 \end{tabular}
 \end{table}
+
+In the Ems-Dollard, where the tide reaches the inner flats about an hour
+late, applying the lag is what makes the map usable: the error falls from
+0.60 to 0.35~m and the slope rises from 0.10 to 0.64. In the
+Westerschelde, where the lag is small, MAREA and no delay are equivalent
+(0.40--0.41~m) and NIDEM is slightly more accurate (0.37~m). In the
+Wadden, MAREA's map is worse than no delay (0.41 against 0.37~m on all
+pixels, 0.38 against 0.37~m on the common ones) and NIDEM is the most
+accurate (0.29~m): the lag MAREA applies there overshoots the gauges' by
+about half an hour (Table~\ref{tab:lag}), and the reason this degrades the
+elevation while it improves the water level is under investigation.
 
 \section{Further work: the pressure-sensor campaign in Villaviciosa}\label{sec:pressure}
 
@@ -213,17 +309,16 @@ the sensor.
 
 \begin{table}[H]
 \centering
-\caption{Planned stations and the MAREA lag each one will test (current
-Villaviciosa product, 2023--2025; sections of 3~km from the mouth).}
+\caption{Planned stations and the MAREA lag each one will test
+(Villaviciosa product, 2023--2025 record of 97 scenes; sections of 3~km
+from the mouth).}
 \label{tab:stations}
 \small
 \begin{tabular}{@{}llrr@{}}
 \toprule
 station & position & from mouth (km) & MAREA lag (min) [95\,\% interval] \\
 \midrule
-P0 & mouth, reference & $\approx 0$--1 & --- \\
-P1 & section 1 centre & $\approx 4.3$ & $3.8$ $[0.0, 6.7]$ \\
-P2 & section 2 centre & $\approx 7.6$ & $20.5$ $[12.0, 29.6]$ \\
+\inputrows{tables/stations_rows.tex}
 P3 (optional) & inner end of the flats & $\approx 9$ & extrapolated from section 2 \\
 \bottomrule
 \end{tabular}
@@ -259,23 +354,21 @@ functions produced Table~\ref{tab:lag}.
 \paragraph{Analysis.} Every station is set against P0 exactly as the
 gauge pairs of Table~\ref{tab:lag}:
 \begin{enumerate}
+\item the error $E(\tau)$ of the level difference with the station,
+  Eq.~\eqref{eq:lag}, without lag, with MAREA's lag and with the best
+  constant lag, and the slope $b$ and correlation $r$;
 \item the lag in reaching the same level, per limb, at the 25th, 50th and
   75th percentile of P0's level, compared with the MAREA lag of
   Table~\ref{tab:stations};
-\item the same-instant level difference, the error of one uniform level
-  over the r\'ia;
-\item the level error at each station from the boundary,
-  Eq.~\eqref{eq:level}, with $\tau = 0$ and with MAREA's lag;
 \item at the Sentinel-2 overpasses that fall inside the campaign, the
   measured local water level against the one MAREA assigns (boundary plus
   lag): the exact quantity the elevation inversion uses.
 \end{enumerate}
 
 \paragraph{What counts as success, fixed in advance.} The measured lag at
-each station falls inside the 95\,\% interval of its section, and applying
-MAREA's lag lowers the level error of Eq.~\eqref{eq:level} at the inner
-stations. A measured lag outside the interval is reported as such and
-fed back as a known limitation, not tuned away.
+each station falls inside the 95\,\% interval of its section, and MAREA's
+lag lowers $E$ at the inner stations. A measured lag outside the interval
+is reported as such and fed back as a known limitation, not tuned away.
 
 \paragraph{External elevation references.} Beyond Villaviciosa, the
 elevation will be tested against bathymetric LiDAR or official
