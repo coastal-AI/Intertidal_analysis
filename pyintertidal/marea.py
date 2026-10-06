@@ -41,6 +41,15 @@ TAU_DETECT_MIN = 0.0      # no detection threshold: the fitted lag of every
                           # an artefact; the matched null is reported as the
                           # significance band, not used as a gate). Negative
                           # lags are clipped to 0 by causality, band by band.
+#: Per-pixel quality rule (2026-10-06, fixed before re-validation): an
+#: elevation is kept only if it is INTERPOLATED from the pixel's own record,
+#: i.e. at least this many clear observations were taken with the (lagged)
+#: water level below it and as many above it. Fewer than 3 on a side cannot
+#: tell a wet/dry transition from one misclassified or mislevelled scene
+#: (non-tidal residual ~0.13 m). It removes elevations pinned to the edge of
+#: the sampled range — the lowest inner flats of the Wadden when the lag
+#: moves the record off low water. Applied to MAREA and no delay alike.
+QUALITY_MIN_BRACKET = 3
 
 
 def extract(cube_path):
@@ -99,7 +108,7 @@ def extract(cube_path):
 
 
 def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
-                  min_obs=8, min_b=0.15, max_b=2.5, max_a=2.5):
+                  min_obs=8, min_b=0.15, max_b=2.5, max_a=2.5, min_bracket=0):
     """Per-pixel elevation from NDWI series under a level series ``h``.
 
     THE canonical inversion of the package: closed-form (a, b) sweep over a
@@ -107,6 +116,11 @@ def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
     amplitudes exploded in frozen prediction). Every experiment and the
     campaign call this one function — five near-copies were folded into it
     at delivery time. Returns ``(z, sigma)``, NaN where the guards reject.
+
+    ``min_bracket``: the quality rule (``QUALITY_MIN_BRACKET`` in the
+    products): keep ``z`` only with at least this many clear observations
+    whose level ``h`` is below it and as many above it. 0 (the default)
+    leaves the historical behaviour of every older experiment unchanged.
     """
     lo = float(np.min(h)) if lo is None else lo
     hi = float(np.max(h)) if hi is None else hi
@@ -120,6 +134,12 @@ def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
                                         h, grid, SG_GRID)
         ok = ((N >= min_obs) & (b > min_b) & (b < max_b)
               & (np.abs(a) < max_a))
+        if min_bracket:
+            clear = np.asarray(C[:, s]) > 0
+            hh = np.asarray(h, float)[:, None]
+            below = (clear & (hh < mu[None, :])).sum(axis=0)
+            above = (clear & (hh > mu[None, :])).sum(axis=0)
+            ok &= (below >= min_bracket) & (above >= min_bracket)
         z[s] = np.where(ok, mu, np.nan)
         sg_out[s] = np.where(ok, sg, np.nan)
     return z, sg_out
@@ -176,7 +196,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
                 tide_dir="tide_models", region_mask=None, boundary=None,
                 extraction=None, mouth_side="any", verbose=True,
                 band_km=3.0, min_px_band=500, n_boot=30, min_scenes=80,
-                overpass_times=None):
+                overpass_times=None, quality_min_bracket=QUALITY_MIN_BRACKET):
     """The full MAREA product for one cube. Writes ``out_dir``/{marea.npz,
     result.json, figure.png} and returns the result dict.
 
@@ -184,6 +204,8 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     overpass time, or the run is refused (result.json "pocas_escenas").
     The default 80 is the historical floor; a record restricted by a
     scene rule (e.g. the transition-zone cloud screening) can be shorter.
+
+    ``quality_min_bracket``: see QUALITY_MIN_BRACKET (0 disables the rule).
 
     ``overpass_times``: {date: timestamp} of the acquisitions, e.g. the
     site's cached overpass_times.json. When given, it replaces the live
@@ -365,7 +387,8 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
                 t_real - pd.Timedelta(minutes=float(tv))), float)
         else:
             h_k = bank.at(float(tv))
-        z[cols], sg[cols] = _invert(Y[:, cols], C[:, cols], h_k, lo, hi)
+        z[cols], sg[cols] = _invert(Y[:, cols], C[:, cols], h_k, lo, hi,
+                                    min_bracket=quality_min_bracket)
 
     # hypsometry with uncertainty (sigma as the per-pixel jitter)
     from .hypsometry import curve_with_uncertainty
@@ -392,6 +415,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         "s_max_km": (float(np.nanmax(s_km))
                      if np.isfinite(s_km).any() else None),
         "band_km": float(band_km), "min_px_band": int(min_px_band),
+        "quality_min_bracket": int(quality_min_bracket),
         "centros_km": np.asarray(centers).tolist(),
         "tau_min": np.asarray(tau).tolist(),
         "tau_usado_min": np.asarray(tau_used).tolist(),

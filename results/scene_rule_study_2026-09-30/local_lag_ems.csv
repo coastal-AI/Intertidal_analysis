@@ -1,0 +1,11 @@
+record,scenes,pixels,n_px,tau_min,flat_lo,flat_hi,nll_curvature
+all scenes,462,band 8 (MAREA's),1200,65.0,60.0,65.0,0.3998291412372121
+all scenes,462,within 1 km of the gauge,1200,35.0,35.0,40.0,0.2421803754006675
+all scenes,462,within 2 km of the gauge,1200,55.0,55.0,55.0,0.42391724387377516
+all scenes,462,within 3 km of the gauge,1200,55.0,55.0,55.0,0.41794274820810673
+all scenes,462,within 5 km of the gauge,1200,60.0,60.0,60.0,0.4085061056972059
+transition-zone rule,48,band 8 (MAREA's),1200,70.0,70.0,70.0,0.41703159997242956
+transition-zone rule,48,within 1 km of the gauge,1200,35.0,35.0,40.0,0.14253221794283844
+transition-zone rule,48,within 2 km of the gauge,1200,50.0,50.0,50.0,0.43266646351829235
+transition-zone rule,48,within 3 km of the gauge,1200,55.0,55.0,55.0,0.48373092322752803
+transition-zone rule,48,within 5 km of the gauge,1200,60.0,60.0,60.0,0.4885710793935775
