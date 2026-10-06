@@ -100,11 +100,13 @@ def load_nidem(path, keep):
     """The FILTERED NIDEM DEM on the keep pixels (primary product), or None
     when the run is NOT COMPUTABLE / missing. Also returns the scene count."""
     npz, diag = os.path.join(path, "nidem.npz"), os.path.join(path, "nidem_diagnostics.json")
-    if not os.path.exists(npz):
-        return None, None, "missing"
+    # a NOT COMPUTABLE run writes its diagnostics but no nidem.npz: read the
+    # verdict first, so it is not mistaken for a run that never happened
     d = json.load(open(diag, encoding="utf-8")) if os.path.exists(diag) else {}
     if str(d.get("status", "ok")).upper().startswith("NOT"):
         return None, d.get("n_scenes"), "NOT COMPUTABLE"
+    if not os.path.exists(npz):
+        return None, None, "missing"
     z = np.load(npz, allow_pickle=True)
     assert np.array_equal(z["keep"], keep), f"{path}: keep differs from the extraction"
     n_sc = int(len(z["dates"])) if "dates" in z.files else d.get("n_scenes")
