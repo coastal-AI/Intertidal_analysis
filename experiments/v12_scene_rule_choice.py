@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Which scene record should MAREA use? A truth-free choice (2026-10-06).
 
-Two records per site, both with the tile lag model and the per-pixel
+Two records per site, both with the band lag model and the per-pixel
 quality rule (QUALITY_MIN_BRACKET), the per-pixel SCL cloud mask always on:
   * "transition": the transition-zone scene rule (the record of the last run,
     read from its result.json);

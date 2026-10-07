@@ -348,7 +348,8 @@ def _parabolic_argmax(score, tau_grid):
         den = d0 - 2 * d1 + d2
         off = 0.5 * (d0 - d2) / den if abs(den) > 1e-12 else 0.0
         step = tau_grid[1] - tau_grid[0]
-        return float(tau_grid[j] - np.clip(off, -1, 1) * step)
+        # vertex of the parabola through (-1, d0), (0, d1), (1, d2) is at +off
+        return float(tau_grid[j] + np.clip(off, -1, 1) * step)
     return float(tau_grid[j])
 
 
