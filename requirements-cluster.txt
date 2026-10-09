@@ -43,3 +43,7 @@ nbformat==5.10.4
 ipykernel==7.2.0
 nbconvert
 pytest==9.1.1
+
+# Zarr validation cubes (experiments/download_cube_zarr.py, experiments/zarr_cubes.py)
+zarr==3.2.1
+numcodecs==0.16.5
