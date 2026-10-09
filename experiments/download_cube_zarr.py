@@ -24,9 +24,18 @@ and reach 10 m by NEAREST NEIGHBOUR, the pipeline's method (its only 20 m
 band so far was SCL): no new interpolation, and the 20 m bands can be
 aggregated back exactly. The FORMAT REPORT measures it on the delivered
 data (share of pixel pairs inside one 20 m cell holding the same value:
-100 % = nearest from the native grid). A store whose grid is in another CRS
-or off the existing cube's 10 m lattice is refused. Values are kept as
-delivered (int16, fill -32768); nothing is rescaled.
+100 % = nearest from the native grid, measured on the dates with most valid
+pixels). A store whose grid is in another CRS or off the existing cube's
+10 m lattice is refused; a store on that lattice with another extent is
+cropped / padded (with the fill) to the reference grid, so every year of a
+site has the same grid. The reference grid is the site's 10 m netCDF cube,
+else a complete store of the site, else the grid predicted from the bbox
+(the log says which). Values are kept as delivered (int16, fill -32768);
+nothing is rescaled. The no-data value is the one the delivered data
+DECLARE (``_FillValue``/``nodata`` attribute) or a Zarr ``fill_value`` of
+-32768; zarr's default ``fill_value`` 0 is never taken as no-data on its
+own (0 is clear sky in CLD): if -32768 occurs in the data it is the no-data,
+otherwise the run stops (AMBIGUOUS NO-DATA) unless ``--nodata`` is given.
 
 One openEO batch job per year (windows [YYYY-01-01, YYYY+1-01-01), end-
 exclusive like ``experiments/download_cube.py``), with the same
@@ -39,21 +48,36 @@ pipeline's files are only read). Resumable: a finished year is skipped; a
 year that failed is the only one repeated; a job left running by a killed
 session is reattached (job id in ``<year>.part/job.json``, or found by its
 title on the backend) instead of paid for twice; a job that failed leaves its
-backend error log in ``<year>.part/``.
+backend error log in ``<year>.part/`` and the next job is made with twice the
+executor memory (capped at 8G); a ``<year>.part/`` made for another request
+(other ``--format-options``, ``--backend-format`` or bands: the job title
+carries the graph hash) is moved aside to ``<year>.part.superseded-<time>``
+and a new job is made, so an old download is never normalised for a new
+request, and files of two jobs never mix. Every store records the share of
+low B12 digital numbers per date and the processing baselines of its input
+products (``radiometry`` / ``input_baselines``), so ``open_cube`` can warn
+when a window joins years with and without the +1000 L2A offset.
 
 The Zarr output of the backend is flagged experimental and nobody here has
 seen it, so the normaliser accepts a directory store, a zipped store, a
 store delivered file by file (one asset per file), several assets (split by
 band or by date), Zarr v2 or v3 (sharded, big-endian, without dimension
 names or group metadata), per-band variables or a ``bands`` dimension, and
-netCDF as a fallback; it stops with a clear message otherwise, and also
-when the delivered grid is in another CRS or off the 10 m lattice of the
-existing cube (``--allow-grid-offset`` overrides). ``--test`` runs ONE tiny
-job first (2 km x 2 km inside Villaviciosa, 2025-06-01..15, all bands),
-prints what the backend says about its Zarr format and a FORMAT REPORT of
-what came back, writes ``<root>/_test/villaviciosa/2025.zarr`` and opens it
-through ``zarr_cubes.open_cube``. Run it again to re-normalise the same
-download (no new job); delete ``<root>/_test`` to pay for a new one.
+netCDF as a fallback, and one store per date without a time dimension (the
+date from the STAC item / asset metadata or the file name); it stops with a
+clear message otherwise, and also when the delivered grid is in another CRS
+or off the 10 m lattice of the existing cube (``--allow-grid-offset``
+overrides). Whatever goes wrong while reading the delivered files, the
+FORMAT REPORT gathered so far (with the raw Zarr metadata when zarr cannot
+open a store, and the traceback) is written to ``<year>.format.txt`` and
+printed. ``--test`` runs ONE tiny job first (2 km x 2 km inside
+Villaviciosa, 2025-06-01..15, all bands), prints what the backend says about
+its Zarr format and a FORMAT REPORT of what came back, writes
+``<root>/_test/villaviciosa/2025.zarr`` and opens it through
+``zarr_cubes.open_cube``. Run it again to re-normalise the same download (no
+new job); add ``--new-job`` (once) to pay for a new one: deleting
+``<root>/_test`` is not enough, the finished job would be found again on the
+backend by its title.
 
 Usage (from the repository root; on the server after ``source env.sh``)::
 
@@ -63,6 +87,13 @@ Usage (from the repository root; on the server after ``source env.sh``)::
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023-2025
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2017-2022
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2023 --verify-only
+
+To force a fresh job for a year, pass ``--new-job`` ONCE: the year's
+``<year>.part`` is moved aside and no job is reattached (deleting the folder
+alone is not enough: a finished job of the same title would be found again
+on the backend). Do not keep ``--new-job`` when resuming that run. A year
+whose store is complete is skipped even with ``--new-job`` (nothing is paid
+for twice); delete ``<year>.zarr`` first to make it again.
 
 Importing this module does nothing (no chdir, no network); ``main`` works
 from the repository root.
@@ -159,10 +190,26 @@ TYPICAL_DATES = {2016: 63, 2017: 126, 2018: 145, 2019: 145, 2020: 144, 2021: 146
 #: Zstd-5 ratios measured on the Ferrol 10 m cube: 10 m bands ~1.75x, 20 m
 #: bands upsampled by nearest ~4.5x, SCL ~100x, CLD ~30x (assumed)
 BYTES_PER_PIXEL_DATE = 6.0
+#: a failed job is retried with twice the executor memory, up to this (GB)
+MAX_RETRY_MEMORY_GB = 8
+#: radiometric convention check: band, and the DN below which a valid value
+#: means "no +1000 offset" (DN < 500 is reflectance < 0.05 without the
+#: offset, which water has in B12; with the offset it would be < -0.05)
+RADIOMETRY_BANDS = ("B12", "B11")
+LOW_DN = 500
+#: a delivered chunk larger than this (bytes) is reported as a memory risk
+BIG_CHUNK_BYTES = 2e9
+#: dates sampled from a year for the no-data, value and resampling reports
+REPORT_CANDIDATES = 12
+REPORT_DATES = 4
 
 
 class FormatError(RuntimeError):
     """The backend delivered something the normaliser does not understand."""
+
+
+class AmbiguousNoData(FormatError):
+    """No declared no-data value, and the data cannot tell (``--nodata``)."""
 
 
 class JobFailed(RuntimeError):
@@ -479,9 +526,17 @@ class Ledger:
     def known(self, job_id):
         return any(j["job_id"] == job_id for j in self.data["jobs"])
 
-    def add(self, job_id, status, source):
-        self.data["jobs"].append({"job_id": job_id, "status": status, "source": source,
-                                  "added_utc": utcnow().isoformat(timespec="seconds")})
+    def failed_created(self):
+        """Jobs made by this downloader for this store that ended in error."""
+        return sum(1 for j in self.data["jobs"]
+                   if j.get("status") == "error" and j.get("source") == "created")
+
+    def add(self, job_id, status, source, **extra):
+        """A new entry; ``extra``: the submitted process graph, job options."""
+        self.data["jobs"].append(dict({"job_id": job_id, "status": status, "source": source,
+                                       "title": self.data.get("title"),
+                                       "added_utc": utcnow().isoformat(timespec="seconds")},
+                                      **extra))
         self.save()
         return self.data["jobs"][-1]
 
@@ -499,9 +554,10 @@ def job_summary(info):
 
 
 def find_orphan(conn, title, ledger, log):
-    """A job of the same title still useful on the backend (newest first)."""
+    """A job of the same title still useful on the backend (newest first).
+    Looks through the last 1000 jobs (the client's default is 100)."""
     try:
-        jobs = list(conn.list_jobs())
+        jobs = list(conn.list_jobs(limit=1000))
     except Exception as exc:              # listing is a convenience, never fatal
         log(f"could not list the backend's jobs ({exc}); no orphan search")
         return None
@@ -598,16 +654,46 @@ def save_error_logs(job, part, log):
     return path
 
 
+def _memory_gb(value):
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([gGmM])[bB]?\s*", str(value))
+    if not m:
+        return None
+    v = float(m.group(1))
+    return v if m.group(2).lower() == "g" else v / 1024.0
+
+
+def escalate_job_options(options, times=1, cap_gb=MAX_RETRY_MEMORY_GB):
+    """Job options with executor memory and overhead doubled ``times`` times
+    (capped at ``cap_gb``): a year that lost its Spark executors is not
+    resubmitted with the memory it failed with."""
+    out = dict(options)
+    for _ in range(int(times)):
+        for key in ("executor-memory", "executor-memoryOverhead"):
+            gb = _memory_gb(out.get(key)) if key in out else None
+            if gb is not None and gb < cap_gb:
+                out[key] = f"{int(min(cap_gb, math.ceil(gb * 2)))}G"
+    return out
+
+
+def submitted_graph(info):
+    """The process graph a job description carries (None when absent)."""
+    proc = (info or {}).get("process") or {}
+    return proc.get("process_graph") if isinstance(proc, dict) else None
+
+
 def ensure_finished_job(ctx, req, title, log):
     """A FINISHED job for ``req``: the ledger's, an orphan of the same title,
     or a new one. Returns ``(job, info)``; raises JobFailed after
-    ``ctx.retries`` new jobs failed in this run."""
+    ``ctx.retries`` new jobs failed in this run. A new job after failed ones
+    gets more executor memory (``escalate_job_options``); its submitted
+    process graph and options are kept in the ledger. ``ctx.new_job`` skips
+    the orphan search (a paid fresh job)."""
     conn = ctx.connection()
     led = Ledger(req.part, title)
     created_here = 0
     while True:
         cur = led.current()
-        if cur is None:
+        if cur is None and not ctx.new_job:
             orphan = find_orphan(conn, title, led, log)
             if orphan is not None:
                 log(f"reattaching to job {orphan['id']} ({orphan.get('status')}, created "
@@ -621,10 +707,14 @@ def ensure_finished_job(ctx, req, title, log):
                                format_options=ctx.format_options)
             flat = sr.flat_graph()
             zc.write_json(flat, Path(req.part) / "process_graph.json")
-            job = sr.create_job(title=title, job_options=ctx.job_options)
+            nfail = led.failed_created()
+            opts = escalate_job_options(ctx.job_options, nfail)
+            job = sr.create_job(title=title, job_options=opts)
             created_here += 1
-            cur = led.add(job.job_id, "created", "created")
-            log(f"created job {job.job_id} '{title}' (job options {ctx.job_options})")
+            cur = led.add(job.job_id, "created", "created", job_options=opts, process_graph=flat)
+            log(f"created job {job.job_id} '{title}' (job options {opts}"
+                + (f", memory raised after {nfail} failed job(s)" if opts != ctx.job_options else "")
+                + ")")
         job = conn.job(cur["job_id"])
         try:
             info = job.describe()
@@ -634,6 +724,8 @@ def ensure_finished_job(ctx, req, title, log):
                 led.update(cur, status="gone")
                 continue
             raise
+        if not cur.get("process_graph") and submitted_graph(info):
+            led.update(cur, process_graph=submitted_graph(info))
         status = info.get("status")
         if status == "created":
             log(f"starting job {job.job_id}")
@@ -668,10 +760,22 @@ def collect_assets(job, meta):
             if link.get("rel") != "item" or not link.get("href"):
                 continue
             item = job.connection.get(link["href"], expected_status=200).json()
+            props = item.get("properties") or {}
+            when = props.get("datetime") or props.get("start_datetime")
             for k, v in (item.get("assets") or {}).items():
                 name = k if k not in assets else f"{item.get('id', 'item')}/{k}"
+                if isinstance(v, dict) and when and not asset_datetime(v):
+                    v = dict(v, item_datetime=when)
                 assets[name] = v
     return [(k, v["href"], v) for k, v in assets.items() if isinstance(v, dict) and v.get("href")]
+
+
+def asset_datetime(md):
+    """The acquisition date/time an asset (or its STAC item) declares."""
+    for k in ("datetime", "start_datetime", "item_datetime"):
+        if md.get(k):
+            return str(md[k])
+    return None
 
 
 def results_gone(job):
@@ -705,13 +809,48 @@ def asset_relpath(name, href):
     return safe_relpath(name)
 
 
+DOWNLOAD_MARKER = "download_job.json"
+
+
+def clear_download(part, log, why):
+    """Remove the files of a previous download from ``part``."""
+    part = Path(part)
+    gone = [n for n in ("assets", "extracted") if (part / n).exists()]
+    for n in gone:
+        shutil.rmtree(part / n)
+    for n in (ASSETS_DONE, DOWNLOAD_MARKER):
+        if (part / n).exists():
+            (part / n).unlink()
+            gone.append(n)
+    if gone:
+        log(f"{why}: removed {gone} from {part}")
+
+
 def download_results(job, req, log, workers=4):
     """Download every asset into ``<part>/assets`` (resumable per file) and
-    write ``assets.json`` when all are complete."""
+    write ``assets.json`` when all are complete.
+
+    Files are only reused from a download of the SAME job
+    (``download_job.json``): when the job changes (results expired, a new
+    job after a failure) whatever an older job left is removed first, so a
+    store is never made of files from two jobs."""
     from concurrent.futures import ThreadPoolExecutor
     from openeo.rest.job import ResultAsset
 
     part = Path(req.part)
+    part.mkdir(parents=True, exist_ok=True)
+    marker = part / DOWNLOAD_MARKER
+    prev = None
+    if marker.is_file():
+        try:
+            prev = json.loads(marker.read_text(encoding="utf-8")).get("job_id")
+        except ValueError:
+            prev = None
+    if prev != job.job_id and ((part / "assets").exists() or (part / ASSETS_DONE).exists()):
+        clear_download(part, log, f"files of {'job ' + str(prev) if prev else 'an unknown job'} "
+                                  f"in the part folder, now downloading job {job.job_id}")
+    zc.write_json({"job_id": job.job_id, "started_utc": utcnow().isoformat(timespec="seconds")},
+                  marker)
     results = job.get_results()
     meta = results.get_metadata()
     zc.write_json(meta, part / "job-results.json")
@@ -739,7 +878,7 @@ def download_results(job, req, log, workers=4):
         target = raw / rel
         size = md.get("file:size")
         if target.is_file() and (size is None or target.stat().st_size == int(size)):
-            return str(rel), target.stat().st_size, md.get("type"), "kept"
+            return str(rel), target.stat().st_size, md, "kept"   # same job (see the marker)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".download")
         err = None
@@ -750,7 +889,7 @@ def download_results(job, req, log, workers=4):
                 if size is not None and got != int(size):
                     raise IOError(f"{name}: {got} bytes downloaded, {size} announced")
                 os.replace(tmp, target)
-                return str(rel), got, md.get("type"), "downloaded"
+                return str(rel), got, md, "downloaded"
             except Exception as exc:          # signed URLs expire: refresh them
                 err = exc
                 log(f"download of {name} failed ({exc}); attempt {attempt}/4")
@@ -775,9 +914,12 @@ def download_results(job, req, log, workers=4):
         done = [fetch(it) for it in items]
     got = sum(d[1] for d in done)
     log(f"downloaded {len(done)} asset(s), {got / 1e9:.2f} GB in {(time.time() - t0) / 60:.1f} min")
-    zc.write_json({"job_id": job.job_id, "complete": True,
-                   "files": {d[0]: {"size": d[1], "type": d[2]} for d in done}},
-                  part / ASSETS_DONE)
+    files = {}
+    for rel, size_, md, _ in done:
+        files[rel] = {"size": size_, "type": md.get("type"), "job_id": job.job_id}
+        if asset_datetime(md):
+            files[rel]["datetime"] = asset_datetime(md)
+    zc.write_json({"job_id": job.job_id, "complete": True, "files": files}, part / ASSETS_DONE)
     return meta
 
 
@@ -1209,14 +1351,70 @@ class Interpretation:
     warnings: list
     source: str
     attrs: dict = field(default_factory=dict)    # root attributes as delivered
+    zarr_fills: dict = field(default_factory=dict)  # band -> Zarr fill_value as delivered
+    nodata_lines: list = field(default_factory=list)  # the no-data decision, for the report
+    groups: list = field(default_factory=list)   # bands sharing delivered chunks
+
+
+def date_from_path(path):
+    """A YYYY-MM-DD / YYYYMMDD date in the last components of a path."""
+    import pandas as pd
+
+    for comp in reversed(Path(str(path)).parts[-3:]):
+        for m in re.finditer(r"(?<!\d)(20\d{2})-?(0[1-9]|1[0-2])-?(0[1-9]|[12]\d|3[01])(?!\d)", comp):
+            try:
+                return str(pd.Timestamp(f"{m.group(1)}-{m.group(2)}-{m.group(3)}").date())
+            except ValueError:
+                continue
+    return None
+
+
+def _as_naive_ns(value):
+    import pandas as pd
+
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("UTC").tz_localize(None)
+    return np.datetime64(ts.to_datetime64(), "ns")
+
+
+def _counts(a, values, max_dates=REPORT_CANDIDATES):
+    """``({value: count}, dates read)`` over up to ``max_dates`` dates of a
+    (t, y, x) band spread over the axis (all dates of a short window)."""
+    T = a.sizes["t"]
+    idx = np.unique(np.linspace(0, T - 1, min(T, max_dates)).round().astype(int)) if T else []
+    arr = np.asarray(a.isel(t=list(idx)).values)
+    out = {}
+    for v in values:
+        if v is None:
+            continue
+        hit = np.isnan(arr) if isinstance(v, float) and np.isnan(v) else arr == v
+        out[v] = int(hit.sum())
+    return out, len(idx), int(arr.size)
+
+
+def _same_value(a, b):
+    if a is None or b is None:
+        return a is b
+    fa, fb = isinstance(a, float) and np.isnan(a), isinstance(b, float) and np.isnan(b)
+    return (fa and fb) or (not fa and not fb and a == b)
 
 
 def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
-              require_all=True):
+              require_all=True, date_hint=None, nodata=None, strict_nodata=True,
+              count_nodata=False):
     """Find the requested bands, the axes, the grid and the CRS in one
     RawData, with the values untouched. Raises FormatError, with what was
     seen, whenever the layout leaves a doubt. ``require_all=False`` (one of
-    several assets) accepts a subset of the bands, but not none of them."""
+    several assets) accepts a subset of the bands, but not none of them.
+
+    ``date_hint``: the date of a store without a time dimension (one store
+    per date), from the job's STAC metadata; else a date in its path.
+    ``nodata``: the no-data value of bands that declare none (``--nodata``).
+    ``strict_nodata``: an undecidable no-data value raises (production);
+    False (``--test``) reports it and goes on with -32768.
+    ``count_nodata``: count the candidate no-data values of every band for
+    the report (always done for an ambiguous band)."""
     ds = raw.ds
     notes, warns = list(raw.notes), []
     # axes
@@ -1225,6 +1423,17 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
         ax = axis_of(d)
         if ax and ax not in axes:
             axes[ax] = d
+    if "t" not in axes and "y" in axes and "x" in axes:
+        when, wsrc = (date_hint, "the job's STAC metadata") if date_hint else \
+            (date_from_path(raw.source), "the path")
+        if when is None:
+            raise FormatError(f"{raw.source}: no 't' dimension among {list(ds.dims)} and no date in "
+                              f"the job's metadata or in the path")
+        yx = {axes["y"], axes["x"]}
+        ds = ds.assign({v: ds[v].expand_dims("t") for v in ds.data_vars if yx <= set(ds[v].dims)})
+        ds = ds.assign_coords(t=("t", np.array([_as_naive_ns(when)])))
+        axes["t"] = "t"
+        notes.append(f"no time dimension: one date {when} taken from {wsrc}")
     for ax in ("t", "y", "x"):
         if ax not in axes:
             raise FormatError(f"{raw.source}: no {ax!r} dimension among {list(ds.dims)}")
@@ -1253,6 +1462,7 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
         raise FormatError(f"{raw.source}: the time dimension has no coordinate values")
     tvals = _decode_time(ds["t"])
     found, delivered, src_attrs = {}, {}, {}
+    groups = None
     wanted = {band_key(b): b for b in bands}
     banddim = axes.get("bands")
     if banddim is not None:
@@ -1277,6 +1487,13 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
                 delivered[wanted[k]] = f"{hv}[bands={lab}]"
                 src_attrs[wanted[k]] = (hv, ds[hv].attrs)
         notes.append(f"layout: one variable {hv!r} with a bands dimension, labels {labels}")
+        data = ds[hv].data
+        cb = (int(data.chunksize[ds[hv].dims.index("bands")])
+              if getattr(data, "chunksize", None) else ds.sizes["bands"])
+        if cb > 1 and len(found) > 1:
+            groups = [[b for b in bands if b in found]]
+            notes.append(f"{hv!r} holds {cb} bands per chunk: the bands are written together, so "
+                         f"each delivered chunk is decoded once per block")
     else:
         cands = [v for v in ds.data_vars if {"y", "x"} <= set(ds[v].dims) and "t" in ds[v].dims]
         keys = {}
@@ -1388,31 +1605,66 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
         oy = zc._overlap(y, ref_grid["y"])
         if ox is not None and oy is not None and ref_grid.get("crs_wkt"):
             wkt = ref_grid["crs_wkt"]
-            csrc = (f"reference netCDF cube {ref_grid['path']} (the delivered coordinates lie on "
-                    f"its grid; the delivered data carry no CRS)")
-            warns.append("CRS not in the delivered data: taken from the reference cube")
+            label = {"store": "reference store", "predicted": "reference grid"}.get(
+                ref_grid.get("kind"), "reference netCDF cube")
+            csrc = (f"{label} {ref_grid['path']} (the delivered coordinates lie on its grid; the "
+                    f"delivered data carry no CRS)")
+            warns.append(f"CRS not in the delivered data: taken from the {label}")
     if wkt is None:
         raise FormatError(f"{raw.source}: no CRS found (no grid-mapping variable, no crs/EPSG "
                           f"attribute, nothing in the job metadata)")
-    # fill and scale, per band
-    fills, fsrc = {}, {}
+    # fill and scale, per band. A declared attribute decides; else a Zarr
+    # fill_value equal to the standard no-data (-32768, NaN for floats);
+    # zarr's DEFAULT fill_value (0) is not a declaration: 0 is a valid value
+    # (clear sky in CLD), so the data decide, and an undecidable case stops.
+    fills, fsrc, zfills, nlines, ambiguous = {}, {}, {}, [], []
     for b in found:
         vname, attrs = src_attrs[b]
         dtype = found[b].dtype
+        std = zc.FILL if dtype.kind in "iu" else float("nan")
         declared, key = None, None
         for k in FILL_ATTRS:
             if attrs.get(k) is not None:
                 declared, key = _py(attrs[k]), k
                 break
         zfill = raw.info.get(vname, {}).get("fill_value")
+        if raw.kind == "netcdf":
+            zfill = None                  # netCDF's fill is the declared _FillValue
+        if zfill is not None and isinstance(zfill, float) and np.isnan(zfill) and dtype.kind != "f":
+            zfill = None
+        zfills[b] = zfill
         if declared is not None:
             fill, src = declared, f"attribute {key!r}"
-        elif zfill is not None and not (isinstance(zfill, float) and np.isnan(zfill)
-                                        and dtype.kind != "f"):
+            if zfill is not None and not _same_value(zfill, declared):
+                notes.append(f"band {b}: Zarr fill_value {zfill!r} differs from the declared "
+                             f"{key} {declared!r}; the declared one is the no-data")
+        elif nodata is not None:
+            fill, src = nodata, "--nodata"
+        elif zfill is None:
+            fill, src = std, ("none declared: -32768 assumed" if dtype.kind in "iu"
+                              else "none declared: NaN")
+        elif _same_value(zfill, std):
             fill, src = zfill, "Zarr fill_value"
         else:
-            fill, src = (zc.FILL, "none declared: -32768 assumed") if dtype.kind in "iu" \
-                else (float("nan"), "none declared: NaN")
+            cnt, nd, npx = _counts(found[b], [std, zfill])
+            line = (f"  {b}: Zarr fill_value {zfill!r} with no no-data attribute; in {nd} date(s) "
+                    f"({npx} px): {std!r} x {cnt.get(std, 0)}, {zfill!r} x {cnt.get(zfill, 0)}")
+            if cnt.get(std, 0) > 0:
+                fill = std
+                src = (f"{std!r} found in the data; the Zarr fill_value {zfill!r} is not declared "
+                       f"as no-data (kept as delivered_zarr_fill_value)")
+                warns.append(f"band {b}: {src}")
+                nlines.append(line + f" -> no-data {std!r}")
+            else:
+                fill, src = std, (f"AMBIGUOUS: Zarr fill_value {zfill!r} undeclared and {std!r} "
+                                  f"absent; {std!r} used (pass --nodata to decide)")
+                ambiguous.append(b)
+                nlines.append(line + " -> AMBIGUOUS")
+        if count_nodata and not any(ln.startswith(f"  {b}:") for ln in nlines):
+            cnt, nd, npx = _counts(found[b], [std] + ([zfill] if zfill is not None else [])
+                                   + ([0] if dtype.kind in "iu" else []))
+            nlines.append(f"  {b}: no-data {fill!r} ({src}); in {nd} date(s) ({npx} px): "
+                          + ", ".join(f"{k!r} x {v}" for k, v in cnt.items()))
         if dtype.kind in "iu" and fill is not None and not isinstance(fill, (int, np.integer)):
             if isinstance(fill, float) and float(fill).is_integer():
                 fill = int(fill)
@@ -1427,9 +1679,23 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
             if k in attrs:
                 warns.append(f"band {b}: delivered attribute {k}={attrs[k]!r} NOT applied "
                              f"(kept as delivered_{k})")
+    if ambiguous:
+        block = (["AMBIGUOUS NO-DATA: these bands declare no no-data value, their Zarr fill_value "
+                  "is zarr's default and -32768 does not occur in the sampled dates, so whether "
+                  "the fill_value marks no data cannot be told from the data:"]
+                 + [ln for ln in nlines if ln.split(":")[0].strip() in ambiguous]
+                 + ["  decide with --nodata VALUE (e.g. --nodata 0 if the fill_value is the "
+                    "backend's no-data), after looking at the bands' values above"])
+        if strict_nodata:
+            raise AmbiguousNoData("\n".join(block))
+        warns.append(f"AMBIGUOUS NO-DATA for {ambiguous}: -32768 used (see the no-data block)")
+        nlines = block + [ln for ln in nlines if ln.split(":")[0].strip() not in ambiguous]
+    if groups is None:
+        groups = [[b] for b in bands if b in found]
     return Interpretation(bands=found, t=tvals, y=y, x=x, crs_wkt=wkt, crs_source=csrc,
                           fills=fills, fill_sources=fsrc, delivered=delivered, notes=notes,
-                          warnings=warns, source=raw.source, attrs=dict(raw.attrs))
+                          warnings=warns, source=raw.source, attrs=dict(raw.attrs),
+                          zarr_fills=zfills, nodata_lines=nlines, groups=groups)
 
 
 def combine(parts):
@@ -1451,6 +1717,7 @@ def combine(parts):
     band_sets = [set(p.bands) for p in parts]
     notes = [f"{len(parts)} assets combined"] + [n for p in parts for n in p.notes]
     warns = [w for p in parts for w in p.warnings]
+    nlines = [ln for p in parts for ln in p.nodata_lines]
     if same_t and all(not (a & b) for i, a in enumerate(band_sets) for b in band_sets[i + 1:]):
         merged = {}
         for p in parts:
@@ -1461,7 +1728,9 @@ def combine(parts):
             fill_sources={b: f for p in parts for b, f in p.fill_sources.items()},
             delivered={b: f"{Path(p.source).name}:{d}" for p in parts for b, d in p.delivered.items()},
             notes=notes + ["assets hold different bands: merged"], warnings=warns,
-            source="; ".join(p.source for p in parts), attrs=p0.attrs)
+            source="; ".join(p.source for p in parts), attrs=p0.attrs,
+            zarr_fills={b: f for p in parts for b, f in p.zarr_fills.items()},
+            nodata_lines=nlines, groups=[g for p in parts for g in p.groups])
     if all(s == band_sets[0] for s in band_sets):
         allt = np.concatenate([p.t for p in parts])
         if len(np.unique(allt)) != len(allt):
@@ -1474,17 +1743,80 @@ def combine(parts):
         fills = parts[0].fills
         for p in parts[1:]:
             for b in fills:
-                if not (fills[b] == p.fills[b] or (isinstance(fills[b], float) and np.isnan(fills[b])
-                                                   and isinstance(p.fills[b], float)
-                                                   and np.isnan(p.fills[b]))):
-                    raise FormatError(f"band {b}: different fills across assets")
+                if not _same_value(fills[b], p.fills[b]):
+                    raise FormatError(f"band {b}: different fills across assets "
+                                      f"({fills[b]!r} in {p0.source}, {p.fills[b]!r} in {p.source})")
         return Interpretation(
             bands=bands, t=allt[order], y=p0.y, x=p0.x, crs_wkt=p0.crs_wkt,
             crs_source=p0.crs_source, fills=fills, fill_sources=p0.fill_sources,
             delivered=p0.delivered, notes=notes + ["assets hold different dates: concatenated"],
-            warnings=warns, source="; ".join(p.source for p in parts), attrs=p0.attrs)
+            warnings=warns, source="; ".join(p.source for p in parts), attrs=p0.attrs,
+            zarr_fills=p0.zarr_fills, nodata_lines=nlines, groups=p0.groups)
     raise FormatError(f"{len(parts)} assets that neither split the bands nor the dates: "
                       f"{[sorted(s) for s in band_sets]}")
+
+
+def _pad_tyx(arr, top, bottom, left, right, fill):
+    """A (t, y, x) array padded with ``fill`` on y and x.
+
+    dask's own ``pad`` cuts the margin into blocks as large as the edge
+    chunk (a small window put on a large grid becomes ~10^4-10^5 tasks).
+    Here each margin is one block across the padded axis, chunked like the
+    data along the other one, so nothing is rechunked and the delivered
+    chunks are read as they are."""
+    if not hasattr(arr, "dask"):
+        return np.pad(np.asarray(arr), ((0, 0), (top, bottom), (left, right)),
+                      constant_values=fill)
+    import dask.array as da
+
+    tch, (T, H, W) = arr.chunks[0], arr.shape
+
+    def full(ychunks, xchunks):
+        return da.full((T, sum(ychunks), sum(xchunks)), fill, dtype=arr.dtype,
+                       chunks=(tch, ychunks, xchunks))
+
+    row = (([full(arr.chunks[1], (left,))] if left else []) + [arr]
+           + ([full(arr.chunks[1], (right,))] if right else []))
+    mid = da.concatenate(row, axis=2) if len(row) > 1 else arr
+    col = (([full((top,), mid.chunks[2])] if top else []) + [mid]
+           + ([full((bottom,), mid.chunks[2])] if bottom else []))
+    return da.concatenate(col, axis=1) if len(col) > 1 else mid
+
+
+def align_to_grid(interp, ref_x, ref_y, res=RESOLUTION_M):
+    """Crop / pad the bands of ``interp`` (same 10 m lattice, another
+    extent) onto the reference axes, padding with each band's fill: an exact
+    index shift, values untouched. Returns a note of what was done."""
+    import xarray as xr
+
+    rx = np.asarray(ref_x, dtype="float64")
+    ry = np.asarray(ref_y, dtype="float64")
+    x, y = np.asarray(interp.x), np.asarray(interp.y)
+    ox = int(round((x[0] - rx[0]) / res))          # reference column of delivered column 0
+    oy = int(round((ry[0] - y[0]) / res))          # reference row of delivered row 0 (y down)
+    c0, c1 = max(0, -ox), min(len(x), len(rx) - ox)
+    r0, r1 = max(0, -oy), min(len(y), len(ry) - oy)
+    if c1 <= c0 or r1 <= r0:
+        raise FormatError(f"the delivered grid ({len(y)} x {len(x)} px from ({x[0]}, {y[0]})) does "
+                          f"not overlap the reference grid ({len(ry)} x {len(rx)} px from "
+                          f"({rx[0]}, {ry[0]}))")
+    left, top = ox + c0, oy + r0
+    right, bottom = len(rx) - left - (c1 - c0), len(ry) - top - (r1 - r0)
+    for b, a in list(interp.bands.items()):
+        a = a.isel(y=slice(r0, r1), x=slice(c0, c1))
+        if top or bottom or left or right:
+            fill = interp.fills.get(b)
+            if fill is None:
+                raise FormatError(f"band {b} has no fill value to pad it onto the reference grid")
+            if a.dims != ("t", "y", "x"):
+                raise FormatError(f"band {b}: dims {a.dims}, expected ('t', 'y', 'x')")
+            a = xr.DataArray(_pad_tyx(a.data, top, bottom, left, right, fill), dims=a.dims,
+                             attrs=a.attrs, name=a.name)
+        interp.bands[b] = a
+    interp.x, interp.y = rx.copy(), ry.copy()
+    return (f"delivered grid {len(y)} x {len(x)} px from ({x[0]}, {y[0]}) put on the reference grid "
+            f"{len(ry)} x {len(rx)} px from ({rx[0]}, {ry[0]}): cropped rows {r0}:{r1} cols "
+            f"{c0}:{c1}, padded with the fill top {top} bottom {bottom} left {left} right {right}")
 
 
 def canonical_dataset(interp, bands):
@@ -1504,6 +1836,9 @@ def canonical_dataset(interp, bands):
         for k in SCALE_ATTRS:
             if k in a.attrs:
                 attrs[f"delivered_{k}"] = _py(a.attrs[k])
+        zf = interp.zarr_fills.get(b)
+        if zf is not None and not _same_value(zf, interp.fills.get(b)):
+            attrs["delivered_zarr_fill_value"] = zf
         data = a.data
         native = np.dtype(a.dtype).newbyteorder("=")
         if np.dtype(a.dtype) != native:
@@ -1534,15 +1869,63 @@ def canonical_dataset(interp, bands):
 #  writing the store (block by block, every block read back)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True):
+def _available_memory():
+    try:
+        import psutil
+
+        return int(psutil.virtual_memory().available)
+    except Exception:
+        return None
+
+
+def radiometry_counts(block, fill, low=LOW_DN):
+    """Per date of a (t, y, x) spectral block: (valid pixels, valid pixels
+    with 1 <= DN < ``low``). 0 is left out (the L2A products' own no-data)."""
+    valid = block != 0
+    if block.dtype.kind == "f":
+        valid &= ~np.isnan(block)
+    if fill is not None and not (isinstance(fill, float) and np.isnan(fill)):
+        valid &= block != fill
+    lowv = valid & (block >= 1) & (block < low)
+    return valid.sum(axis=(1, 2)), lowv.sum(axis=(1, 2))
+
+
+def radiometry_summary(per_date, n_pixels, band, low=LOW_DN):
+    """The offset state of a year from per-date ``[valid, low]`` counts.
+
+    With the +1000 BOA offset in the values a DN below ``low`` would be a
+    reflectance below -0.05, which does not happen: the share is ~0 on
+    every date. Without it, water (B12 reflectance ~0.01) gives DN below
+    ``low``: on clear dates the share is about the water fraction. The 90th
+    percentile over dates with data (>= 1 % of the grid) decides:
+    ``"+1000 in the values"`` below 0.2 %, ``"no offset"`` above 1 %,
+    ``"unclear"`` between (e.g. a short cloudy window)."""
+    shares = [lo / v for v, lo in per_date.values() if v >= max(1, 0.01 * n_pixels)]
+    p90 = float(np.percentile(shares, 90)) if shares else None
+    state = ("unknown (no date with data)" if p90 is None else
+             "+1000 in the values" if p90 < 0.002 else "no offset" if p90 > 0.01 else "unclear")
+    return {"band": band, "low_dn": low, "dates_used": len(shares),
+            "p90_share_below_low": None if p90 is None else round(p90, 5),
+            "offset_state": state,
+            "per_date_valid_low": {d: [int(v), int(lo)] for d, (v, lo) in per_date.items()}}
+
+
+def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, groups=None):
     """Write the canonical dataset to ``out`` (``<out>.tmp`` then rename).
 
     Template first (metadata and coordinates), then one region write per
     band and time block of ``CHUNKS['t']`` dates (or of the delivered time
     chunk rounded up to a multiple of it, so a delivered chunk is decoded
-    once), each read back and compared bit for bit with the delivered block. ``complete = 1`` and the
-    consolidated metadata are written last, then the folder is renamed:
-    a store under its final name is always whole.
+    once), each read back and compared bit for bit with the delivered
+    block. ``groups``: lists of bands that share delivered chunks (a
+    ``bands`` dimension chunked across bands), computed together so each
+    delivered chunk is decoded once per block. A block that would not fit
+    in the available memory stops the write before anything is read. The
+    per-date share of low B12 (else B11) digital numbers is computed on the
+    way and stored as the ``radiometry`` attribute (see
+    ``radiometry_summary``). ``complete = 1`` and the consolidated metadata
+    are written last, then the folder is renamed: a store under its final
+    name is always whole.
     """
     import dask.array as da
     import xarray as xr
@@ -1553,6 +1936,9 @@ def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True):
     if tmp.exists():
         shutil.rmtree(tmp)
     bands = zc.band_names(ds)
+    groups = [[b for b in g if b in bands] for g in (groups or [[b] for b in bands])]
+    groups = [g for g in groups if g]
+    groups += [[b] for b in bands if not any(b in g for g in groups)]
     T, H, W = ds.sizes["t"], ds.sizes["y"], ds.sizes["x"]
     ct, cy, cx = zc.chunk_shape((T, H, W), chunks)
     tmpl = xr.Dataset(
@@ -1562,40 +1948,73 @@ def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True):
     tmpl["crs"] = ds["crs"]
     tmpl.attrs = dict(attrs, complete=0, format=zc.FORMAT_ID)
     enc = zc.encoding(tmpl, bands, fills, chunks)
-    tmpl.to_zarr(tmp, mode="w", compute=False, encoding=enc, zarr_format=2, consolidated=False)
     dates = zc.dates(ds)
     src_ct = max([int(ds[b].data.chunksize[0]) for b in bands
                   if getattr(ds[b].data, "chunksize", None)] or [1])
     bt = min(T, ct * max(1, -(-src_ct // ct)))
-    if bt > ct:
+    item = max(np.dtype(ds[b].dtype).itemsize for b in bands)
+    widest = max(len(g) for g in groups)
+
+    def need(nt):                 # a block of the widest group, plus the read-back of one band
+        return nt * H * W * item * (widest + 1)
+
+    avail = _available_memory()
+    if bt > ct and avail is not None and need(bt) > 0.5 * avail:
+        log(f"the delivered data come in chunks of {src_ct} dates, but blocks of {bt} dates would "
+            f"need ~{need(bt) / 1e9:.1f} GB of the {avail / 1e9:.1f} GB available: blocks of {ct} "
+            f"dates instead (each delivered chunk is decoded up to {-(-bt // ct)} times: slower, "
+            f"same values)")
+        bt = ct
+    elif bt > ct:
         log(f"the delivered data come in chunks of {src_ct} dates: blocks of {bt} dates "
-            f"(~{bt * H * W * np.dtype(ds[bands[0]].dtype).itemsize / 1e9:.1f} GB per band)")
+            f"(~{bt * H * W * item / 1e9:.1f} GB per band)")
+    if avail is not None and need(bt) > 0.8 * avail:
+        raise MemoryError(f"writing {out.name} needs ~{need(bt) / 1e9:.1f} GB per block ({bt} dates "
+                          f"x {H} x {W} px x {widest} band(s) decoded together, plus the read-back) "
+                          f"and {avail / 1e9:.1f} GB are available: free memory first")
+    tmpl.to_zarr(tmp, mode="w", compute=False, encoding=enc, zarr_format=2, consolidated=False)
+    rad_band = next((b for b in RADIOMETRY_BANDS if b in bands), None)
+    rad = {}
     nblk = (T + bt - 1) // bt
     t0 = time.time()
     for k, a in enumerate(range(0, T, bt)):
         b_ = min(T, a + bt)
         nbytes = 0
-        for b in bands:
-            block = np.asarray(ds[b].isel(t=slice(a, b_)).values)
-            native = block.dtype.newbyteorder("=")
-            if block.dtype != native:
-                block = block.astype(native)
-            nbytes += block.nbytes
-            part = xr.Dataset({b: (("t", "y", "x"), da.from_array(block, chunks=(ct, cy, cx)))})
-            part.to_zarr(tmp, region={"t": slice(a, b_), "y": slice(0, H), "x": slice(0, W)},
-                         mode="r+", consolidated=False)
-            if verify:
-                back = zarr.open_array(store=str(tmp / b), mode="r")[a:b_]
-                same = (np.array_equal(back, block, equal_nan=True) if block.dtype.kind == "f"
-                        else np.array_equal(back, block))
-                if not same:
-                    raise RuntimeError(f"{b}, dates {dates[a]}..{dates[b_ - 1]}: the block read "
-                                       f"back from {tmp} differs from the delivered one")
-            del block
+        for group in groups:
+            blk = ds[group].isel(t=slice(a, b_)).compute()      # shared chunks decoded once
+            for b in group:
+                block = np.asarray(blk[b].values)
+                native = block.dtype.newbyteorder("=")
+                if block.dtype != native:
+                    block = block.astype(native)
+                nbytes += block.nbytes
+                part = xr.Dataset({b: (("t", "y", "x"), da.from_array(block, chunks=(ct, cy, cx)))})
+                part.to_zarr(tmp, region={"t": slice(a, b_), "y": slice(0, H), "x": slice(0, W)},
+                             mode="r+", consolidated=False)
+                if verify:
+                    back = zarr.open_array(store=str(tmp / b), mode="r")[a:b_]
+                    same = (np.array_equal(back, block, equal_nan=True) if block.dtype.kind == "f"
+                            else np.array_equal(back, block))
+                    del back
+                    if not same:
+                        raise RuntimeError(f"{b}, dates {dates[a]}..{dates[b_ - 1]}: the block read "
+                                           f"back from {tmp} differs from the delivered one")
+                if b == rad_band:
+                    nv, nl = radiometry_counts(block, fills.get(b))
+                    for j in range(len(nv)):
+                        rad[dates[a + j]] = (int(nv[j]), int(nl[j]))
+                del block
+            del blk
         log(f"block {k + 1}/{nblk}: {dates[a]}..{dates[b_ - 1]} ({nbytes / 1e6:.0f} MB) "
             f"written{' and read back identical' if verify else ''} "
             f"[{(time.time() - t0) / 60:.1f} min]")
     g = zarr.open_group(str(tmp), mode="r+")
+    if rad_band is not None:
+        summ = radiometry_summary(rad, H * W, rad_band)
+        g.attrs["radiometry"] = json.dumps(summ)
+        log(f"radiometry: {rad_band} share of valid DN in [1, {LOW_DN}) per date, p90 "
+            f"{summ['p90_share_below_low']} over {summ['dates_used']} dates -> "
+            f"{summ['offset_state']}")
     g.attrs["complete"] = 1
     zarr.consolidate_metadata(str(tmp))
     chk = zc.open_store(tmp)
@@ -1729,6 +2148,82 @@ def report_raw(raw):
     return L
 
 
+def report_raw_metadata(path, max_arrays=40):
+    """The Zarr metadata files of a store, read as JSON (no zarr-python):
+    what can still be said about a store zarr cannot open (an unknown
+    codec, a data type it does not support)."""
+    path = Path(path)
+    L = [f"  raw Zarr metadata under {path}:"]
+    n = 0
+    for dirpath, dirnames, filenames in os.walk(path):
+        dirnames.sort()
+        rel = Path(dirpath).relative_to(path).as_posix()
+        for fn in sorted(set(filenames) & {".zgroup", ".zarray", ".zattrs", "zarr.json"}):
+            try:
+                md = json.loads((Path(dirpath) / fn).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                L.append(f"    {rel}/{fn}: unreadable ({type(exc).__name__}: {exc})")
+                continue
+            if fn == ".zarray" or md.get("node_type") == "array":
+                n += 1
+                if n > max_arrays:
+                    continue
+                keep = {k: md.get(k) for k in ("shape", "chunks", "dtype", "data_type", "fill_value",
+                                               "compressor", "filters", "codecs", "order",
+                                               "dimension_names", "chunk_grid", "attributes")
+                        if k in md}
+                L.append(f"    array {rel}: {_short(keep, 700)}")
+            elif fn == ".zattrs" or md.get("node_type") == "group":
+                L.append(f"    {rel}/{fn}: {_short(md, 500)}")
+    if n > max_arrays:
+        L.append(f"    ... {n - max_arrays} more arrays")
+    return L
+
+
+def report_dates(ds, fills, band=None, candidates=REPORT_CANDIDATES, n=REPORT_DATES):
+    """The dates the value and resampling reports use: among up to
+    ``candidates`` dates spread over the axis, the ``n`` with most valid
+    pixels of ``band`` (B03 by default). Returns ``(indices, line)``."""
+    T = ds.sizes["t"]
+    if not T:
+        return [], "no dates"
+    names = zc.band_names(ds)
+    band = band or ("B03" if "B03" in names else names[0])
+    cand = np.unique(np.linspace(0, T - 1, min(T, candidates)).round().astype(int))
+    a = np.asarray(ds[band].isel(t=list(cand)).values)
+    valid = _valid(a, fills.get(band))
+    counts = valid.reshape(len(cand), -1).sum(axis=1)
+    order = np.argsort(-counts, kind="stable")[:n]
+    chosen = sorted(int(cand[i]) for i in order if counts[i] > 0) or [int(cand[order[0]])]
+    dts = zc.dates(ds)
+    npx = a[0].size
+    line = (f"dates used: {[dts[i] for i in chosen]} (the {len(chosen)} with most valid {band} "
+            f"pixels among {len(cand)} of {T}; valid share "
+            + ", ".join(f"{dts[int(c)]} {k / npx * 100:.0f} %" for c, k in zip(cand, counts))[:900]
+            + ")")
+    return chosen, line
+
+
+def _valid(a, fill):
+    valid = ~np.isnan(a) if a.dtype.kind == "f" else np.ones(a.shape, bool)
+    if fill is not None and not (isinstance(fill, float) and np.isnan(fill)):
+        valid &= a != fill
+    return valid
+
+
+def input_products(meta):
+    """``{date: [processing baselines]}`` of the Sentinel-2 L2A products a
+    job read, from any product name in its results metadata (CDSE lists
+    them as ``derived_from`` links)."""
+    blob = json.dumps(meta or {}, default=str)
+    pat = r"S2[A-D]_MSIL2A_(\d{8})T\d{6}_N(\d{2})(\d{2})_R\d{3}_T\w{5}_\d{8}T\d{6}"
+    out = {}
+    for m in re.finditer(pat, blob):
+        d = f"{m.group(1)[:4]}-{m.group(1)[4:6]}-{m.group(1)[6:]}"
+        out.setdefault(d, set()).add(f"{m.group(2)}.{m.group(3)}")
+    return {d: sorted(v) for d, v in sorted(out.items())}
+
+
 def report_xarray_direct(path):
     import warnings
     import xarray as xr
@@ -1765,6 +2260,9 @@ def report_interp(interp, ds):
             continue
         L.append(f"  {b:<4} <- {interp.delivered.get(b)}: dtype {ds[b].attrs.get('delivered_dtype')}, "
                  f"fill {interp.fills.get(b)!r} ({interp.fill_sources.get(b)})")
+    if interp.nodata_lines:
+        L.append("  no-data:")
+        L += ["  " + ln for ln in interp.nodata_lines]
     for n in interp.notes:
         if n:
             L.append(f"  note: {n}")
@@ -1822,58 +2320,73 @@ def report_summary(files, found, raws, interp):
     return L
 
 
-def block_equal_share(a, x, y, valid, cell=20.0):
-    """Share of adjacent pixel pairs inside one ``cell`` m cell of the UTM
-    lattice that hold the same value: 1.0 when a 20 m band reached 10 m by
-    nearest neighbour from its native grid, well below 1 when interpolated."""
+def block_equal_counts(a, x, y, valid, cell=20.0):
+    """``(equal, pairs)``: adjacent pixel pairs inside one ``cell`` m cell of
+    the UTM lattice, both valid, and how many of them hold the same value
+    (all of them when a 20 m band reached 10 m by nearest neighbour from its
+    native grid; well below when interpolated). ``a``: (y, x) or (t, y, x)."""
+    a, valid = np.asarray(a), np.asarray(valid)
+    if a.ndim == 2:
+        a, valid = a[None], valid[None]
     ix = np.floor(np.asarray(x) / cell)
     iy = np.floor(np.asarray(y) / cell)
     sc, sr = ix[1:] == ix[:-1], iy[1:] == iy[:-1]
-    eq_c = (a[:, 1:] == a[:, :-1])[:, sc]
-    ok_c = (valid[:, 1:] & valid[:, :-1])[:, sc]
-    eq_r = (a[1:, :] == a[:-1, :])[sr, :]
-    ok_r = (valid[1:, :] & valid[:-1, :])[sr, :]
-    n = int(ok_c.sum() + ok_r.sum())
-    return float((eq_c[ok_c].sum() + eq_r[ok_r].sum()) / n) if n else float("nan")
+    eq_c = (a[:, :, 1:] == a[:, :, :-1])[:, :, sc]
+    ok_c = (valid[:, :, 1:] & valid[:, :, :-1])[:, :, sc]
+    eq_r = (a[:, 1:, :] == a[:, :-1, :])[:, sr, :]
+    ok_r = (valid[:, 1:, :] & valid[:, :-1, :])[:, sr, :]
+    return int(eq_c[ok_c].sum() + eq_r[ok_r].sum()), int(ok_c.sum() + ok_r.sum())
 
 
-def report_resampling(ds, fills, date_index=0):
-    """How the 20 m bands reached the 10 m grid, measured on one date."""
+def block_equal_share(a, x, y, valid, cell=20.0):
+    """Share of :func:`block_equal_counts` (NaN without valid pairs)."""
+    eq, n = block_equal_counts(a, x, y, valid, cell)
+    return eq / n if n else float("nan")
+
+
+def report_resampling(ds, fills, date_indices=(0,), dates_line=None):
+    """How the 20 m bands reached the 10 m grid, pooled over the dates with
+    most valid pixels (``report_dates``), with the number of pairs."""
     x, y = ds["x"].values, ds["y"].values
-    shares = {}
+    idx = list(date_indices)
+    res = {}
     for b in zc.band_names(ds):
-        a = np.asarray(ds[b].isel(t=date_index).values)
-        f = fills.get(b)
-        valid = ~np.isnan(a) if a.dtype.kind == "f" else np.ones(a.shape, bool)
-        if f is not None and not (isinstance(f, float) and np.isnan(f)):
-            valid &= a != f
-        shares[b] = block_equal_share(a, x, y, valid)
-    fmt = ", ".join(f"{b} {v * 100:.1f} %" for b, v in shares.items())
-    return [f"resampling check on {zc.dates(ds)[date_index]}: share of pixel pairs inside one "
+        a = np.asarray(ds[b].isel(t=idx).values)
+        res[b] = block_equal_counts(a, x, y, _valid(a, fills.get(b)))
+    fmt = ", ".join(f"{b} {(eq / n * 100 if n else float('nan')):.1f} % (n={n})"
+                    for b, (eq, n) in res.items())
+    dts = zc.dates(ds)
+    return [f"resampling check on {[dts[i] for i in idx]}: share of valid pixel pairs inside one "
             f"20 m cell of the UTM lattice with equal values: {fmt}",
             "  (100 % for B8A B11 B12 SCL CLD = nearest neighbour from the native 20 m grid; the "
-            "10 m bands give the share expected by chance)"]
+            "10 m bands give the share expected by chance; n = valid pairs, n=0 = no data)"]
 
 
-def report_values(ds, fills, date_index=0):
-    """min / max / no-data / zeros of every band on one date."""
-    L = [f"values on {zc.dates(ds)[date_index]} (first date):"]
+def report_values(ds, fills, date_indices=(0,), dates_line=None):
+    """min / max / percentiles / no-data / zeros of every band, pooled over
+    the dates with most valid pixels, and the low-DN share of B12 / B11."""
+    idx = list(date_indices)
+    dts = zc.dates(ds)
+    L = [f"values on {[dts[i] for i in idx]}:"]
+    if dates_line:
+        L.append(f"  {dates_line}")
     for b in zc.band_names(ds):
-        a = np.asarray(ds[b].isel(t=date_index).values)
-        f = fills.get(b)
-        nod = (np.isnan(a) if a.dtype.kind == "f" else np.zeros(a.shape, bool))
-        if f is not None and not (isinstance(f, float) and np.isnan(f)):
-            nod |= a == f
+        a = np.asarray(ds[b].isel(t=idx).values)
+        nod = ~_valid(a, fills.get(b))
         v = a[~nod]
         pct = (np.percentile(v, [1, 50, 99]).round(1).tolist() if v.size else "-")
+        low = (f"; DN in [1, {LOW_DN}): {((v >= 1) & (v < LOW_DN)).mean() * 100:.1f} % of valid"
+               if b in RADIOMETRY_BANDS and v.size else "")
         L.append(f"  {b:<4} min {v.min() if v.size else '-'} max {v.max() if v.size else '-'} "
                  f"p1/p50/p99 {pct} no-data {nod.mean() * 100:.1f} % zeros "
-                 f"{(a == 0).mean() * 100:.1f} % (-32768: {(a == -32768).sum()} px)")
+                 f"{(a == 0).mean() * 100:.1f} % (-32768: {(a == -32768).sum()} px){low}")
     spectral = [b for b in zc.band_names(ds) if b not in ("SCL", "CLD")]
     if spectral:
         L.append("  (spectral bands: L2A digital numbers as delivered. Since processing baseline "
                  "04.00 (2022-01-25) the L2A products carry BOA_ADD_OFFSET = -1000: if p1 of "
-                 "B11/B12 over water sits near 1000 the offset is still in the values)")
+                 f"B11/B12 over water sits near 1000 (and no valid DN is below {LOW_DN}) the "
+                 "offset is still in the values; near 0, the backend removed it or the products "
+                 "predate 04.00. Every store records this per date: attribute 'radiometry')")
     return L
 
 
@@ -1881,16 +2394,55 @@ def report_values(ds, fills, date_index=0):
 #  verification and overpass times
 # ─────────────────────────────────────────────────────────────────────────────
 
-def reference_grid(site):
-    path = ROOT / SITE_CONFIG[site]["reference"]
-    if not path.is_file():
-        return None
+def reference_grid(site, root=None, log=None):
+    """The 10 m grid a store of ``site`` must be on, with where it came from
+    (``kind``): the site's netCDF cube when it is on this machine and on a
+    10 m grid; else a complete store of the site under ``root`` (a year
+    already downloaded); else the grid predicted from the site's bbox
+    (``predict_grid``, which matches the existing cubes). ``log`` gets a
+    line saying which, louder when it is not the netCDF cube."""
+    say = log or (lambda m: None)
     import xarray as xr
 
-    with xr.open_dataset(path, mask_and_scale=False) as r:
-        g = zc.grid_info(r)
-        return {"path": str(path), "x": np.asarray(r["x"].values), "y": np.asarray(r["y"].values),
-                "crs_wkt": g["crs_wkt"]}
+    path = ROOT / SITE_CONFIG[site]["reference"]
+    why = f"{path.name} is not on this machine"
+    if path.is_file():
+        with xr.open_dataset(path, mask_and_scale=False) as r:
+            g = zc.grid_info(r)
+            if np.isclose(abs(g["dx"]), RESOLUTION_M) and np.isclose(abs(g["dy"]), RESOLUTION_M):
+                say(f"grid guard: reference grid {path.name} ({g['shape'][0]} x {g['shape'][1]} px, "
+                    f"EPSG {g['epsg']})")
+                return {"path": str(path), "kind": "netcdf", "x": np.asarray(r["x"].values),
+                        "y": np.asarray(r["y"].values), "crs_wkt": g["crs_wkt"]}
+            why = f"{path.name} is on a {abs(g['dx']):g} m grid"
+    for year in zc.list_years(site, root):
+        sp = zc.store_path(site, year, root)
+        ds = zc.open_store(sp)
+        try:
+            g = zc.grid_info(ds)
+            say(f"grid guard: {why}; reference grid = the complete store {sp} ({g['shape'][0]} x "
+                f"{g['shape'][1]} px, EPSG {g['epsg']}) - weaker than the netCDF cube")
+            return {"path": str(sp), "kind": "store", "x": np.asarray(ds["x"].values),
+                    "y": np.asarray(ds["y"].values), "crs_wkt": g["crs_wkt"]}
+        finally:
+            ds.close()
+    try:
+        g = predict_grid(site_bbox(site))
+        from pyproj import CRS
+
+        wkt = CRS.from_epsg(g["epsg"]).to_wkt("WKT1_GDAL")
+    except Exception as exc:
+        say(f"GRID GUARD OFF: {why}, no complete store of {site} and no predicted grid "
+            f"({type(exc).__name__}: {exc}): the CRS and lattice of the delivered grid are NOT "
+            f"checked")
+        return None
+    (x0, x1), (y0, y1) = g["x_edges"], g["y_edges"]
+    x = x0 + RESOLUTION_M / 2.0 + RESOLUTION_M * np.arange(g["shape"][1])
+    y = y1 - RESOLUTION_M / 2.0 - RESOLUTION_M * np.arange(g["shape"][0])
+    say(f"GRID GUARD WEAKER: {why} and no complete store of {site}: reference grid = the grid "
+        f"predicted from the bbox ({g['shape'][0]} x {g['shape'][1]} px, EPSG {g['epsg']})")
+    return {"path": f"grid predicted from the {site} bbox", "kind": "predicted", "x": x, "y": y,
+            "crs_wkt": wkt}
 
 
 def verify_request(req, log):
@@ -1918,10 +2470,24 @@ def verify_request(req, log):
         rep["same_grid_as_year"] = {str(others[0]): bool(zc._same_grid(a, b))}
         a.close()
         b.close()
+    if zc.is_complete(req.store):
+        attrs = zc.store_attrs(req.store)
+        rad = zc.store_radiometry(attrs)
+        if rad:
+            rep["radiometry"] = rad
+        bl = zc.store_baselines(attrs)
+        if bl:
+            rep["input_baselines"] = bl
     zc.write_json(rep, req.sidecar("verify.json"))
     for line in zc.report_lines(rep) if rep.get("dates") else [
             f"verification: {rep['verdict']} ({rep.get('reason')})"]:
         log(line)
+    if rep.get("radiometry"):
+        r = rep["radiometry"]
+        log(f"radiometry: {r.get('band')} p90 share of valid DN in [1, {r.get('low_dn')}) over "
+            f"{r.get('dates_used')} dates = {r.get('p90_share_below_low')} -> {r.get('offset_state')}"
+            + (f"; input baselines {rep['input_baselines']['counts']}"
+               if rep.get("input_baselines") else ""))
     return rep
 
 
@@ -1984,6 +2550,8 @@ class Context:
         self.max_wait_s = float(getattr(a, "max_wait_hours", 24.0)) * 3600.0
         self.keep_raw = bool(getattr(a, "keep_raw", False))
         self.allow_offset = bool(getattr(a, "allow_grid_offset", False))
+        self.nodata = getattr(a, "nodata", None)
+        self.new_job = bool(getattr(a, "new_job", False))
         self.network = True
         self.poll_s, self.poll_max_s, self.capacity_wait_s = 10.0, 60.0, 300
         self.sleep = sleep
@@ -2003,12 +2571,13 @@ class Context:
 
 
 def lattice_check(interp, ref_grid, whole=True):
-    """``(error, warning)`` of the delivered grid against the existing cube's.
+    """``(error, extent)`` of the delivered grid against the reference grid.
 
-    error: another CRS, or pixel centres off the cube's 10 m lattice (half a
-    pixel would be corners delivered as centres): such a store would not be
-    on the grid of the existing cubes. warning: same lattice, another extent
-    (expected for --test, ``whole=False``)."""
+    error: another CRS, or pixel centres off the reference's 10 m lattice
+    (half a pixel would be corners delivered as centres): such a store would
+    not be on the grid of the existing cubes. extent: same lattice, another
+    extent (a message; the caller crops / pads onto the reference grid;
+    ignored for --test, ``whole=False``)."""
     if ref_grid is None:
         return None, None
     if ref_grid.get("crs_wkt") and not zc.crs_equal(interp.crs_wkt, ref_grid["crs_wkt"]):
@@ -2020,7 +2589,8 @@ def lattice_check(interp, ref_grid, whole=True):
         return None, None
     dxr, dyr = float(rx[1] - rx[0]), float(ry[1] - ry[0])
     if not (np.isclose(abs(dxr), RESOLUTION_M) and np.isclose(abs(dyr), RESOLUTION_M)):
-        return None, None                  # a reference on another grid says nothing here
+        return (f"the reference grid {ref_grid['path']} is not a {RESOLUTION_M} m grid "
+                f"({dxr:g} / {dyr:g} m)"), None
     fx = ((float(interp.x[0]) - rx[0]) / dxr) % 1.0
     fy = ((float(interp.y[0]) - ry[0]) / dyr) % 1.0
     fx, fy = min(fx, 1.0 - fx), min(fy, 1.0 - fy)
@@ -2028,61 +2598,138 @@ def lattice_check(interp, ref_grid, whole=True):
         return (f"the delivered pixel centres are offset by ({fx:.3f}, {fy:.3f}) px from the grid "
                 f"of {ref_grid['path']} (0.5 = pixel corners delivered as centres?)"), None
     if whole and (len(interp.x) != len(rx) or len(interp.y) != len(ry)
-                  or interp.x[0] != rx[0] or interp.y[0] != ry[0]):
+                  or not np.isclose(interp.x[0], rx[0], atol=1e-3)
+                  or not np.isclose(interp.y[0], ry[0], atol=1e-3)):
         return None, (f"same 10 m lattice as {Path(ref_grid['path']).name} but another extent: "
                       f"{len(interp.y)} x {len(interp.x)} px from ({interp.x[0]}, {interp.y[0]}) "
                       f"against {len(ry)} x {len(rx)} px from ({rx[0]}, {ry[0]})")
     return None, None
 
 
+def _store_date_hint(part, store_path, files):
+    """The one datetime the assets of a delivered store declare (STAC), or
+    None: the date of a store without a time dimension."""
+    part, sp = Path(part), Path(store_path).resolve()
+    seen = set()
+    for rel, md in (files or {}).items():
+        when = md.get("datetime")
+        if not when:
+            continue
+        cands = [(part / "assets" / rel).resolve(),
+                 (part / "extracted" / (rel[:-4] if rel.lower().endswith(".zip")
+                                        else rel + ".d")).resolve()]
+        if any(c == sp or sp in c.parents or c in sp.parents for c in cands):
+            seen.add(when)
+    return seen.pop() if len(seen) == 1 else None
+
+
+def _write_format_report(req, lines):
+    path = Path(req.sidecar("format.txt"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def largest_chunk(raws):
+    """``(bytes, description)`` of the largest delivered chunk of any array
+    with two or more dimensions (what one decode costs in memory)."""
+    best = (0, None)
+    for r in raws:
+        for name, i in r.info.items():
+            ch = i.get("chunks")
+            if not ch or len(i.get("shape") or []) < 2:
+                continue
+            try:
+                nb = int(np.prod([int(c) for c in ch])) * np.dtype(i["dtype"]).itemsize
+            except (TypeError, ValueError):
+                continue
+            if nb > best[0]:
+                best = (nb, f"{name} chunks {list(ch)} {i['dtype']}")
+    return best
+
+
 def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_all=False,
-              backend_format=BACKEND_FORMAT, allow_offset=False):
+              backend_format=BACKEND_FORMAT, allow_offset=False, nodata=None):
     """Everything between the download and the store: extract, find, read,
     report, interpret. Returns ``(canonical dataset, interpretation, report
-    lines)``; the report is also written to ``<year>.format.txt``. A grid
-    off the existing cube's lattice (``lattice_check``) stops here unless
-    ``allow_offset``."""
+    lines)``; the report is also written to ``<year>.format.txt``.
+
+    Whatever goes wrong (an unknown codec, an unreadable time coordinate, a
+    bad zip, a layout the interpreter does not know), the report gathered
+    so far is written and logged with the reason (and the traceback when it
+    is not a FormatError), and a FormatError is raised. A grid off the
+    reference lattice (``lattice_check``) stops here unless
+    ``allow_offset``; the same lattice with another extent is cropped /
+    padded onto the reference grid (not for --test). ``nodata``: the
+    no-data of bands that declare none (``--nodata``); without it an
+    undecidable no-data stops a production year (AMBIGUOUS NO-DATA) and is
+    only reported by --test."""
+    from collections import Counter
+
     part = Path(req.part)
-    files = {}
-    if (part / ASSETS_DONE).is_file():
-        files = json.loads((part / ASSETS_DONE).read_text(encoding="utf-8"))["files"]
-    extracted = extract_zips(part, log) if files else []
-    found = discover([part / "assets", part / "extracted"])
     lines = ["=" * 30 + f" FORMAT REPORT {req.tag} " + "=" * 30,
              f"request: {COLLECTION} bands {list(req.bands)} window [{req.start}, {req.end}) bbox "
              f"{req.bbox}"]
-    if (part / OUTPUT_FORMAT).is_file():
-        lines += report_output_format(json.loads((part / OUTPUT_FORMAT).read_text(encoding="utf-8")))
-    lines += report_job(job_info, results_meta, files)
-    for d in extracted:
-        lines.append(f"zip extracted to {d}:")
-        lines += report_tree(d)
-    lines.append(f"found: {len(found['stores'])} Zarr store(s), {len(found['netcdf'])} netCDF, "
-                 f"{len(found['geotiff'])} GeoTIFF, {len(found['other'])} other file(s)")
+    files = {}
+    found = {"stores": [], "netcdf": [], "geotiff": [], "other": []}
     raws, problems = [], []
-    for s in found["stores"]:
-        try:
-            r = read_zarr(s)
-            raws.append(r)
-            lines += report_raw(r)
-            if s["kind"] == "zarr" and report_all:
-                lines += ["  " + x for x in report_xarray_direct(s["path"])]
-        except FormatError as exc:
-            problems.append(str(exc))
-            lines.append(f"  store {s['path']}: {exc}")
-    if not found["stores"]:
-        for p in found["netcdf"]:
-            r = read_netcdf(p)
-            raws.append(r)
-            lines += report_raw(r)
-        if found["netcdf"] and str(backend_format).lower() == "zarr":
-            lines.append("  WARNING: Zarr was requested but the backend delivered netCDF: the "
-                         "store is normalised from it")
-    meta = results_meta or {}
-    crs_hints = [("job results metadata", meta.get("properties") or {})]
-    crs_hints += [(f"job results asset {k!r}", a) for k, a in (meta.get("assets") or {}).items()
-                  if isinstance(a, dict)]
     try:
+        if (part / ASSETS_DONE).is_file():
+            files = json.loads((part / ASSETS_DONE).read_text(encoding="utf-8"))["files"]
+        if (part / OUTPUT_FORMAT).is_file():
+            lines += report_output_format(json.loads((part / OUTPUT_FORMAT).read_text(encoding="utf-8")))
+        lines += report_job(job_info, results_meta, files)
+        prods = input_products(results_meta)
+        if prods:
+            bl = Counter(b for v in prods.values() for b in v)
+            lines.append(f"input products: {len(prods)} date(s) named in the results metadata, "
+                         f"processing baselines {dict(sorted(bl.items()))}")
+        else:
+            lines.append("input products: none named in the results metadata (processing "
+                         "baselines unknown)")
+        extracted = extract_zips(part, log) if files else []
+        for d in extracted:
+            lines.append(f"zip extracted to {d}:")
+            lines += report_tree(d)
+        if not extracted and (part / "assets").is_dir():
+            lines.append(f"downloaded files under {part / 'assets'} (no zip):")
+            lines += report_tree(part / "assets")
+        found = discover([part / "assets", part / "extracted"])
+        lines.append(f"found: {len(found['stores'])} Zarr store(s), {len(found['netcdf'])} netCDF, "
+                     f"{len(found['geotiff'])} GeoTIFF, {len(found['other'])} other file(s)")
+        for s in found["stores"]:
+            try:
+                r = read_zarr(s)
+                raws.append(r)
+                lines += report_raw(r)
+                if s["kind"] == "zarr" and report_all:
+                    lines += ["  " + x for x in report_xarray_direct(s["path"])]
+            except Exception as exc:          # unknown codec, dtype, broken metadata ...
+                msg = f"{type(exc).__name__}: {exc}"
+                problems.append(f"{s['path']}: {msg}")
+                lines.append(f"  store {s['path']}: zarr cannot read it ({msg})")
+                lines += report_raw_metadata(s["path"])
+        if not found["stores"]:
+            for p in found["netcdf"]:
+                try:
+                    r = read_netcdf(p)
+                    raws.append(r)
+                    lines += report_raw(r)
+                except Exception as exc:
+                    problems.append(f"{p}: {type(exc).__name__}: {exc}")
+                    lines.append(f"  netCDF {p}: cannot be read ({type(exc).__name__}: {exc})")
+            if found["netcdf"] and str(backend_format).lower() == "zarr":
+                lines.append("  WARNING: Zarr was requested but the backend delivered netCDF: the "
+                             "store is normalised from it")
+        nb, what = largest_chunk(raws)
+        if nb:
+            lines.append(f"largest delivered chunk: {what} = {nb / 1e6:.1f} MB decoded"
+                         + (f"  WARNING: above {BIG_CHUNK_BYTES / 1e9:.0f} GB, every block written "
+                            f"decodes it whole (memory)" if nb > BIG_CHUNK_BYTES else ""))
+        meta = results_meta or {}
+        crs_hints = [("job results metadata", meta.get("properties") or {})]
+        crs_hints += [(f"job results asset {k!r}", a) for k, a in (meta.get("assets") or {}).items()
+                      if isinstance(a, dict)]
         if not raws:
             hint = ""
             if any("zarr" in str(v.get("type")).lower() for v in files.values()):
@@ -2092,17 +2739,22 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
                         "--format-options.")
             raise FormatError(f"nothing readable among the results: {found['geotiff'][:3]} "
                               f"{found['other'][:5]} {problems}.{hint}")
+        kw = dict(crs_hints=crs_hints, ref_grid=ref_grid, nodata=nodata,
+                  strict_nodata=not req.test, count_nodata=req.test)
         if len(raws) == 1:
-            parts = [interpret(raws[0], req.bands, crs_hints=crs_hints, ref_grid=ref_grid)]
+            parts = [interpret(raws[0], req.bands,
+                               date_hint=_store_date_hint(part, raws[0].source, files), **kw)]
         else:                       # several assets: each may hold a subset of the bands
             parts = []
             for r in raws:
                 try:
-                    parts.append(interpret(r, req.bands, crs_hints=crs_hints, ref_grid=ref_grid,
-                                           require_all=False))
-                except FormatError as exc:
-                    problems.append(str(exc))
-                    lines.append(f"  asset skipped: {exc}")
+                    parts.append(interpret(r, req.bands, require_all=False,
+                                           date_hint=_store_date_hint(part, r.source, files), **kw))
+                except AmbiguousNoData:
+                    raise
+                except Exception as exc:
+                    problems.append(f"{type(exc).__name__}: {exc}")
+                    lines.append(f"  asset skipped: {type(exc).__name__}: {exc}")
             if not parts:
                 raise FormatError(f"none of the {len(raws)} delivered stores/files holds the "
                                   f"requested bands: {problems}")
@@ -2112,43 +2764,63 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
             raise FormatError(f"requested bands {missing} not found in any of the {len(raws)} "
                               f"delivered stores/files (found {sorted(interp.bands)}); "
                               f"skipped: {problems}")
-        err, warn = lattice_check(interp, ref_grid, whole=not req.test)
-        if warn:
-            interp.warnings.append(warn)
+        if ref_grid is None:
+            interp.warnings.append("no reference grid: CRS and 10 m lattice NOT checked")
+        err, extent = lattice_check(interp, ref_grid, whole=not req.test)
         if err and allow_offset:
             interp.warnings.append(err + " (written anyway: --allow-grid-offset)")
         elif err:
             raise FormatError(err + "; nothing written (run again with --allow-grid-offset to "
                               "write the store anyway)")
+        elif extent:
+            note = align_to_grid(interp, ref_grid["x"], ref_grid["y"])
+            interp.warnings.append(f"{extent}; {note}")
         ds = canonical_dataset(interp, req.bands)
         lines += report_interp(interp, ds)
-        lines += report_values(ds, interp.fills)
-        lines += report_resampling(ds, interp.fills)
+        idx, dline = report_dates(ds, interp.fills)
+        lines += report_values(ds, interp.fills, idx, dline)
+        lines += report_resampling(ds, interp.fills, idx)
         lines += report_summary(files, found, raws, interp)
         lines.append("=> normalisable: " + ("YES" if not interp.warnings else
                                              "YES, with the warnings above"))
-    except FormatError as exc:
-        lines.append(f"=> NOT NORMALISABLE: {exc}")
+    except Exception as exc:
+        is_fmt = isinstance(exc, FormatError)
+        lines.append(f"=> NOT NORMALISABLE: {'' if is_fmt else type(exc).__name__ + ': '}{exc}")
+        if not is_fmt:
+            ours = [f for f in traceback.extract_tb(exc.__traceback__)
+                    if Path(f.filename).name in ("download_cube_zarr.py", "zarr_cubes.py")]
+            if ours:
+                lines.append(f"   raised in {ours[-1].name} ({Path(ours[-1].filename).name}:"
+                             f"{ours[-1].lineno}): {ours[-1].line}")
+            lines.append("   traceback (last lines):")
+            lines += ["   " + ln for ln in traceback.format_exc().splitlines()[-20:]]
         lines.append(f"   the backend's files stay in {req.part}; nothing was written to {req.store}")
         lines.append("=" * 76)
-        req.sidecar("format.txt").parent.mkdir(parents=True, exist_ok=True)
-        Path(req.sidecar("format.txt")).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        path = _write_format_report(req, lines)
         for ln in lines:
             log(ln)
-        raise
+        if is_fmt:
+            raise
+        raise FormatError(f"{type(exc).__name__} while reading the delivered output: {exc} "
+                          f"(FORMAT REPORT in {path})") from exc
     lines.append("=" * 76)
-    req.sidecar("format.txt").parent.mkdir(parents=True, exist_ok=True)
-    Path(req.sidecar("format.txt")).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_format_report(req, lines)
     return ds, interp, lines
 
 
-def provenance(req, job_info, results_meta, interp, ctx, flat_graph):
+def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_source="submitted",
+               ref_grid=None, job_options=None):
     import openeo
     import xarray as xr
     import zarr
     import numcodecs
 
     return {
+        "process_graph_source": graph_source,
+        "input_baselines": json.dumps(input_products(results_meta)),
+        "grid_reference": (f"{ref_grid.get('kind', 'netcdf')}: {ref_grid.get('path')}" if ref_grid
+                           else "none (grid not checked)"),
+        "nodata_decision": json.dumps(interp.nodata_lines)[:4000],
         "title": f"Sentinel-2 L2A cube, {req.site} {req.year}" + (" (format test)" if req.test else ""),
         "Conventions": "CF-1.9",
         "site": req.site, "year": int(req.year),
@@ -2161,7 +2833,7 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph):
         "job_updated": str((job_info or {}).get("updated", "")),
         "job_costs": json.dumps((job_info or {}).get("costs")),
         "job_usage": json.dumps((job_info or {}).get("usage"))[:4000],
-        "job_options": json.dumps(ctx.job_options),
+        "job_options": json.dumps(job_options or ctx.job_options),
         "backend_format": ctx.backend_format,
         "backend_format_options": json.dumps(ctx.format_options or {}),
         "backend_version": str((results_meta or {}).get("openeo:version", "") or
@@ -2186,10 +2858,39 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph):
     }
 
 
+def recorded_title(part):
+    """The job title a part folder was made for (ledger), or None."""
+    p = Path(part) / LEDGER
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8")).get("title")
+    except ValueError:
+        return None
+
+
+def set_aside(part, why, log):
+    """Move a part folder out of the way (kept: the user deletes it)."""
+    part = Path(part)
+    stamp = f"{part.name}.superseded-{utcnow():%Y%m%dT%H%M%S}"
+    dest, k = part.with_name(stamp), 1
+    while dest.exists():                      # two in the same second
+        dest, k = part.with_name(f"{stamp}-{k}"), k + 1
+    os.replace(part, dest)
+    log(f"{why}: the previous job and download folder moved to {dest} (deleted after this year's "
+        f"store is complete, unless --keep-raw); a new job will be made")
+    return dest
+
+
+def superseded_parts(req):
+    part = Path(req.part)
+    return sorted(part.parent.glob(f"{part.name}.superseded-*")) if part.parent.is_dir() else []
+
+
 def run_request(ctx, req, log):
     """Download, normalise, verify and time one store. Returns a summary."""
     t0 = time.time()
-    if not req.test and zc.is_complete(req.store):
+    if not req.test and zc.is_complete(req.store):      # also with --new-job: never paid twice
         log(f"{req.store} is complete: nothing to download")
         ds = zc.open_store(req.store)
         dates = zc.dates(ds)
@@ -2199,11 +2900,18 @@ def run_request(ctx, req, log):
         still = update_overpass(req, dates, log, network=ctx.network)
         return {"status": "skipped", "dates": len(dates), "missing_overpass": still}
     part = Path(req.part)
+    flat = build_process(req, None, ctx.backend_format, ctx.format_options).flat_graph()
+    title = job_title(req, graph_hash(flat))
+    if part.exists():
+        old = recorded_title(part)
+        if ctx.new_job:
+            set_aside(part, "--new-job", log)
+        elif old and old != title:
+            set_aside(part, f"the request changed since {part.name} was made (job title {old!r}, "
+                            f"now {title!r}: other format, format options or bands)", log)
     part.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(part).free
     log(f"start: window [{req.start}, {req.end}) bbox {req.bbox}; {free / 1e9:.0f} GB free")
-    flat = build_process(req, None, ctx.backend_format, ctx.format_options).flat_graph()
-    title = job_title(req, graph_hash(flat))
     led_path = part / LEDGER
     if (part / ASSETS_DONE).is_file():
         led = Ledger(part)
@@ -2228,9 +2936,14 @@ def run_request(ctx, req, log):
                 log(f"the results of job {job.job_id} are no longer on the backend: the next run "
                     f"makes a new job")
             raise
-    ref = reference_grid(req.site)
+    cur = (Ledger(part).current() or {}) if led_path.is_file() else {}
+    if cur.get("process_graph"):
+        graph, gsrc = cur["process_graph"], f"submitted with job {cur.get('job_id')}"
+    else:
+        graph, gsrc = flat, "built offline (the submitted graph was not recorded)"
+    ref = reference_grid(req.site, root=req.root.parent if req.test else req.root, log=log)
     ds, interp, lines = normalise(req, log, job_info=info, results_meta=meta, ref_grid=ref,
-                                  allow_offset=ctx.allow_offset,
+                                  allow_offset=ctx.allow_offset, nodata=ctx.nodata,
                                   report_all=req.test, backend_format=ctx.backend_format)
     if req.test:
         for ln in lines:
@@ -2238,12 +2951,14 @@ def run_request(ctx, req, log):
     else:
         for ln in lines:
             if ln.startswith(("=", "found:", "store ", "  WARNING", "interpretation", "  CRS",
-                              "  time:", "  grid:")):
+                              "  time:", "  grid:", "input products", "largest delivered",
+                              "resampling check", "  no-data", "  AMBIGUOUS")):
                 log(ln)
-    attrs = provenance(req, info, meta, interp, ctx, flat)
+    attrs = provenance(req, info, meta, interp, ctx, graph, graph_source=gsrc, ref_grid=ref,
+                       job_options=cur.get("job_options"))
     log(f"writing {req.store} ({ds.sizes['t']} dates, {ds.sizes['y']} x {ds.sizes['x']} px, "
         f"{len(req.bands)} bands)")
-    write_store(ds, interp.fills, req.store, attrs, log=log)
+    write_store(ds, interp.fills, req.store, attrs, log=log, groups=interp.groups)
     size = sum(f.stat().st_size for f in Path(req.store).rglob("*") if f.is_file())
     log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk)")
     job_side = {"ledger": json.loads(led_path.read_text(encoding="utf-8"))
@@ -2264,11 +2979,17 @@ def run_request(ctx, req, log):
     if not (ctx.keep_raw or req.test):
         shutil.rmtree(part, ignore_errors=True)
         log(f"raw download removed ({part}); the store keeps the provenance")
+        for old in superseded_parts(req):
+            shutil.rmtree(old, ignore_errors=True)
+            log(f"superseded folder removed ({old})")
     else:
-        log(f"raw download kept in {part}")
+        log(f"raw download kept in {part}"
+            + (f"; superseded folders kept: {[p.name for p in superseded_parts(req)]}"
+               if superseded_parts(req) else ""))
     log(f"done in {(time.time() - t0) / 60:.0f} min")
     return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
-            "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id")}
+            "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id"),
+            "radiometry": (rep.get("radiometry") or {}).get("offset_state")}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2311,6 +3032,11 @@ def dry_run(reqs, ctx):
               f"{req.sidecar('job.json').name}, {zc.overpass_path(req.site, req.root)}", flush=True)
         if req.site not in refs:
             refs[req.site] = None if req.test else reference_summary(req.site)
+            try:
+                reference_grid(req.site, root=req.root.parent if req.test else req.root,
+                               log=lambda m: print(f"   {m}", flush=True))
+            except Exception as exc:          # informative only
+                print(f"   grid guard: could not prepare the reference grid ({exc})", flush=True)
         ref = refs[req.site]
         if ref and not req.test:
             shape, gsrc = ref["shape"], f"existing cube {Path(ref['path']).name}"
@@ -2397,8 +3123,17 @@ def parse_args(argv=None):
                          "another CRS (default: stop with an error)")
     ap.add_argument("--keep-raw", action="store_true",
                     help="keep <year>.part (the backend's files) after a store is complete")
+    ap.add_argument("--nodata", type=int, default=None,
+                    help="no-data value of the bands whose delivered data declare none (no "
+                         "_FillValue / nodata attribute); needed only when a run stops with "
+                         "AMBIGUOUS NO-DATA (see the FORMAT REPORT of --test)")
+    ap.add_argument("--new-job", action="store_true",
+                    help="pay for a fresh job: move <year>.part aside and do not reattach a job "
+                         "of the same title (use once; drop it when resuming). Complete stores "
+                         "are still skipped")
     ap.add_argument("--retries", type=int, default=1,
-                    help="new jobs tried after a failed one, per year and run (default 1)")
+                    help="new jobs tried after a failed one, per year and run, each with twice "
+                         f"the executor memory up to {MAX_RETRY_MEMORY_GB}G (default 1)")
     ap.add_argument("--max-wait-hours", type=float, default=24.0,
                     help="give up waiting for one job after this long (it keeps running)")
     ap.add_argument("--job-options", default=None,

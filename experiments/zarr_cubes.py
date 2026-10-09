@@ -190,6 +190,38 @@ def store_attrs(path):
     return dict(meta.get("metadata", {}).get(".zattrs", {}))
 
 
+def store_radiometry(attrs):
+    """The ``radiometry`` attribute of a store (dict) or None: per date, the
+    valid and the low (1 <= DN < low_dn) B12 digital numbers, and the year's
+    ``offset_state`` ('+1000 in the values', 'no offset', 'unclear')."""
+    v = (attrs or {}).get("radiometry")
+    if not v:
+        return None
+    try:
+        return json.loads(v) if isinstance(v, str) else dict(v)
+    except ValueError:
+        return None
+
+
+def store_baselines(attrs):
+    """Processing baselines of the input products of a store (from the job's
+    results metadata): ``{"counts": {baseline: dates}, "pre_04_dates": n,
+    "per_date": {date: [baselines]}}`` or None when none were named."""
+    v = (attrs or {}).get("input_baselines")
+    try:
+        per = json.loads(v) if isinstance(v, str) else dict(v or {})
+    except ValueError:
+        return None
+    if not per:
+        return None
+    counts = {}
+    for bl in per.values():
+        for b in bl:
+            counts[b] = counts.get(b, 0) + 1
+    pre = sum(1 for bl in per.values() if any(float(b) < 4.0 for b in bl))
+    return {"counts": dict(sorted(counts.items())), "pre_04_dates": pre, "per_date": per}
+
+
 def is_complete(path):
     """True for a finished store: consolidated, this layout, ``complete = 1``.
 
@@ -318,17 +350,51 @@ def _same_grid(a, b):
     return crs_equal(wa, wb)
 
 
+def _fill_key(f):
+    return "nan" if f is None or (isinstance(f, float) and np.isnan(f)) else f
+
+
+def radiometry_check(years, parts):
+    """``(per-year summary, warning or None)`` of the radiometric convention
+    of the yearly stores of a window: their ``offset_state`` and input
+    baselines. Warns when the years disagree on the +1000 offset, or when a
+    year holds it while the window also has pre-04.00 products."""
+    per, states, pre = {}, set(), 0
+    for y, p in zip(years, parts):
+        rad = store_radiometry(p.attrs) or {}
+        bl = store_baselines(p.attrs) or {}
+        st = rad.get("offset_state", "unknown (not recorded)")
+        per[str(y)] = {"offset_state": st, "baselines": bl.get("counts", {})}
+        if st in ("+1000 in the values", "no offset"):
+            states.add(st)
+        pre += bl.get("pre_04_dates", 0)
+    warn = None
+    if len(states) > 1:
+        warn = ("the yearly stores of this window disagree on the L2A +1000 offset ("
+                + ", ".join(f"{y}: {v['offset_state']}" for y, v in per.items())
+                + "): spectral values (and NDWI, MNDWI, AWEI, WRI) are not comparable across "
+                  "these years without subtracting the offset where it is present")
+    elif "+1000 in the values" in states and pre:
+        warn = (f"the window holds products of processing baseline < 04.00 ({pre} dates) and years "
+                f"with the +1000 offset in the values: check the per-date 'radiometry' attribute")
+    return per, warn
+
+
 def open_cube(site, start, end=None, bands=None, root=None, masked=False, chunks=None,
               missing="raise"):
     """The cube of ``site`` over ``[start, end)``, lazily, across years.
 
     Opens only the yearly stores that overlap the window, checks they share
-    the grid, concatenates them along ``t`` and selects the window: any
-    window is a cheap selection and nothing is read until values are asked
-    for. ``end`` is exclusive (``None``: up to the last stored date).
-    ``missing="raise"`` refuses a window that needs a year not downloaded;
-    ``"skip"`` returns what is there (and says which years were missing in
-    ``attrs['missing_years']``).
+    the grid (and, raw, the dtype and fill of every band), concatenates them
+    along ``t`` and selects the window with a slice: any window is a cheap
+    selection and nothing is read until values are asked for. ``end`` is
+    exclusive (``None``: up to the last stored date). ``missing="raise"``
+    refuses a window that needs a year not downloaded; ``"skip"`` returns
+    what is there (and says which years were missing in
+    ``attrs['missing_years']``). Raw values of years with different fills
+    or dtypes are refused (``masked=True`` reads them all as float32 with
+    NaN). A window whose years disagree on the L2A +1000 offset warns
+    (``attrs['radiometry_warning']``; per year in ``attrs['radiometry']``).
     """
     t0 = parse_date(start)
     t1 = parse_date(end) if end is not None else None
@@ -354,6 +420,28 @@ def open_cube(site, start, end=None, bands=None, root=None, masked=False, chunks
     for y, p in zip(years[1:], parts[1:]):
         if not _same_grid(parts[0], p):
             raise ValueError(f"{site}: the {y} store is not on the grid of the {years[0]} store")
+    if len(parts) > 1:
+        names = band_names(parts[0])
+        for y, p in zip(years[1:], parts[1:]):
+            if band_names(p) != names:
+                raise ValueError(f"{site}: the {y} store has bands {band_names(p)}, the "
+                                 f"{years[0]} store {names}")
+        if not masked:
+            bad = {}
+            for b in names:
+                seen = {y: (str(p[b].dtype), _fill_key(fill_of(p[b]))) for y, p in zip(years, parts)}
+                if len(set(seen.values())) > 1:
+                    bad[b] = seen
+            if bad:
+                raise ValueError(
+                    f"{site}: the yearly stores of this window differ in dtype or no-data value "
+                    f"(raw values would mix them; open with masked=True to read every year as "
+                    f"float32 with NaN): {bad}")
+    rad_per_year, rad_warn = radiometry_check(years, parts)
+    if rad_warn:
+        import warnings
+
+        warnings.warn(f"{site}: {rad_warn}", stacklevel=2)
     sources = [{"year": y, "store": str(store_path(site, y, root)),
                 "job_id": p.attrs.get("job_id"), "processing_date": p.attrs.get("processing_date")}
                for y, p in zip(years, parts)]
@@ -363,20 +451,20 @@ def open_cube(site, start, end=None, bands=None, root=None, masked=False, chunks
         ds = xr.concat(parts, dim="t", data_vars="minimal", coords="minimal",
                        compat="override", join="exact", combine_attrs="override")
     t = ds["t"].values
-    keep = t >= np.datetime64(t0)
-    if t1 is not None:
-        keep &= t < np.datetime64(t1)
-    ds = ds.isel(t=np.flatnonzero(keep))
-    tt = ds["t"].values
-    if len(tt) > 1 and not np.all(np.diff(tt) > np.timedelta64(0, "ns")):
+    if len(t) > 1 and not np.all(np.diff(t) > np.timedelta64(0, "ns")):
         raise ValueError(f"{site}: dates not strictly increasing across the yearly stores")
+    i0 = int(np.searchsorted(t, np.datetime64(t0), side="left"))
+    i1 = int(np.searchsorted(t, np.datetime64(t1), side="left")) if t1 is not None else len(t)
+    ds = ds.isel(t=slice(i0, i1))
     attrs = {k: v for k, v in ds.attrs.items()
              if k in ("format", "collection", "backend", "bands", "resampling", "grid_epsg",
                       "Conventions")}
     attrs.update({"site": site, "window_start": str(t0.date()),
                   "window_end_exclusive": str(t1.date()) if t1 is not None else "",
                   "years": years, "missing_years": absent,
-                  "sources": json.dumps(sources)})
+                  "sources": json.dumps(sources), "radiometry": json.dumps(rad_per_year)})
+    if rad_warn:
+        attrs["radiometry_warning"] = rad_warn
     ds.attrs = attrs
     return ds
 

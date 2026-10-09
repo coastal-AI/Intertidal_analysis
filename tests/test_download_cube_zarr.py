@@ -57,14 +57,16 @@ def _days(t):
 
 
 def write_raw_v2(path, t, y, x, data, wkt, *, big_endian=True, dims=True, group_marker=True,
-                 y_ascending=False, chunks=(2, 12, 16), names=None):
-    """A Zarr v2 store as a JVM writer might make it: one array per band."""
+                 y_ascending=False, chunks=(2, 12, 16), names=None, fill_value=FILL):
+    """A Zarr v2 store as a JVM writer might make it: one array per band.
+    ``fill_value=None``: zarr's default (0), as a writer that declares none."""
     g = zarr.open_group(str(path), mode="w", zarr_format=2)
     yy = y[::-1] if y_ascending else y
     for b, a in data.items():
         name = (names or {}).get(b, b)
+        kw = {} if fill_value is None else {"fill_value": fill_value}
         arr = g.create_array(name, shape=a.shape, dtype=">i2" if big_endian else "<i2",
-                             chunks=chunks, fill_value=FILL)
+                             chunks=chunks, **kw)
         arr[:] = a[:, ::-1, :] if y_ascending else a
         attrs = {"grid_mapping": "crs"}
         if dims:
@@ -85,11 +87,11 @@ def write_raw_v2(path, t, y, x, data, wkt, *, big_endian=True, dims=True, group_
     return Path(path)
 
 
-def write_raw_v3_bands(path, t, y, x, data, labels=True):
+def write_raw_v3_bands(path, t, y, x, data, labels=True, chunks=(1, 1, 8, 8)):
     """Zarr v3, one (time, bands, y, x) array, CRS as an EPSG root attribute."""
     g = zarr.open_group(str(path), mode="w", zarr_format=3, attributes={"crs": "EPSG:32630"})
     cube = np.stack([data[b] for b in BANDS], axis=1)
-    arr = g.create_array("cube", shape=cube.shape, dtype="int16", chunks=(1, 1, 8, 8),
+    arr = g.create_array("cube", shape=cube.shape, dtype="int16", chunks=chunks,
                          fill_value=FILL, dimension_names=("time", "bands", "y", "x"))
     arr[:] = cube
     if labels:
@@ -145,24 +147,27 @@ def make_request(root, year=2023, site="villaviciosa", start=None, end=None, tes
                        test=test)
 
 
-def place(req, items):
+def place(req, items, datetimes=None):
     """Put fake downloaded assets in ``<part>/assets`` and mark them complete.
 
-    ``items``: (relative name, source file or folder, media type)."""
+    ``items``: (relative name, source file or folder, media type);
+    ``datetimes``: {relative name: STAC datetime} of its files."""
     raw = Path(req.part) / "assets"
     raw.mkdir(parents=True, exist_ok=True)
     files = {}
     for rel, src, typ in items:
         dst = raw / rel
+        extra = {"datetime": datetimes[rel]} if datetimes and rel in datetimes else {}
         if Path(src).is_dir():
             shutil.copytree(src, dst)
             for f in dst.rglob("*"):
                 if f.is_file():
-                    files[str(f.relative_to(raw))] = {"size": f.stat().st_size, "type": typ}
+                    files[f.relative_to(raw).as_posix()] = dict(
+                        {"size": f.stat().st_size, "type": typ}, **extra)
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
-            files[rel] = {"size": dst.stat().st_size, "type": typ}
+            files[rel] = dict({"size": dst.stat().st_size, "type": typ}, **extra)
     zc.write_json({"job_id": "j-test", "complete": True, "files": files},
                   Path(req.part) / dcz.ASSETS_DONE)
 
@@ -172,7 +177,8 @@ def normalise_and_write(req, ref_grid=None):
     ds, interp, rep = dcz.normalise(req, lines.append, job_info={"id": "j-test", "title": "t"},
                                     results_meta={}, ref_grid=ref_grid)
     flat = dcz.build_process(req).flat_graph()
-    attrs = dcz.provenance(req, {"id": "j-test", "title": "t"}, {}, interp, dcz.Context(), flat)
+    attrs = dcz.provenance(req, {"id": "j-test", "title": "t"}, {}, interp, dcz.Context(), flat,
+                           ref_grid=ref_grid)
     dcz.write_store(ds, interp.fills, req.store, attrs, log=lines.append)
     return interp, rep, lines
 
@@ -227,8 +233,10 @@ def test_directory_store_as_many_assets(tmp_path, wkt):
     raw = write_raw_v2(tmp_path / "src" / "openEO.zarr", t, y, x, data, wkt, big_endian=False)
     req = make_request(tmp_path / "cubes")
     place(req, [("openEO.zarr", raw, "application/octet-stream")])
-    normalise_and_write(req)
+    _, rep, _ = normalise_and_write(req)
     check_store(req.store, t, y, x, data)
+    assert any("downloaded files under" in ln for ln in rep)       # the folder tree is shown
+    assert any(ln.lstrip().startswith("openEO.zarr") and "files" in ln for ln in rep)
 
 
 def test_bands_dimension_v3_with_time_alias(tmp_path):
@@ -381,13 +389,21 @@ def test_grid_off_the_reference_lattice_stops(tmp_path, wkt):
     assert not req.store.exists()
     _, interp, _ = dcz.normalise(req, lambda m: None, ref_grid=ref, allow_offset=True)
     assert any("--allow-grid-offset" in w for w in interp.warnings)
-    # same lattice, smaller extent: only a warning (and none for --test)
+    # same lattice, smaller extent: put on the reference grid (padded), with a warning
     sub = {b: a[:, 2:10, 3:20] for b, a in data.items()}
     raw2 = write_raw_v2(tmp_path / "src" / "s.zarr", t, y[2:10], x[3:20], sub, wkt)
     req2 = make_request(tmp_path / "c2")
     place(req2, [("s.zarr", raw2, "x")])
-    _, interp2, _ = dcz.normalise(req2, lambda m: None, ref_grid=ref)
+    ds2, interp2, _ = dcz.normalise(req2, lambda m: None, ref_grid=ref)
     assert any("another extent" in w for w in interp2.warnings)
+    np.testing.assert_array_equal(ds2["x"].values, x)
+    np.testing.assert_array_equal(ds2["B03"].values[:, 2:10, 3:20], sub["B03"])
+    assert (ds2["B03"].values[:, :2, :] == FILL).all()
+    # --test: the window stays as delivered
+    req2t = make_request(tmp_path / "c2t", test=True)
+    place(req2t, [("s.zarr", raw2, "x")])
+    ds2t, interp2t, _ = dcz.normalise(req2t, lambda m: None, ref_grid=ref)
+    assert ds2t.sizes["x"] == 17 and not any("another extent" in w for w in interp2t.warnings)
     # another CRS
     from pyproj import CRS
 
@@ -841,9 +857,10 @@ class FakeConn:
     def job(self, job_id):
         return FakeJob(self, job_id)
 
-    def list_jobs(self):
+    def list_jobs(self, limit=100):
+        self.list_limit = limit
         return [{"id": k, "title": v["title"], "status": v["status"], "created": v["created"]}
-                for k, v in self.jobs.items()]
+                for k, v in self.jobs.items()][:limit]
 
     def list_file_formats(self):
         return {"input": {}, "output": {"ZARR": {"title": "Zarr", "experimental": True,
@@ -893,8 +910,15 @@ def test_orphan_found_by_title(tmp_path, fake_build):
     req = make_request(tmp_path / "cubes")
     job, _ = dcz.ensure_finished_job(ctx, req, "T", lambda m: None)
     assert job.job_id == "j-77" and conn.created == [] and conn.starts == []
+    assert conn.list_limit == 1000                       # not the client's default 100
     led = json.loads((Path(req.part) / "job.json").read_text())
     assert led["jobs"][0]["source"] == "orphan"
+    # --new-job: no orphan adoption, a paid fresh job
+    conn.jobs["j-78"] = {"title": "T", "status": "finished", "plan": [],
+                         "created": "2026-10-07T11:00:00Z"}
+    ctx.new_job = True
+    job2, _ = dcz.ensure_finished_job(ctx, make_request(tmp_path / "c2"), "T", lambda m: None)
+    assert job2.job_id not in ("j-77", "j-78") and conn.created == [job2.job_id]
 
 
 def test_failed_job_logs_kept_and_retried(tmp_path, fake_build):
@@ -904,6 +928,13 @@ def test_failed_job_logs_kept_and_retried(tmp_path, fake_build):
     msgs = []
     job, _ = dcz.ensure_finished_job(ctx, req, "T", msgs.append)
     assert job.job_id == "j-2" and conn.created == ["j-1", "j-2"]
+    # the second job gets twice the executor memory; the ledger keeps what was submitted
+    assert conn.jobs["j-1"]["options"] == dcz.JOB_OPTIONS
+    assert conn.jobs["j-2"]["options"] == {"executor-memory": "8G", "executor-memoryOverhead": "8G"}
+    led = json.loads((Path(req.part) / "job.json").read_text())
+    assert led["jobs"][-1]["job_options"]["executor-memory"] == "8G"
+    assert "loadcollection1" in led["jobs"][-1]["process_graph"]
+    assert any("memory raised after 1 failed job" in m for m in msgs)
     errs = json.loads((Path(req.part) / "job_j-1.errors.json").read_text())
     assert "executor lost in j-1" in errs[0]["message"]
     assert any("backend error: executor lost in j-1" in m for m in msgs)
@@ -962,7 +993,13 @@ def test_run_request_end_to_end_and_resume(tmp_path, wkt, monkeypatch, fake_buil
     ds = zc.open_store(req.store)
     assert ds.attrs["job_id"] == "j-1" and json.loads(ds.attrs["job_costs"]) == 2.5
     assert "resample_spatial" in ds.attrs["process_graph"]
+    assert ds.attrs["process_graph_source"] == "submitted with job j-1"   # not rebuilt offline
+    assert ds.attrs["grid_reference"].startswith("netcdf: ")
+    assert json.loads(ds.attrs["job_options"]) == dcz.JOB_OPTIONS
     ds.close()
+    ver = json.loads(req.sidecar("verify.json").read_text())
+    assert ver["radiometry"]["offset_state"] in ("no offset", "+1000 in the values", "unclear")
+    assert res["radiometry"] == ver["radiometry"]["offset_state"]
     over = json.loads(zc.overpass_path("villaviciosa", req.root).read_text())
     assert over[str(t[0].date())] == f"{t[0].date()}T11:24:52"
     assert json.loads(req.sidecar("verify.json").read_text())["verdict"] == "identical"
@@ -1038,3 +1075,459 @@ def test_format_test_run(tmp_path, wkt, monkeypatch, fake_build):
     cube.close()
     assert Path(req.part).is_dir()                       # the test keeps the backend's files
     assert "FORMAT REPORT" in req.sidecar("format.txt").read_text(encoding="utf-8")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  review fixes: the report on any error, no-data, reruns, grid, radiometry,
+#  per-date stores, memory
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_any_reading_error_still_writes_the_format_report(tmp_path, wkt):
+    """An unknown codec, or dates pandas cannot parse: the FORMAT REPORT
+    (with the raw Zarr metadata, or the traceback) is written and printed, and
+    a FormatError says where it is."""
+    t, y, x, data = synth(2023, seed=50)
+    raw = write_raw_v2(tmp_path / "src" / "u.zarr", t, y, x, data, wkt)
+    meta = json.loads((raw / "B03" / ".zarray").read_text())
+    meta["compressor"] = {"id": "some_new_codec", "level": 3}
+    (raw / "B03" / ".zarray").write_text(json.dumps(meta))
+    req = make_request(tmp_path / "c1")
+    place(req, [("u.zarr", raw, "x")])
+    msgs = []
+    with pytest.raises(dcz.FormatError, match="nothing readable"):
+        dcz.normalise(req, msgs.append)
+    text = req.sidecar("format.txt").read_text(encoding="utf-8")
+    for s_ in ("FORMAT REPORT", "zarr cannot read it (UnknownCodecError", "raw Zarr metadata",
+               "some_new_codec", "array B12", "downloaded files under", "NOT NORMALISABLE"):
+        assert s_ in text, s_
+    assert any("NOT NORMALISABLE" in m for m in msgs) and any("some_new_codec" in m for m in msgs)
+    assert not req.store.exists()
+    # dates as text pandas cannot parse: a ValueError inside, reported with its traceback
+    raw2 = write_raw_v2(tmp_path / "src" / "d.zarr", t, y, x, data, wkt)
+    shutil.rmtree(raw2 / "t")
+    g = zarr.open_group(str(raw2), mode="r+")
+    ta = g.create_array("t", shape=(len(t),), dtype=str)
+    ta[:] = np.array([f"day {k}" for k in range(len(t))])
+    ta.attrs["_ARRAY_DIMENSIONS"] = ["t"]
+    req2 = make_request(tmp_path / "c2")
+    place(req2, [("d.zarr", raw2, "x")])
+    with pytest.raises(dcz.FormatError, match="while reading the delivered output.*FORMAT REPORT in"):
+        dcz.normalise(req2, lambda m: None)
+    text2 = req2.sidecar("format.txt").read_text(encoding="utf-8")
+    assert "traceback (last lines)" in text2 and "raised in _decode_time" in text2
+    assert "B03            shape [6, 24, 40]" in text2          # what was read is still there
+
+
+def test_zarr_default_fill_value_is_not_no_data(tmp_path, wkt):
+    """No no-data attribute and zarr's default fill_value 0: -32768 in the
+    data is the no-data, and 0 (clear sky in CLD) stays a value."""
+    t, y, x, data = synth(2023, seed=51)
+    data["CLD"][:, 4:8, 4:8] = 0
+    raw = write_raw_v2(tmp_path / "src" / "z.zarr", t, y, x, data, wkt, fill_value=None)
+    assert json.loads((raw / "CLD" / ".zarray").read_text())["fill_value"] == 0
+    req = make_request(tmp_path / "cubes")
+    place(req, [("z.zarr", raw, "x")])
+    interp, rep, _ = normalise_and_write(req)
+    check_store(req.store, t, y, x, data)                 # fill -32768, values untouched
+    assert all(interp.fill_sources[b].startswith("-32768 found in the data") for b in BANDS)
+    assert any("no-data -32768" in ln for ln in rep)
+    ds = zc.open_store(req.store)
+    assert ds["CLD"].attrs["delivered_zarr_fill_value"] == 0
+    ds.close()
+    m = zc.open_store(req.store, masked=True)
+    assert (m["CLD"].values[:, 4:8, 4:8] == 0).all()      # clear sky is not no data
+    assert np.isnan(m["CLD"].values[0, :3, :5]).all()
+    m.close()
+
+
+def test_ambiguous_no_data_stops_a_year_but_not_the_test(tmp_path, wkt):
+    t, y, x, data = synth(2023, seed=52)
+    for a in data.values():
+        a[a == FILL] = 7                                  # -32768 nowhere
+    raw = write_raw_v2(tmp_path / "src" / "a.zarr", t, y, x, data, wkt, fill_value=None)
+    req = make_request(tmp_path / "c1")
+    place(req, [("a.zarr", raw, "x")])
+    with pytest.raises(dcz.AmbiguousNoData, match="AMBIGUOUS NO-DATA"):
+        dcz.normalise(req, lambda m: None)
+    text = req.sidecar("format.txt").read_text(encoding="utf-8")
+    assert "AMBIGUOUS NO-DATA" in text and "--nodata" in text and not req.store.exists()
+    # the format test reports it (with the counts) and goes on
+    treq = make_request(tmp_path / "c2", test=True)
+    place(treq, [("a.zarr", raw, "x")])
+    _, interp, lines = dcz.normalise(treq, lambda m: None)
+    assert any("AMBIGUOUS NO-DATA" in ln for ln in lines)
+    assert any(ln.strip().startswith("CLD: Zarr fill_value 0") and "-32768 x 0" in ln for ln in lines)
+    assert any("AMBIGUOUS NO-DATA" in w for w in interp.warnings)
+    # --nodata decides
+    _, i3, _ = dcz.normalise(req, lambda m: None, nodata=FILL)
+    assert all(i3.fill_sources[b] == "--nodata" and i3.fills[b] == FILL for b in BANDS)
+    _, i4, _ = dcz.normalise(req, lambda m: None, nodata=0)
+    assert i4.fills["CLD"] == 0
+    assert dcz.parse_args(["--nodata", "-32768"]).nodata == FILL
+
+
+def test_changed_request_or_new_job_never_reuses_the_old_download(tmp_path, wkt, monkeypatch,
+                                                                  fake_build):
+    t, y, x, data = synth(2023, n=4, seed=53)
+    nob12 = {b: a for b, a in data.items() if b != "B12"}       # normalisation always fails
+    raw = write_raw_v2(tmp_path / "src" / "openEO.zarr", t, y, x, nob12, wkt)
+    z = zip_store(raw, tmp_path / "src" / "openEO.zarr")
+    calls = []
+
+    def fake_download(job, req, log, workers=4):
+        calls.append(job.job_id)
+        place(req, [("openEO.zarr.zip", z, "application/zip")])
+        return {}
+
+    monkeypatch.setattr(dcz, "download_results", fake_download)
+    conn = FakeConn()
+    ctx, _ = _ctx(conn)
+    ctx.network = False
+    req = make_request(tmp_path / "cubes")
+    msgs = []
+    with pytest.raises(dcz.FormatError):
+        dcz.run_request(ctx, req, msgs.append)
+    title1 = json.loads((Path(req.part) / "job.json").read_text())["title"]
+    # other save_result options: another graph and title -> the old part set aside, a new job
+    ctx.format_options = {"chunking": {"t": 16}}
+    with pytest.raises(dcz.FormatError):
+        dcz.run_request(ctx, req, msgs.append)
+    assert calls == ["j-1", "j-2"] and conn.created == ["j-1", "j-2"]
+    led = json.loads((Path(req.part) / "job.json").read_text())
+    assert led["title"] != title1 and [j["job_id"] for j in led["jobs"]] == ["j-2"]
+    aside = dcz.superseded_parts(req)
+    assert len(aside) == 1 and json.loads((aside[0] / "job.json").read_text())["title"] == title1
+    assert any("the request changed" in m for m in msgs)
+    # the part folder deleted: the finished job is found again by its title, nothing paid ...
+    shutil.rmtree(req.part)
+    with pytest.raises(dcz.FormatError):
+        dcz.run_request(ctx, req, msgs.append)
+    assert conn.created == ["j-1", "j-2"] and calls[-1] == "j-2"
+    # ... --new-job pays for a fresh one, twice in a row without name clashes
+    ctx.new_job = True
+    for want in ("j-3", "j-4"):
+        with pytest.raises(dcz.FormatError):
+            dcz.run_request(ctx, req, msgs.append)
+        assert conn.created[-1] == want and calls[-1] == want
+    assert len(dcz.superseded_parts(req)) == 3
+
+
+def test_complete_year_is_skipped_even_with_new_job(two_years, fake_build):
+    root, _ = two_years
+    conn = FakeConn()
+    ctx, _ = _ctx(conn)
+    ctx.network, ctx.new_job = False, True
+    res = dcz.run_request(ctx, make_request(root, year=2023), lambda m: None)
+    assert res["status"] == "skipped" and conn.created == []
+
+
+def test_a_new_job_never_mixes_with_files_of_an_old_one(tmp_path, monkeypatch):
+    from openeo.rest.job import ResultAsset
+
+    got = []
+
+    def fake_download(self, target=None, **kw):
+        jid = self.href.split("/")[-2]
+        got.append((jid, self.name))
+        Path(target).write_bytes(f"{jid}-{self.name}".encode())
+        return Path(target)
+
+    monkeypatch.setattr(ResultAsset, "download", fake_download)
+    req = make_request(tmp_path / "cubes")
+
+    def job(jid, names):
+        j = _FakeResultJob({"assets": {n: {"href": f"https://h/{jid}/{n}", "type": "x"}
+                                       for n in names}})
+        j.job_id = jid
+        return j
+
+    dcz.download_results(job("j-1", ["a.nc", "b.nc"]), req, lambda m: None)
+    dcz.download_results(job("j-1", ["a.nc", "b.nc"]), req, lambda m: None)   # resumed: kept
+    assert got == [("j-1", "a.nc"), ("j-1", "b.nc")]
+    msgs = []
+    dcz.download_results(job("j-2", ["a.nc"]), req, msgs.append)            # results expired
+    raw = Path(req.part) / "assets"
+    assert got[-1] == ("j-2", "a.nc") and (raw / "a.nc").read_bytes() == b"j-2-a.nc"
+    assert not (raw / "b.nc").exists()
+    done = json.loads((Path(req.part) / dcz.ASSETS_DONE).read_text())
+    assert done["job_id"] == "j-2" and done["files"] == {"a.nc": {"size": 8, "type": "x",
+                                                                  "job_id": "j-2"}}
+    assert any("files of job j-1" in m for m in msgs)
+
+
+def test_other_extent_is_put_on_the_reference_grid(tmp_path, wkt):
+    """Same 10 m lattice, another extent: cropped and padded with the fill
+    onto the reference grid (an index shift; values untouched)."""
+    t, y, x, data = synth(2023, H=24, W=40, seed=54)
+    ref = {"path": "ref.nc", "kind": "netcdf", "x": x[2:36], "y": y[3:20], "crs_wkt": wkt}
+    sub = {b: a[:, 0:22, 5:40] for b, a in data.items()}     # sticks out on three sides
+    raw = write_raw_v2(tmp_path / "src" / "e.zarr", t, y[0:22], x[5:40], sub, wkt)
+    req = make_request(tmp_path / "cubes")
+    place(req, [("e.zarr", raw, "x")])
+    interp, _, _ = normalise_and_write(req, ref_grid=ref)
+    assert any("put on the reference grid" in w for w in interp.warnings)
+    ds = zc.open_store(req.store)
+    np.testing.assert_array_equal(ds["x"].values, ref["x"])
+    np.testing.assert_array_equal(ds["y"].values, ref["y"])
+    for b in ("B03", "SCL", "CLD"):
+        got = ds[b].values
+        assert got.dtype == np.int16
+        np.testing.assert_array_equal(got[:, :, 3:], data[b][:, 3:20, 5:36])
+        assert (got[:, :, :3] == FILL).all()                  # reference columns 2..4: padded
+    ds.close()
+    with pytest.raises(dcz.FormatError, match="does not overlap"):
+        far = {"path": "far.nc", "x": x + 1000.0, "y": y, "crs_wkt": wkt}
+        dcz.normalise(req, lambda m: None, ref_grid=far)
+
+
+def test_reference_grid_falls_back_to_a_store_then_to_the_bbox(tmp_path, wkt, monkeypatch):
+    monkeypatch.setitem(dcz.SITE_CONFIG, "villaviciosa", dict(
+        dcz.SITE_CONFIG["villaviciosa"], reference=str(tmp_path / "absent.nc")))
+    root = tmp_path / "cubes"
+    msgs = []
+    g = dcz.reference_grid("villaviciosa", root=root, log=msgs.append)
+    assert g["kind"] == "predicted" and "GRID GUARD WEAKER" in msgs[-1]
+    assert (len(g["y"]), len(g["x"])) == (915, 915) and (g["x"][0], g["y"][0]) == (X0, Y0)
+    t, y, x, data = synth(2023, seed=55)
+    raw = write_raw_v2(tmp_path / "src" / "s.zarr", t, y, x, data, wkt)
+    req = make_request(root)
+    place(req, [("s.zarr", raw, "x")])
+    interp, _, _ = normalise_and_write(req, ref_grid=g)       # a 24 x 40 delivery, padded
+    ds = zc.open_store(req.store)
+    assert ds.attrs["grid_reference"].startswith("predicted: ")
+    ds.close()
+    g2 = dcz.reference_grid("villaviciosa", root=root, log=msgs.append)
+    assert g2["kind"] == "store" and g2["path"] == str(req.store) and "weaker" in msgs[-1]
+    assert (len(g2["y"]), len(g2["x"])) == (915, 915)
+    # the store's CRS is used when a delivery carries none
+    shutil.rmtree(raw / "crs")
+    for b in BANDS:
+        zarr.open_array(store=str(raw / b), mode="r+").attrs.pop("grid_mapping", None)
+    req2 = make_request(tmp_path / "c2")
+    place(req2, [("s.zarr", raw, "x")])
+    _, i2, _ = dcz.normalise(req2, lambda m: None, ref_grid=g2)
+    assert i2.crs_source.startswith("reference store")
+
+
+def test_open_cube_refuses_years_with_different_no_data(tmp_path, wkt):
+    root = tmp_path / "cubes"
+    t, y, x, data = synth(2023, n=4, seed=56)
+    raw = write_raw_v2(tmp_path / "s23" / "a.zarr", t, y, x, data, wkt)
+    req = make_request(root, year=2023)
+    place(req, [("a.zarr", raw, "x")])
+    normalise_and_write(req)
+    t4, _, _, d4 = synth(2024, n=4, seed=57)
+    for a in d4.values():
+        a[a == FILL] = 0                                     # 2024 delivered with no-data 0
+    raw4 = write_raw_v2(tmp_path / "s24" / "a.zarr", t4, y, x, d4, wkt, fill_value=None)
+    req4 = make_request(root, year=2024)
+    place(req4, [("a.zarr", raw4, "x")])
+    ds, interp, _ = dcz.normalise(req4, lambda m: None, nodata=0)
+    attrs = dcz.provenance(req4, {"id": "j-24"}, {}, interp, dcz.Context(),
+                           dcz.build_process(req4).flat_graph())
+    dcz.write_store(ds, interp.fills, req4.store, attrs, log=lambda m: None)
+    with pytest.raises(ValueError, match="differ in dtype or no-data"):
+        zc.open_cube("villaviciosa", 2023, 2025, root=root)
+    m = zc.open_cube("villaviciosa", 2023, 2025, root=root, masked=True, bands=["B03"])
+    v = m["B03"].values
+    assert np.isnan(v[0, :3, :5]).all() and np.isnan(v[4, :3, :5]).all()     # both no-datas
+    assert np.isnan(v[-1, -2:, :]).all()
+    one = zc.open_cube("villaviciosa", 2024, 2025, root=root)                # one year: raw ok
+    assert zc.fill_of(one["B03"]) == 0
+
+
+def test_reports_use_the_dates_with_data(tmp_path, wkt):
+    """The first date has no data at all: the value and resampling reports
+    use the dates with most valid pixels, and say how many pairs."""
+    t, y, x, data = synth(2025, n=5, H=20, W=30, seed=58, start="2025-06-02")
+    iy = (np.floor(y / 20) - np.floor(y / 20).min()).astype(int)
+    ix = (np.floor(x / 20) - np.floor(x / 20).min()).astype(int)
+    for b in ("B8A", "B11", "B12", "SCL", "CLD"):
+        data[b] = data[b][:, :iy.max() + 1, :ix.max() + 1][:, iy][:, :, ix]
+    for a in data.values():
+        a[0] = FILL
+    raw = write_raw_v2(tmp_path / "src" / "r.zarr", t, y, x, data, wkt)
+    req = make_request(tmp_path / "cubes", year=2025, test=True)
+    place(req, [("r.zarr", raw, "x")])
+    _, _, lines = dcz.normalise(req, lambda m: None)
+    res = next(ln for ln in lines if ln.startswith("resampling check"))
+    assert str(t[0].date()) not in res and str(t[1].date()) in res
+    for b in ("B8A", "B11", "B12", "SCL", "CLD"):
+        assert f"{b} 100.0 % (n=" in res and f"{b} 100.0 % (n=0)" not in res
+    assert any("dates used:" in ln and f"{t[0].date()} 0 %" in ln for ln in lines)
+    assert any(ln.startswith("  B12 ") and "DN in [1, 500)" in ln for ln in lines)
+
+
+def write_raw_2d(path, y, x, arrays, wkt):
+    """One date, no time dimension: (y, x) arrays per band."""
+    g = zarr.open_group(str(path), mode="w", zarr_format=2)
+    for b, a in arrays.items():
+        arr = g.create_array(b, shape=a.shape, dtype="<i2", chunks=(12, 16), fill_value=FILL)
+        arr[:] = a
+        arr.attrs.update({"_ARRAY_DIMENSIONS": ["y", "x"], "grid_mapping": "crs"})
+    for name, vals in (("x", np.asarray(x)), ("y", np.asarray(y))):
+        arr = g.create_array(name, shape=vals.shape, dtype=vals.dtype, chunks=vals.shape)
+        arr[:] = vals
+        arr.attrs["_ARRAY_DIMENSIONS"] = [name]
+    c = g.create_array("crs", shape=(), dtype="int32")
+    c.attrs.update({"crs_wkt": wkt, "_ARRAY_DIMENSIONS": []})
+    return Path(path)
+
+
+def test_one_store_per_date_without_time_dimension(tmp_path, wkt):
+    t, y, x, data = synth(2023, n=3, seed=59)
+    # the dates in the store names
+    req = make_request(tmp_path / "c1")
+    items = []
+    for k, d in enumerate(t):
+        p = write_raw_2d(tmp_path / "src1" / f"openEO_{d.date()}Z.zarr", y, x,
+                         {b: a[k] for b, a in data.items()}, wkt)
+        items.append((p.name, p, "x"))
+    place(req, items[::-1])
+    interp, _, _ = normalise_and_write(req)
+    check_store(req.store, t, y, x, data)
+    assert any("taken from the path" in n for n in interp.notes)
+    # opaque names: the dates from the assets' STAC metadata
+    req2 = make_request(tmp_path / "c2")
+    items, when = [], {}
+    for k, d in enumerate(t):
+        p = write_raw_2d(tmp_path / "src2" / f"item{k}.zarr", y, x,
+                         {b: a[k] for b, a in data.items()}, wkt)
+        items.append((p.name, p, "x"))
+        when[p.name] = f"{d.date()}T00:00:00Z"
+    place(req2, items, datetimes=when)
+    interp2, _, _ = normalise_and_write(req2)
+    check_store(req2.store, t, y, x, data)
+    assert any("taken from the job's STAC metadata" in n for n in interp2.notes)
+    # no date anywhere: a clear refusal
+    req3 = make_request(tmp_path / "c3")
+    place(req3, [("item0.zarr", tmp_path / "src2" / "item0.zarr", "x")])
+    with pytest.raises(dcz.FormatError, match="no 't' dimension .* no date"):
+        dcz.normalise(req3, lambda m: None)
+
+
+def test_collect_assets_keeps_the_item_datetime():
+    class Resp:
+        def __init__(self, js):
+            self.js = js
+
+        def json(self):
+            return self.js
+
+    class Conn:
+        def get(self, href, expected_status=None):
+            return Resp({"id": "i1", "properties": {"datetime": "2023-01-03T00:00:00Z"},
+                         "assets": {"openEO.zarr.zip": {"href": "https://h/a.zip", "type": "x"}}})
+
+    class Job:
+        connection = Conn()
+
+    got = dcz.collect_assets(Job(), {"links": [{"rel": "item", "href": "https://h/i1"}]})
+    assert got[0][2]["item_datetime"] == "2023-01-03T00:00:00Z"
+    assert dcz.asset_datetime(got[0][2]) == "2023-01-03T00:00:00Z"
+
+
+def test_radiometry_recorded_and_checked_across_years(tmp_path, wkt):
+    import warnings
+
+    root = tmp_path / "cubes"
+    for year, offset in ((2023, True), (2024, False)):
+        t, y, x, data = synth(year, n=4, seed=60)
+        if offset:
+            v = data["B12"]
+            data["B12"] = np.where(v == FILL, v, v % 9000 + 1000).astype("int16")
+        raw = write_raw_v2(tmp_path / f"s{year}" / "a.zarr", t, y, x, data, wkt)
+        req = make_request(root, year=year)
+        place(req, [("a.zarr", raw, "x")])
+        normalise_and_write(req)
+    r23 = zc.store_radiometry(zc.store_attrs(zc.store_path("villaviciosa", 2023, root)))
+    r24 = zc.store_radiometry(zc.store_attrs(zc.store_path("villaviciosa", 2024, root)))
+    assert r23["offset_state"] == "+1000 in the values" and r24["offset_state"] == "no offset"
+    assert r23["band"] == "B12" and len(r23["per_date_valid_low"]) == 4
+    with pytest.warns(UserWarning, match=r"disagree on the L2A \+1000 offset"):
+        ds = zc.open_cube("villaviciosa", 2023, 2025, root=root)
+    assert "radiometry_warning" in ds.attrs
+    assert json.loads(ds.attrs["radiometry"])["2023"]["offset_state"] == "+1000 in the values"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        one = zc.open_cube("villaviciosa", 2024, 2025, root=root)
+    assert "radiometry_warning" not in one.attrs
+
+
+def test_input_products_and_radiometry_summary():
+    meta = {"links": [
+        {"rel": "derived_from",
+         "href": "https://x/S2B_MSIL2A_20210105T112359_N0214_R037_T30TUP_20210105T125917.SAFE"},
+        {"rel": "derived_from",
+         "href": "https://x/S2A_MSIL2A_20230110T112441_N0509_R037_T30TUP_20230110T141815.SAFE"},
+        {"rel": "derived_from",
+         "href": "https://x/S2A_MSIL2A_20230110T112441_N0510_R037_T30TUN_20230110T141815"}]}
+    prods = dcz.input_products(meta)
+    assert prods == {"2021-01-05": ["02.14"], "2023-01-10": ["05.09", "05.10"]}
+    bl = zc.store_baselines({"input_baselines": json.dumps(prods)})
+    assert bl["counts"] == {"02.14": 1, "05.09": 1, "05.10": 1} and bl["pre_04_dates"] == 1
+    assert dcz.input_products({}) == {} and zc.store_baselines({"input_baselines": "{}"}) is None
+    s = dcz.radiometry_summary({"d1": (1000, 0), "d2": (900, 1), "d3": (5, 5)}, 10000, "B12")
+    assert s["offset_state"] == "+1000 in the values" and s["dates_used"] == 2
+    assert dcz.radiometry_summary({"d1": (1000, 0), "d2": (900, 300)}, 10000, "B12")[
+        "offset_state"] == "no offset"
+    assert dcz.radiometry_summary({}, 10000, "B12")["offset_state"].startswith("unknown")
+
+
+def test_retry_gets_more_executor_memory():
+    assert dcz.escalate_job_options(dcz.JOB_OPTIONS, 0) == dcz.JOB_OPTIONS
+    assert dcz.escalate_job_options(dcz.JOB_OPTIONS, 3) == {"executor-memory": "8G",
+                                                             "executor-memoryOverhead": "8G"}
+    assert dcz.escalate_job_options({"executor-memory": "3G", "executor-memoryOverhead": "512m",
+                                     "driver-memory": "2G"}, 2) == {
+        "executor-memory": "8G", "executor-memoryOverhead": "2G", "driver-memory": "2G"}
+
+
+def test_bands_sharing_chunks_are_written_together_and_memory_is_checked(tmp_path, monkeypatch):
+    t, y, x, data = synth(2023, n=8, seed=61)
+    raw = write_raw_v3_bands(tmp_path / "src" / "b.zarr", t, y, x, data, chunks=(8, 9, 12, 16))
+    req = make_request(tmp_path / "cubes")
+    place(req, [("b.zarr", raw, "x")])
+    ds, interp, lines = dcz.normalise(req, lambda m: None)
+    assert interp.groups == [list(BANDS)]
+    assert any(ln.startswith("largest delivered chunk: cube chunks [8, 9, 12, 16]") for ln in lines)
+    H, W = len(y), len(x)
+    small = {"t": 2, "y": 8, "x": 8}
+    msgs = []
+    dcz.write_store(ds, interp.fills, req.store, {"job_id": "j"}, log=msgs.append, chunks=small,
+                    groups=interp.groups)
+    assert sum(m.startswith("block ") for m in msgs) == 1      # the delivered chunk decoded once
+    # little memory: blocks of the store's time chunk instead, the same values
+    monkeypatch.setattr(dcz, "_available_memory", lambda: int(1.5 * 8 * H * W * 2 * 10))
+    msgs = []
+    dcz.write_store(ds, interp.fills, req.store, {"job_id": "j"}, log=msgs.append, chunks=small,
+                    groups=interp.groups)
+    assert any("blocks of 2 dates instead" in m for m in msgs)
+    assert sum(m.startswith("block ") for m in msgs) == 4
+    out = zc.open_store(req.store)
+    for b in BANDS:
+        np.testing.assert_array_equal(out[b].values, data[b])
+    out.close()
+    # not even that: stop before reading anything; the store already there is untouched
+    monkeypatch.setattr(dcz, "_available_memory", lambda: 1000)
+    with pytest.raises(MemoryError, match="free memory first"):
+        dcz.write_store(ds, interp.fills, req.store, {"job_id": "j"}, log=lambda m: None,
+                        chunks=small, groups=interp.groups)
+    assert zc.is_complete(req.store)
+
+
+def test_padding_onto_a_large_grid_stays_a_few_blocks():
+    """dask's pad would cut a wide margin into edge-chunk-sized blocks (~10^5
+    tasks for a small window on a site grid); the margins are one block each."""
+    import dask.array as da
+
+    a = np.arange(6 * 24 * 40, dtype="int16").reshape(6, 24, 40)
+    d = da.from_array(a, chunks=(2, 12, 16))
+    for pads in [(0, 891, 0, 875), (3, 4, 5, 6), (0, 0, 2, 0), (7, 0, 0, 0)]:
+        p = dcz._pad_tyx(d, *pads, FILL)
+        want = np.pad(a, ((0, 0), pads[:2], pads[2:]), constant_values=FILL)
+        assert p.dtype == np.int16 and p.shape == want.shape
+        np.testing.assert_array_equal(p.compute(), want)
+        assert np.prod(p.numblocks) <= 3 * 4 * 5
+    np.testing.assert_array_equal(dcz._pad_tyx(a, 1, 1, 1, 1, FILL),
+                                  np.pad(a, ((0, 0), (1, 1), (1, 1)), constant_values=FILL))
