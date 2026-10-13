@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Download the validation cubes again as Zarr, with nine bands, one store per year.
+"""Download the validation cubes again as Zarr (nine bands, and their sun/view angles), per year.
 
 What
 ----
@@ -70,30 +70,99 @@ or off the 10 m lattice of the existing cube (``--allow-grid-offset``
 overrides). Whatever goes wrong while reading the delivered files, the
 FORMAT REPORT gathered so far (with the raw Zarr metadata when zarr cannot
 open a store, and the traceback) is written to ``<year>.format.txt`` and
-printed. ``--test`` runs ONE tiny job first (2 km x 2 km inside
-Villaviciosa, 2025-06-01..15, all bands), prints what the backend says about
-its Zarr format and a FORMAT REPORT of what came back, writes
-``<root>/_test/villaviciosa/2025.zarr`` and opens it through
-``zarr_cubes.open_cube``. Run it again to re-normalise the same download (no
-new job); add ``--new-job`` (once) to pay for a new one: deleting
-``<root>/_test`` is not enough, the finished job would be found again on the
-backend by its title.
+printed. ``--test`` runs ONE tiny job per product first (2 km x 2 km inside
+Villaviciosa, 2025-06-01..15: all nine bands, then the angles), prints what
+the backend says about its Zarr format and a FORMAT REPORT of what came back
+for each, writes ``<root>/_test/villaviciosa/2025.zarr`` and
+``2025.angles.zarr`` and opens them through ``zarr_cubes.open_cube`` /
+``open_angles`` / ``angles_at``. Run it again to re-normalise the same
+downloads (no new job); add ``--new-job`` (once) to pay for new ones:
+deleting ``<root>/_test`` is not enough, the finished jobs would be found
+again on the backend by their titles.
+
+The ANGLES product
+------------------
+The scene times of the pipeline (``overpass_times.json``) are datatake START
+times, not the time the satellite passed over a site (Ems and Wadden share
+them on all 462 dates; they spread 7-8 min within one relative orbit). The
+validation recomputes the sensing time per site and date by inverting the
+SUN ANGLES at the site with a solar ephemeris (validation code, not here).
+For that every site and year also gets ``cubes/<site>/<year>.angles.zarr``:
+the bands ``sunZenithAngles sunAzimuthAngles viewZenithMean
+viewAzimuthMean`` of the same collection (float32 degrees, which the backend
+derives from the 5 km angle grids of the tile metadata; the view angles are
+for diagnostics), from ONE SEPARATE small job per site and year:
+``load_collection(SENTINEL2_L2A, same bbox, same window, the four angle
+bands, max_cloud_cover=100)`` -> ``resample_spatial(resolution=300,
+method="bilinear")`` -> ``save_result(format="Zarr")``. The property filter
+is the main job's (it keeps every scene), so both jobs select the same
+products; there is no cloud filtering. Never in the main job: float bands in
+the main cube could change the dtype the backend delivers for all of it.
+
+Why 300 m. The angle fields are smooth (the sun zenith changes by at most
+~0.01 deg per km) and sampled every 5 km: 300 m samples the backend's
+interpolation ~17 times per 5 km cell, so the bilinear interpolation of the
+store at any point (``zarr_cubes.angles_at``) reproduces it far below the
+precision of the angle grids, while the 2 km --test frame still gets 8 x 7
+cells (enough to measure a spread inside a frame; 500 m would leave 4 x 4)
+and the largest site 115 x 94 cells (0.17 MB a date as float32, ~30 MB a
+year raw, a few MB on disk; ~1/2000 of the values of the main job; 100 m
+would only add cells). Bilinear, because nearest would turn the 5 km grid
+into 5 km steps.
+Alignment: 300 m is a multiple of 10, 20 and 60 m, so the 300 m lattice of
+the site's UTM CRS (cell edges at multiples of 300 m, what the backend makes
+of a bbox, as at 10 m) is a sub-lattice of the 10 m lattice of the main
+grid: every cell edge is a line of that lattice, every cell is exactly 30 x
+30 pixels of the main grid, and the angle frame is the main frame snapped
+outward to 300 m (it contains it; Ems: 108 x 114 cells around 3206 x 3413
+px). The guard checks the delivered grid against that frame (another CRS or
+cell edges off the 10 m lattice stop; another extent is cropped / padded
+with NaN); when the backend's 300 m cells sit at another phase of the 10 m
+lattice than predicted, the first store of the site is kept as delivered
+and becomes the reference of its other years.
+
+Store: float32 degrees, NaN = no data (a delivered no-data value, declared
+or the Zarr fill_value, becomes NaN; CF scale_factor/add_offset would be
+decoded; nothing else is changed), dims (t, y, x) with the main store's ``t``
+labels, chunks {t: 64, y: 256, x: 256}, consolidated, the provenance
+attributes of the main stores, ``format = pyintertidal-zarr-angles/1`` and
+``complete = 1`` written last. Every piece of machinery is the main
+product's: job ledger and reattachment by title (``zarr_angles_<site>_
+<year>_<hash>``), ``<year>.angles.part/``, the defensive normalisation of
+whatever layout comes back and its FORMAT REPORT
+(``<year>.angles.format.txt``), the site lock, resumability, logging.
+Checks (``<year>.angles.verify.json`` and the log): the dates against those
+of the main store of the year (differences listed: e.g. a date at a swath
+edge with angles but no pixels); the physical ranges (zenith 0-90,
+azimuth 0-360; sun angles outside them stop a production year before
+anything is written: not degrees; sun angles exactly 0, impossible here,
+are flagged as a no-data nobody declared); the per-date spread inside the
+frame against a geometric bound (the sun zeniths of two points differ by at
+most their angular distance; the azimuths by about that over sin(zenith)
+plus the convergence of the meridians: a date above it mixes datatakes or
+carries a bad grid); and the sun zenith / azimuth at the frame centre for a
+few dates. ``--products main,angles`` (default both) selects the products;
+a complete store is skipped, so re-running a year whose main store is
+complete fetches only its angles.
 
 Usage (from the repository root; on the server after ``source env.sh``)::
 
     $PY -X utf8 -m experiments.download_cube_zarr --login          # once, interactive
-    $PY -X utf8 -m experiments.download_cube_zarr --test           # the format test
+    $PY -X utf8 -m experiments.download_cube_zarr --test --dry-run
+    $PY -X utf8 -m experiments.download_cube_zarr --test           # the format test, both products
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023-2025 --dry-run
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023-2025
+    $PY -X utf8 -m experiments.download_cube_zarr ems --years 2023-2025 --products angles
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2017-2022
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2023 --verify-only
 
 To force a fresh job for a year, pass ``--new-job`` ONCE: the year's
-``<year>.part`` is moved aside and no job is reattached (deleting the folder
-alone is not enough: a finished job of the same title would be found again
-on the backend). Do not keep ``--new-job`` when resuming that run. A year
-whose store is complete is skipped even with ``--new-job`` (nothing is paid
-for twice); delete ``<year>.zarr`` first to make it again.
+``<year>.part`` (and ``<year>.angles.part``) is moved aside and no job is
+reattached (deleting the folder alone is not enough: a finished job of the
+same title would be found again on the backend). Do not keep ``--new-job``
+when resuming that run. A store that is complete is skipped even with
+``--new-job`` (nothing is paid for twice); delete ``<year>.zarr`` or
+``<year>.angles.zarr`` first to make it again.
 
 Importing this module does nothing (no chdir, no network); ``main`` works
 from the repository root.
@@ -203,6 +272,47 @@ BIG_CHUNK_BYTES = 2e9
 REPORT_CANDIDATES = 12
 REPORT_DATES = 4
 
+#: the ANGLES product (module docstring): the sun and view angle bands of
+#: SENTINEL2_L2A (float32 degrees, from the 5 km tile metadata grids)
+ANGLE_BANDS = zc.ANGLE_BANDS
+#: their grid (m): see "Why 300 m" in the module docstring
+ANGLES_RES_M = zc.ANGLES_RES_M
+#: smooth 5 km fields: bilinear (nearest would make 5 km steps)
+ANGLES_METHOD = "bilinear"
+#: the native spacing of the angle grids of the Sentinel-2 tile metadata
+ANGLES_NATIVE_M = 5000
+ANGLES_RESAMPLING = (f"resample_spatial(resolution={ANGLES_RES_M}, method='{ANGLES_METHOD}') of "
+                     f"the backend's angle bands (Sentinel-2 tile metadata grids, "
+                     f"{ANGLES_NATIVE_M} m): {ANGLES_RES_M} m cells whose edges are lines of the "
+                     f"{RESOLUTION_M} m lattice of the main grid")
+#: (long name, CF standard name, description) of each angle band
+ANGLE_INFO = {
+    "sunZenithAngles": ("sun zenith angle", "solar_zenith_angle",
+                        "sun zenith angle at the cell (degrees from the vertical)"),
+    "sunAzimuthAngles": ("sun azimuth angle", "solar_azimuth_angle",
+                         "sun azimuth angle at the cell (degrees clockwise from north)"),
+    "viewZenithMean": ("viewing zenith angle (mean)", "sensor_zenith_angle",
+                       "viewing zenith angle at the cell, mean of the detectors and bands"),
+    "viewAzimuthMean": ("viewing azimuth angle (mean)", "sensor_azimuth_angle",
+                        "viewing azimuth angle at the cell, mean of the detectors and bands"),
+}
+#: CF packing attributes decoded for the angles (never for the main bands)
+CF_PACKING = ("scale_factor", "add_offset")
+#: bytes on disk per cell and date for the four float32 angle bands (16 B
+#: raw): Blosc/Zstd-5 with byte shuffle gave 4.3 B on bilinear interpolations
+#: of a 5 km grid with irregular low-order bits (Ems frame, 173 dates); 6 B
+#: leaves a margin for the view angles' detector steps
+ANGLES_BYTES_PER_CELL_DATE = 6.0
+#: the spread bound of the sun angles inside a frame (module docstring) adds
+#: these tolerances (degrees): seconds between the tiles of one datatake
+#: and the angle grids' own interpolation
+SPREAD_TOL_ZENITH = 0.1
+SPREAD_TOL_AZIMUTH = 0.25
+#: a value this far outside its physical range (degrees) is out of range
+RANGE_EPS = 1e-3
+#: dates whose angles at the frame centre the reports print
+CENTRE_DATES = 5
+
 
 class FormatError(RuntimeError):
     """The backend delivered something the normaliser does not understand."""
@@ -224,32 +334,95 @@ class LockedError(RuntimeError):
 #  requests
 # ─────────────────────────────────────────────────────────────────────────────
 
+@dataclass(frozen=True)
+class Product:
+    """One kind of store made per site and year (``--products``)."""
+    name: str
+    bands: tuple
+    resolution: int              # m: resample_spatial resolution
+    method: str                  # resample_spatial method
+    format_id: str               # the store's ``format`` attribute
+    chunks: dict                 # the store's chunks
+    suffix: str                  # after the year in the store, part and sidecar names
+    title_prefix: str            # openEO job titles
+    raw_itemsize: int            # bytes per delivered value (dry-run estimate)
+    disk_per_px_date: float      # bytes on disk per pixel and date (dry-run estimate)
+    store_dtype: str             # what the dry run says the values are
+    description: str
+
+
+#: the nine-band 10 m cube (the values as delivered: int16, fill -32768)
+MAIN = Product("main", BANDS, RESOLUTION_M, RESAMPLE_METHOD, zc.FORMAT_ID, zc.CHUNKS, "",
+               "zarr_cube", 2, BYTES_PER_PIXEL_DATE, "int16",
+               f"the nine bands on the {RESOLUTION_M} m grid, int16 as delivered")
+#: the sun and view angles of the same scenes (float32 degrees, NaN)
+ANGLES = Product("angles", ANGLE_BANDS, ANGLES_RES_M, ANGLES_METHOD, zc.ANGLES_FORMAT_ID,
+                 zc.ANGLES_CHUNKS, ".angles", "zarr_angles", 4, ANGLES_BYTES_PER_CELL_DATE,
+                 "float32", f"sun and view angles on {ANGLES_RES_M} m cells, float32 degrees")
+PRODUCTS = {p.name: p for p in (MAIN, ANGLES)}
+
+
+def parse_products(text):
+    """``"main,angles"`` -> the product names, in the order of PRODUCTS."""
+    names = {p.strip().lower() for p in str(text or "").replace(";", ",").split(",") if p.strip()}
+    unknown = sorted(names - set(PRODUCTS))
+    if unknown:
+        raise ValueError(f"unknown product(s) {unknown}; choose from {list(PRODUCTS)}")
+    if not names:
+        raise ValueError(f"no product given; choose from {list(PRODUCTS)}")
+    return [p for p in PRODUCTS if p in names]
+
+
 @dataclass
 class Request:
-    """One store to produce: a site, a year (the store name) and a window."""
+    """One store to produce: a site, a year (the store name), a window and
+    the product (``main``: the nine-band cube; ``angles``: its angles)."""
     site: str
     year: int
     start: str
     end: str                     # exclusive
     bbox: dict
     root: Path
-    bands: tuple = BANDS
+    bands: tuple = None          # None: the product's bands
     test: bool = False
+    product: str = MAIN.name
+
+    def __post_init__(self):
+        if self.product not in PRODUCTS:
+            raise ValueError(f"unknown product {self.product!r}; choose from {list(PRODUCTS)}")
+        if self.bands is None:
+            self.bands = PRODUCTS[self.product].bands
+
+    @property
+    def spec(self):
+        return PRODUCTS[self.product]
+
+    @property
+    def is_angles(self):
+        return self.product == ANGLES.name
 
     @property
     def tag(self):
-        return f"{self.site} {self.year}{' TEST' if self.test else ''}"
+        what = f" {self.product}" if self.product != MAIN.name else ""
+        return f"{self.site} {self.year}{what}{' TEST' if self.test else ''}"
 
     @property
     def store(self):
+        if self.is_angles:
+            return zc.angles_path(self.site, self.year, self.root)
         return zc.store_path(self.site, self.year, self.root)
 
     @property
     def part(self):
-        return zc.site_dir(self.site, self.root) / f"{self.year}.part"
+        return zc.site_dir(self.site, self.root) / f"{self.year}{self.spec.suffix}.part"
 
     def sidecar(self, kind):
-        return zc.sidecar_path(self.site, self.year, kind, self.root)
+        sfx = self.spec.suffix.lstrip(".")
+        return zc.sidecar_path(self.site, self.year, f"{sfx}.{kind}" if sfx else kind, self.root)
+
+    def complete(self):
+        """True when this request's store is finished (``zarr_cubes.is_complete``)."""
+        return zc.is_complete(self.store, self.spec.format_id)
 
 
 def site_bbox(site):
@@ -294,14 +467,24 @@ def parse_years(tokens):
     return sorted(years)
 
 
-def year_requests(sites, years, root):
+def year_requests(sites, years, root, products=(MAIN.name,)):
+    """The requests of a run: per site, per year, the products in order
+    (the angles of a year right after its main store, so their dates can be
+    compared at once)."""
     return [Request(site=s, year=y, start=zc.year_window(y)[0], end=zc.year_window(y)[1],
-                    bbox=site_bbox(s), root=root) for s in sites for y in years]
+                    bbox=site_bbox(s), root=root, product=p)
+            for s in sites for y in years for p in products]
 
 
-def test_request(root):
+def test_request(root, product=MAIN.name):
     return Request(site=TEST_SITE, year=int(TEST_WINDOW[0][:4]), start=TEST_WINDOW[0],
-                   end=TEST_WINDOW[1], bbox=test_bbox(), root=Path(root) / TEST_ROOT, test=True)
+                   end=TEST_WINDOW[1], bbox=test_bbox(), root=Path(root) / TEST_ROOT, test=True,
+                   product=product)
+
+
+def test_requests(root, products=tuple(PRODUCTS)):
+    """The --test requests, one per product."""
+    return [test_request(root, p) for p in products]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -416,7 +599,8 @@ def ensure_gitignore(root):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_process(req, connection=None, backend_format=BACKEND_FORMAT, format_options=None):
-    """``load_collection -> resample_spatial(10, near) -> save_result``.
+    """``load_collection -> resample_spatial -> save_result``: (10, near)
+    for the main product, (300, bilinear) and the angle bands for the angles.
 
     Without a connection the graph is built offline (dry run, job title);
     with one, the client also checks the bands and the output format
@@ -424,13 +608,14 @@ def build_process(req, connection=None, backend_format=BACKEND_FORMAT, format_op
     """
     from openeo.rest.datacube import DataCube
 
+    spec = req.spec
     kw = dict(spatial_extent=dict(req.bbox), temporal_extent=[req.start, req.end],
               bands=list(req.bands), max_cloud_cover=MAX_CLOUD_COVER)
     if connection is not None:
         cube = connection.load_collection(COLLECTION, **kw)
     else:
         cube = DataCube.load_collection(COLLECTION, connection=None, **kw)
-    cube = cube.resample_spatial(resolution=RESOLUTION_M, method=RESAMPLE_METHOD)
+    cube = cube.resample_spatial(resolution=spec.resolution, method=spec.method)
     return cube.save_result(format=backend_format, options=format_options or None)
 
 
@@ -440,9 +625,13 @@ def graph_hash(flat_graph):
 
 
 def job_title(req, ghash):
+    """``zarr_cube_<site>_<year>_<hash>`` (``zarr_angles_...`` for the
+    angles; ``..._test_<site>_<start>_<end>_...`` for --test): a job left
+    on the backend is found again by it, never for another product."""
+    prefix = req.spec.title_prefix
     if req.test:
-        return f"zarr_cube_test_{req.site}_{req.start}_{req.end}_{ghash[:8]}"
-    return f"zarr_cube_{req.site}_{req.year}_{ghash[:8]}"
+        return f"{prefix}_test_{req.site}_{req.start}_{req.end}_{ghash[:8]}"
+    return f"{prefix}_{req.site}_{req.year}_{ghash[:8]}"
 
 
 def predict_grid(bbox, res=RESOLUTION_M):
@@ -468,6 +657,26 @@ def predict_grid(bbox, res=RESOLUTION_M):
     y1 = math.ceil(Y.max() / res) * res
     return {"epsg": epsg, "shape": [int(round((y1 - y0) / res)), int(round((x1 - x0) / res))],
             "x_edges": [x0, x1], "y_edges": [y0, y1]}
+
+
+def coarse_axes(x, y, res=ANGLES_RES_M):
+    """Cell centres (x ascending, y descending) of the ``res`` m grid whose
+    cells cover a finer grid of pixel centres ``x``, ``y``: the finer
+    frame's edges snapped outward to multiples of ``res``, as the backend
+    snaps a bbox (``predict_grid``). With ``res`` a multiple of the finer
+    spacing, every coarse cell edge is a line of the finer lattice. Applied
+    to the 10 m grid of a site it is ``predict_grid(bbox, res)``."""
+    x = np.asarray(x, dtype="float64")
+    y = np.asarray(y, dtype="float64")
+    dx = abs(float(x[1] - x[0])) if len(x) > 1 else float(RESOLUTION_M)
+    dy = abs(float(y[1] - y[0])) if len(y) > 1 else float(RESOLUTION_M)
+    x0 = math.floor((x[0] - dx / 2.0) / res + 1e-9) * res
+    x1 = math.ceil((x[-1] + dx / 2.0) / res - 1e-9) * res
+    y0 = math.floor((y[-1] - dy / 2.0) / res + 1e-9) * res
+    y1 = math.ceil((y[0] + dy / 2.0) / res - 1e-9) * res
+    nx, ny = int(round((x1 - x0) / res)), int(round((y1 - y0) / res))
+    return (x0 + res / 2.0 + res * np.arange(nx, dtype="float64"),
+            y1 - res / 2.0 - res * np.arange(ny, dtype="float64"))
 
 
 def reference_summary(site):
@@ -1259,11 +1468,17 @@ def _decode_time(var):
 
 #: non-spectral SENTINEL2_L2A layers recognised after a prefix ('S2_SCL')
 OTHER_LAYERS = ("SCL", "CLD", "SNW", "AOT", "WVP", "CLP", "CLM")
+#: the angle bands, and their aliases in the CDSE collection metadata
+ANGLE_KEYS = {b.upper(): b.upper() for b in ANGLE_BANDS}
+ANGLE_KEYS.update({"SZA": "SUNZENITHANGLES", "SAA": "SUNAZIMUTHANGLES", "VZA": "VIEWZENITHMEAN",
+                   "VAA": "VIEWAZIMUTHMEAN", "APPROXIMATEVIEWZENITH": "VIEWZENITHMEAN",
+                   "APPROXIMATEVIEWAZIMUTH": "VIEWAZIMUTHMEAN"})
 
 
 def band_key(name):
     """Comparable band name: 'b2', 'B02', 'SENTINEL2_L2A:B02',
-    'SENTINEL2_L2A_B02' -> 'B02'; 'b8a' -> 'B8A'; 'scl', 'S2_SCL' -> 'SCL'."""
+    'SENTINEL2_L2A_B02' -> 'B02'; 'b8a' -> 'B8A'; 'scl', 'S2_SCL' -> 'SCL';
+    'sunZenithAngles', 'S2_sunZenithAngles', 'SZA' -> 'SUNZENITHANGLES'."""
     s = re.split(r"[:/]", str(name).strip())[-1].upper()
     tail = re.split(r"[_.\-\s]+", s)[-1]
     for cand in (s, tail):
@@ -1271,6 +1486,9 @@ def band_key(name):
         if m:
             n = int(m.group(1))
             return f"B{n}A" if m.group(2) else f"B{n:02d}"
+    for cand in (s, tail):
+        if cand in ANGLE_KEYS:
+            return ANGLE_KEYS[cand]
     return tail if tail in OTHER_LAYERS else s
 
 
@@ -1402,7 +1620,7 @@ def _same_value(a, b):
 
 def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
               require_all=True, date_hint=None, nodata=None, strict_nodata=True,
-              count_nodata=False):
+              count_nodata=False, product=None):
     """Find the requested bands, the axes, the grid and the CRS in one
     RawData, with the values untouched. Raises FormatError, with what was
     seen, whenever the layout leaves a doubt. ``require_all=False`` (one of
@@ -1414,7 +1632,13 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
     ``strict_nodata``: an undecidable no-data value raises (production);
     False (``--test``) reports it and goes on with -32768.
     ``count_nodata``: count the candidate no-data values of every band for
-    the report (always done for an ambiguous band)."""
+    the report (always done for an ambiguous band).
+    ``product``: ``ANGLES`` for the angle bands, whose no-data is decided
+    otherwise (a Zarr fill_value, even zarr's default 0, IS their no-data:
+    no angle of these sites is exactly that value, and the store maps it to
+    NaN with NaN itself) and whose dtype is expected float32; None or
+    ``MAIN``: the main bands, as always."""
+    angles = product is not None and product.name == ANGLES.name
     ds = raw.ds
     notes, warns = list(raw.notes), []
     # axes
@@ -1645,6 +1869,9 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
                               else "none declared: NaN")
         elif _same_value(zfill, std):
             fill, src = zfill, "Zarr fill_value"
+        elif angles:
+            fill, src = zfill, (f"Zarr fill_value {zfill!r} (angles: no angle of these sites is "
+                                f"exactly {zfill!r}; it becomes NaN in the store, as NaN does)")
         else:
             cnt, nd, npx = _counts(found[b], [std, zfill])
             line = (f"  {b}: Zarr fill_value {zfill!r} with no no-data attribute; in {nd} date(s) "
@@ -1661,8 +1888,12 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
                 ambiguous.append(b)
                 nlines.append(line + " -> AMBIGUOUS")
         if count_nodata and not any(ln.startswith(f"  {b}:") for ln in nlines):
-            cnt, nd, npx = _counts(found[b], [std] + ([zfill] if zfill is not None else [])
-                                   + ([0] if dtype.kind in "iu" else []))
+            cands = ([std] + ([zfill] if zfill is not None else [])
+                     + ([0] if dtype.kind in "iu" else []))
+            if angles:              # NaN once; exact zeros too (an undeclared no-data?)
+                cands = [c for i, c in enumerate(cands + [0.0])
+                         if not any(_same_value(c, d) for d in (cands + [0.0])[:i])]
+            cnt, nd, npx = _counts(found[b], cands)
             nlines.append(f"  {b}: no-data {fill!r} ({src}); in {nd} date(s) ({npx} px): "
                           + ", ".join(f"{k!r} x {v}" for k, v in cnt.items()))
         if dtype.kind in "iu" and fill is not None and not isinstance(fill, (int, np.integer)):
@@ -1671,6 +1902,16 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
             else:
                 raise FormatError(f"band {b}: integer data with a non-integer fill {fill!r}")
         fills[b], fsrc[b] = fill, src
+        if angles:
+            if np.dtype(dtype).newbyteorder("=") != np.dtype("float32"):
+                warns.append(f"band {b} delivered as {dtype}, not float32: converted to float32 "
+                             f"(no-data -> NaN)")
+            for k in SCALE_ATTRS:
+                if k in attrs:
+                    warns.append(f"band {b}: delivered attribute {k}={attrs[k]!r} "
+                                 + ("DECODED (CF packing; recorded as applied_" + k + ")"
+                                    if k in CF_PACKING else f"NOT applied (kept as delivered_{k})"))
+            continue
         if np.dtype(dtype).newbyteorder("=") != np.dtype("int16"):
             warns.append(f"band {b} delivered as {dtype}, not int16: kept as delivered")
         elif fill != zc.FILL:
@@ -1819,10 +2060,12 @@ def align_to_grid(interp, ref_x, ref_y, res=RESOLUTION_M):
             f"{c0}:{c1}, padded with the fill top {top} bottom {bottom} left {left} right {right}")
 
 
-def canonical_dataset(interp, bands):
-    """The store's dataset (lazy): bands, coordinates, ``crs``."""
-    import xarray as xr
-
+def canonical_dataset(interp, bands, product=None):
+    """The store's dataset (lazy): bands, coordinates, ``crs``. The main
+    bands keep their delivered values and dtype; ``product`` ANGLES:
+    float32 degrees with NaN (:func:`canonical_angles`)."""
+    if product is not None and product.name == ANGLES.name:
+        return canonical_angles(interp, bands)
     data_vars = {}
     for b in bands:
         a = interp.bands[b]
@@ -1844,6 +2087,14 @@ def canonical_dataset(interp, bands):
         if np.dtype(a.dtype) != native:
             data = data.astype(native)
         data_vars[b] = (("t", "y", "x"), data, attrs)
+    return _on_grid(data_vars, interp, RESOLUTION_M)
+
+
+def _on_grid(data_vars, interp, res):
+    """``data_vars`` as a dataset on the interpretation's axes, with the
+    ``crs`` grid-mapping variable (``res``: the spacing of a one-cell axis)."""
+    import xarray as xr
+
     ds = xr.Dataset(data_vars=data_vars,
                     coords={"t": ("t", np.asarray(interp.t, dtype="datetime64[ns]")),
                             "y": ("y", np.asarray(interp.y, dtype="float64")),
@@ -1855,14 +2106,84 @@ def canonical_dataset(interp, bands):
     ds["x"].attrs = {"standard_name": "projection_x_coordinate", "units": "m", "axis": "X",
                      "long_name": "x coordinate of projection (pixel centre)"}
     x, y = interp.x, interp.y
-    dx = float(x[1] - x[0]) if len(x) > 1 else float(RESOLUTION_M)
-    dy = float(y[1] - y[0]) if len(y) > 1 else -float(RESOLUTION_M)
+    dx = float(x[1] - x[0]) if len(x) > 1 else float(res)
+    dy = float(y[1] - y[0]) if len(y) > 1 else -float(res)
     gt = f"{x[0] - dx / 2:.6f} {dx:.6f} 0 {y[0] - dy / 2:.6f} 0 {dy:.6f}"
     epsg = zc._epsg_from_wkt(interp.crs_wkt)
     ds["crs"] = xr.DataArray(np.int32(0), attrs={
         "crs_wkt": interp.crs_wkt, "spatial_ref": interp.crs_wkt, "GeoTransform": gt,
         "epsg_code": f"EPSG:{epsg}" if epsg else "", "long_name": "coordinate reference system"})
     return ds
+
+
+def angles_float32(data, fill, attrs):
+    """Delivered angle values -> float32 degrees with NaN, lazily.
+
+    ``fill`` (the delivered no-data; NaN or None: nothing to map) becomes
+    NaN, as does -32768 in integer data; CF ``scale_factor`` / ``add_offset``
+    are decoded when declared. Returns ``(data, attributes to record)``."""
+    native = np.dtype(data.dtype).newbyteorder("=")
+    if np.dtype(data.dtype) != native:
+        data = data.astype(native)
+    lazy = hasattr(data, "dask")
+    if lazy:
+        import dask.array as xp
+    else:
+        xp = np
+        data = np.asarray(data)
+    bad = None
+    if fill is not None and not (isinstance(fill, float) and np.isnan(fill)):
+        bad = data == fill
+    if data.dtype.kind == "i" and np.iinfo(data.dtype).min <= zc.FILL:
+        bad = (data == zc.FILL) if bad is None else (bad | (data == zc.FILL))
+    notes = {}
+    scale, offset = attrs.get("scale_factor"), attrs.get("add_offset")
+    out = data.astype("float64") if (scale is not None or offset is not None) else data
+    if scale is not None:
+        out = out * float(_py(scale))
+        notes["applied_scale_factor"] = float(_py(scale))
+    if offset is not None:
+        out = out + float(_py(offset))
+        notes["applied_add_offset"] = float(_py(offset))
+    out = out.astype("float32")
+    if bad is not None:
+        out = xp.where(bad, np.float32(np.nan), out)
+    for k in SCALE_ATTRS:
+        if k in attrs and k not in CF_PACKING:
+            notes[f"delivered_{k}"] = _py(attrs[k])
+    return out, notes
+
+
+def store_fills(interp, product=None):
+    """The no-data of the bands AS STORED: the delivered fills for the main
+    product (values kept as delivered), NaN for the angles."""
+    if product is not None and product.name == ANGLES.name:
+        return {b: float("nan") for b in interp.bands}
+    return interp.fills
+
+
+def canonical_angles(interp, bands):
+    """The angles store's dataset (lazy): float32 degrees, NaN = no data,
+    CF names and units, what was delivered recorded per band."""
+    data_vars = {}
+    for b in bands:
+        a = interp.bands[b]
+        fill = interp.fills.get(b)
+        long_name, std_name, desc = ANGLE_INFO.get(b, (b, "", b))
+        attrs = {"long_name": long_name, "units": "degree", "grid_mapping": "crs",
+                 "native_resolution_m": ANGLES_NATIVE_M, "resampling": ANGLES_RESAMPLING,
+                 "description": desc, "physical_range": list(zc.ANGLE_RANGES.get(b, ())),
+                 "delivered_as": interp.delivered.get(b, ""), "delivered_dtype": str(a.dtype),
+                 "delivered_nodata": "none" if fill is None else repr(fill)}
+        if std_name:
+            attrs["standard_name"] = std_name
+        zf = interp.zarr_fills.get(b)
+        if zf is not None and not _same_value(zf, fill):
+            attrs["delivered_zarr_fill_value"] = repr(zf)
+        data, notes = angles_float32(a.data, fill, a.attrs)
+        attrs.update(notes)
+        data_vars[b] = (("t", "y", "x"), data, attrs)
+    return _on_grid(data_vars, interp, ANGLES_RES_M)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1910,8 +2231,11 @@ def radiometry_summary(per_date, n_pixels, band, low=LOW_DN):
             "per_date_valid_low": {d: [int(v), int(lo)] for d, (v, lo) in per_date.items()}}
 
 
-def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, groups=None):
+def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, groups=None,
+                format_id=None):
     """Write the canonical dataset to ``out`` (``<out>.tmp`` then rename).
+    ``format_id``: the store's ``format`` attribute (the cubes'
+    ``zarr_cubes.FORMAT_ID`` unless given; the angles pass theirs).
 
     Template first (metadata and coordinates), then one region write per
     band and time block of ``CHUNKS['t']`` dates (or of the delivered time
@@ -1946,7 +2270,7 @@ def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, grou
              ds[b].attrs) for b in bands},
         coords={k: ds[k] for k in ("t", "y", "x")})
     tmpl["crs"] = ds["crs"]
-    tmpl.attrs = dict(attrs, complete=0, format=zc.FORMAT_ID)
+    tmpl.attrs = dict(attrs, complete=0, format=format_id or zc.FORMAT_ID)
     enc = zc.encoding(tmpl, bands, fills, chunks)
     dates = zc.dates(ds)
     src_ct = max([int(ds[b].data.chunksize[0]) for b in bands
@@ -2271,9 +2595,10 @@ def report_interp(interp, ds):
     return L
 
 
-def report_summary(files, found, raws, interp):
+def report_summary(files, found, raws, interp, product=None):
     """The answers in a few lines: assets and layout, variables and dims,
     dtypes, fills, scale attributes, chunks, CRS, time, band naming."""
+    angles = product is not None and product.name == ANGLES.name
     import pandas as pd
 
     types = sorted({str(v.get("type")) for v in files.values()})
@@ -2304,10 +2629,13 @@ def report_summary(files, found, raws, interp):
     scale = {b: {k: i.get('attrs', {}).get(k) for k in SCALE_ATTRS if k in i.get('attrs', {})}
              for b, _, i in held}
     scale = {b: v for b, v in scale.items() if v}
-    L.append(f"  scale/offset attributes: {scale if scale else 'none'} (never applied)")
+    L.append(f"  scale/offset attributes: {scale if scale else 'none'} "
+             + ("(angles: CF scale_factor/add_offset decoded, others never applied; stored as "
+                "float32 degrees, no-data -> NaN)" if angles else "(never applied)"))
     x, y = interp.x, interp.y
     L.append(f"  grid: EPSG {zc._epsg_from_wkt(interp.crs_wkt)} from {interp.crs_source}; "
-             f"{len(y)} x {len(x)} px, spacing {x[1] - x[0] if len(x) > 1 else '?'} / "
+             f"{len(y)} x {len(x)} {'cells' if angles else 'px'}, spacing "
+             f"{x[1] - x[0] if len(x) > 1 else '?'} / "
              f"{y[1] - y[0] if len(y) > 1 else '?'} m, first centre ({x[0]}, {y[0]})")
     tinfo = next((r.info.get(n) for r in raws for n in ("t", "time", "times", "date", "dates")
                   if n in r.info), {}) or {}
@@ -2391,6 +2719,265 @@ def report_values(ds, fills, date_indices=(0,), dates_line=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  the angles: values, frame, physical ranges, spread, frame centre
+# ─────────────────────────────────────────────────────────────────────────────
+
+def report_angle_values(ds, date_indices=(0,), dates_line=None):
+    """min / max / percentiles / no-data of every angle (as stored: float32
+    degrees, NaN), pooled over the dates with most valid cells."""
+    idx = list(date_indices)
+    dts = zc.dates(ds)
+    L = [f"values on {[dts[i] for i in idx]} (float32 degrees as stored, NaN = no data):"]
+    if dates_line:
+        L.append(f"  {dates_line}")
+    for b in zc.band_names(ds):
+        a = np.asarray(ds[b].isel(t=idx).values, dtype="float64")
+        v = a[np.isfinite(a)]
+        pct = np.percentile(v, [1, 50, 99]).round(4).tolist() if v.size else "-"
+        L.append(f"  {b:<16} min {f'{v.min():.4f}' if v.size else '-'} max "
+                 f"{f'{v.max():.4f}' if v.size else '-'} p1/p50/p99 {pct} no-data "
+                 f"{(~np.isfinite(a)).mean() * 100 if a.size else 0:.1f} %")
+    return L
+
+
+def _great_circle_deg(lon1, lat1, lon2, lat2):
+    """Angular distance (degrees) between two points on the sphere."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = (math.sin((p2 - p1) / 2.0) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2.0) ** 2)
+    return math.degrees(2.0 * math.asin(min(1.0, math.sqrt(h))))
+
+
+def frame_geometry(ds):
+    """The frame of a (t, y, x) dataset: cell-edge extent, centre (x/y and
+    lon/lat), corners in lon/lat, the diagonal as an arc (degrees), the
+    longitude span and the largest |latitude|. Without a readable CRS the
+    arc comes from the projected diagonal and the lon/lat parts are None."""
+    x = np.asarray(ds["x"].values, dtype="float64")
+    y = np.asarray(ds["y"].values, dtype="float64")
+    cx = cy = None
+    gt = ds["crs"].attrs.get("GeoTransform") if "crs" in ds.variables else None
+    if gt:
+        try:
+            vals = [float(v) for v in str(gt).split()]
+            cx, cy = abs(vals[1]), abs(vals[5])
+        except (ValueError, IndexError):
+            pass
+    dx = abs(float(x[1] - x[0])) if len(x) > 1 else float(cx or 0.0)
+    dy = abs(float(y[1] - y[0])) if len(y) > 1 else float(cy or 0.0)
+    xe = (float(x[0]) - dx / 2.0, float(x[-1]) + dx / 2.0)
+    ye = (float(y[-1]) - dy / 2.0, float(y[0]) + dy / 2.0)
+    xc, yc = (xe[0] + xe[1]) / 2.0, (ye[0] + ye[1]) / 2.0
+    geo = {"cells": [int(len(y)), int(len(x))], "cell_m": [dx, dy], "x_edges": list(xe),
+           "y_edges": list(ye), "centre_xy": [xc, yc],
+           "diagonal_m": float(math.hypot(xe[1] - xe[0], ye[1] - ye[0])),
+           "centre_lonlat": None, "corners_lonlat": None, "lon_span_deg": None,
+           "lat_max_abs": None}
+    geo["diagonal_deg"] = geo["diagonal_m"] / 111195.0
+    wkt = zc.grid_info(ds)["crs_wkt"]
+    try:
+        from pyproj import CRS, Transformer
+
+        tf = Transformer.from_crs(CRS.from_user_input(wkt), "EPSG:4326", always_xy=True)
+        corners = [tf.transform(px, py) for px, py in ((xe[0], ye[1]), (xe[1], ye[1]),
+                                                       (xe[1], ye[0]), (xe[0], ye[0]))]
+        lonc, latc = tf.transform(xc, yc)
+        lons, lats = [c[0] for c in corners], [c[1] for c in corners]
+        geo.update(centre_lonlat=[round(lonc, 6), round(latc, 6)],
+                   corners_lonlat=[[round(lo, 6), round(la, 6)] for lo, la in corners],
+                   lon_span_deg=max(lons) - min(lons), lat_max_abs=max(abs(v) for v in lats),
+                   diagonal_deg=max(_great_circle_deg(*corners[0], *corners[2]),
+                                    _great_circle_deg(*corners[1], *corners[3])))
+    except Exception as exc:                  # informative: the bound falls back
+        geo["crs_note"] = f"frame not in lon/lat ({type(exc).__name__}: {exc})"
+    return geo
+
+
+def _per_date(fn, a):
+    """``fn`` (nanmin, nanmax, nanmedian) over each date of (t, y, x), NaN
+    for a date without data, without the all-NaN warnings."""
+    import warnings
+
+    if not a.shape[0]:
+        return np.zeros(0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return fn(a.reshape(a.shape[0], -1), axis=1)
+
+
+def angle_checks(ds, n_centre=CENTRE_DATES):
+    """The checks of an angles dataset (the normalised delivery, or a store).
+
+    * ranges: per angle min / max, finite share and the values outside the
+      physical range (zenith 0-90, azimuth 0-360 degrees);
+    * spread: per date, max - min over the frame (azimuths around their
+      median, so 359/1 is a spread of 2), summarised over the dates; the sun
+      angles are held against a geometric bound: the sun zeniths of two
+      points differ by at most their angular distance (triangle inequality
+      on the sphere), so zenith spread <= diagonal + ``SPREAD_TOL_ZENITH``;
+      the azimuths by about distance x cot(zenith) plus the convergence of
+      the meridians, bounded by diagonal / sin(min zenith) + longitude span
+      x sin(max |latitude|) + ``SPREAD_TOL_AZIMUTH``. A date above the
+      bound mixes datatakes or carries a bad angle grid;
+    * the dates without sun angles, and those with no-data cells in the frame;
+    * the four angles at the frame centre on every date (bilinear,
+      ``zarr_cubes.sample_point``).
+    """
+    names = [b for b in zc.ANGLE_BANDS if b in ds.data_vars]
+    dts = zc.dates(ds)
+    T = len(dts)
+    geo = frame_geometry(ds)
+    out = {"bands": names, "n_dates": T, "frame": geo, "ranges": {}, "spread": {}}
+    stats = {}
+    for b in names:
+        a = np.array(ds[b].values, dtype="float64")         # a site-year: a few MB per angle
+        f = zc.fill_of(ds[b])
+        if f is not None:
+            a[a == f] = np.nan
+        fin = np.isfinite(a)
+        lo, hi = zc.ANGLE_RANGES.get(b, (-np.inf, np.inf))
+        with np.errstate(invalid="ignore"):
+            oor = fin & ((a < lo - RANGE_EPS) | (a > hi + RANGE_EPS))
+        v = a[fin]
+        bad_dates = np.flatnonzero(oor.reshape(T, -1).any(axis=1)) if T else []
+        out["ranges"][b] = {
+            "range": [lo, hi], "min": float(v.min()) if v.size else None,
+            "max": float(v.max()) if v.size else None,
+            "finite_share": float(fin.mean()) if a.size else 0.0, "zeros": int((v == 0.0).sum()),
+            "out_of_range": int(oor.sum()), "out_of_range_dates": [dts[i] for i in bad_dates][:20]}
+        anyf = fin.reshape(T, -1).any(axis=1) if T else np.zeros(0, bool)
+        allf = fin.reshape(T, -1).all(axis=1) if T else np.zeros(0, bool)
+        if b in zc.AZIMUTH_BANDS:
+            med = _per_date(np.nanmedian, a)
+            d = np.mod(a - med[:, None, None] + 180.0, 360.0) - 180.0
+            spread = _per_date(np.nanmax, d) - _per_date(np.nanmin, d)
+        else:
+            spread = _per_date(np.nanmax, a) - _per_date(np.nanmin, a)
+        spread = np.where(anyf, spread, np.nan)
+        stats[b] = {"spread": spread, "min": _per_date(np.nanmin, a), "any": anyf, "all": allf}
+        s = spread[np.isfinite(spread)]
+        out["spread"][b] = {"max": float(s.max()) if s.size else None,
+                            "median": float(np.median(s)) if s.size else None,
+                            "p95": float(np.percentile(s, 95)) if s.size else None}
+        del a, fin, oor
+    diag = float(geo["diagonal_deg"])
+    if geo.get("lon_span_deg") is not None and geo.get("lat_max_abs") is not None:
+        lon_term = geo["lon_span_deg"] * math.sin(math.radians(geo["lat_max_abs"]))
+    else:
+        lon_term = 2.0 * diag
+    zen, azi = stats.get("sunZenithAngles"), stats.get("sunAzimuthAngles")
+    over, without, nan_cells = {}, [], []
+    for i, d in enumerate(dts):
+        row = {}
+        bz = diag + SPREAD_TOL_ZENITH
+        if zen is not None and np.isfinite(zen["spread"][i]) and zen["spread"][i] > bz:
+            row["sunZenithAngles"] = [round(float(zen["spread"][i]), 4), round(bz, 4)]
+        zmin = float(zen["min"][i]) if zen is not None and np.isfinite(zen["min"][i]) else 0.0
+        ba = diag / math.sin(math.radians(max(zmin, 5.0))) + lon_term + SPREAD_TOL_AZIMUTH
+        if azi is not None and np.isfinite(azi["spread"][i]) and azi["spread"][i] > ba:
+            row["sunAzimuthAngles"] = [round(float(azi["spread"][i]), 4), round(ba, 4)]
+        if row:
+            over[d] = row
+        if any(s is not None and not s["any"][i] for s in (zen, azi)):
+            without.append(d)
+        elif any(s is not None and not s["all"][i] for s in (zen, azi)):
+            nan_cells.append(d)
+    out["spread_bound"] = {
+        "diagonal_deg": round(diag, 5), "lon_term_deg": round(lon_term, 5),
+        "zenith": f"spread <= {diag:.4f} (frame diagonal) + {SPREAD_TOL_ZENITH} deg",
+        "azimuth": (f"spread <= {diag:.4f} / sin(min sun zenith of the date) + {lon_term:.4f} "
+                    f"(meridian convergence) + {SPREAD_TOL_AZIMUTH} deg")}
+    out["dates_over_bound"] = over
+    out["dates_without_sun"] = without
+    out["dates_with_nan_cells"] = nan_cells
+    xc, yc = geo["centre_xy"]
+    centre = {"x": xc, "y": yc, "lon": (geo["centre_lonlat"] or [None, None])[0],
+              "lat": (geo["centre_lonlat"] or [None, None])[1], "per_date": {}}
+    if names and T:
+        df = zc.sample_point(ds, xc, yc, bands=names)
+        for d, row in zip(dts, df.itertuples(index=False)):
+            centre["per_date"][d] = {b: (None if not np.isfinite(v) else round(float(v), 5))
+                                     for b, v in zip(names, row)}
+    out["centre"] = centre
+    return out
+
+
+def sun_out_of_range(chk):
+    """The sun angles of an ``angle_checks`` result outside their physical
+    range: ``["sunZenithAngles: 3 values ..."]`` (empty when none)."""
+    bad = []
+    for b in ("sunZenithAngles", "sunAzimuthAngles"):
+        r = chk["ranges"].get(b)
+        if r and r["out_of_range"]:
+            bad.append(f"{b}: {r['out_of_range']} values outside {r['range']} (min {r['min']}, max "
+                       f"{r['max']}; dates {r['out_of_range_dates'][:5]})")
+    return bad
+
+
+def sun_zeros(chk):
+    """Sun angles exactly 0 in an ``angle_checks`` result: impossible at
+    these sites at the overpass (zenith > 15 deg, azimuth 100-260 deg), so a
+    no-data written as 0 without being declared. Kept as delivered and
+    reported: ``["sunZenithAngles: 12 cells exactly 0"]``."""
+    return [f"{b}: {chk['ranges'][b]['zeros']} cells exactly 0"
+            for b in ("sunZenithAngles", "sunAzimuthAngles")
+            if chk["ranges"].get(b, {}).get("zeros")]
+
+
+def _fmt_deg(v, width=9):
+    return f"{v:{width}.4f}" if v is not None else f"{'-':>{width}}"
+
+
+def report_angle_checks(chk, n=CENTRE_DATES):
+    """Log lines of an ``angle_checks`` result: ranges, frame, spread and its
+    bound, the dates over it, and the angles at the frame centre for ``n``
+    dates spread over the window."""
+    L = ["angles check:"]
+    for b, r in chk["ranges"].items():
+        L.append(f"  {b:<16} {_fmt_deg(r['min'], 0).strip()} .. {_fmt_deg(r['max'], 0).strip()} "
+                 f"deg, finite {r['finite_share'] * 100:.1f} %, outside [{r['range'][0]:g}, "
+                 f"{r['range'][1]:g}]: {r['out_of_range']}"
+                 + (f" (dates {r['out_of_range_dates'][:5]})" if r["out_of_range"] else "")
+                 + (f"; exactly 0: {r['zeros']}" if r.get("zeros") else ""))
+    g = chk["frame"]
+    L.append(f"  frame: {g['cells'][0]} x {g['cells'][1]} cells of {g['cell_m'][0]:g} m, diagonal "
+             f"{g['diagonal_m'] / 1000:.2f} km = {g['diagonal_deg']:.4f} deg; centre lon/lat "
+             f"{g['centre_lonlat']}" + (f" ({g['crs_note']})" if g.get("crs_note") else ""))
+    sp = chk["spread"]
+    L.append("  spread inside the frame per date, max / median over the dates: "
+             + ", ".join(f"{b} {_fmt_deg(s['max'], 0).strip()} / {_fmt_deg(s['median'], 0).strip()}"
+                         for b, s in sp.items()) + " deg")
+    bnd = chk["spread_bound"]
+    L.append(f"  bound of the sun angles: zenith {bnd['zenith']}; azimuth {bnd['azimuth']}")
+    over = chk["dates_over_bound"]
+    L.append(f"  dates over the bound: {len(over)}"
+             + (f" (spread, bound) {dict(list(over.items())[:6])}" if over else ""))
+    if chk["dates_without_sun"]:
+        L.append(f"  dates WITHOUT sun angles in the frame: {len(chk['dates_without_sun'])} "
+                 f"{chk['dates_without_sun'][:10]}")
+    if chk["dates_with_nan_cells"]:
+        L.append(f"  dates with no-data cells in the frame: {len(chk['dates_with_nan_cells'])} "
+                 f"{chk['dates_with_nan_cells'][:10]}")
+    c = chk["centre"]
+    per = c["per_date"]
+    good = [d for d, v in per.items() if v.get("sunZenithAngles") is not None]
+    at = np.unique(np.linspace(0, len(good) - 1, min(n, len(good))).round()) if good else []
+    pick = [good[int(i)] for i in at]
+    where = (f"lon {c['lon']:.5f}, lat {c['lat']:.5f}; " if c.get("lon") is not None else "")
+    L.append(f"  at the frame centre ({where}x {c['x']:.1f}, y {c['y']:.1f}), {len(pick)} of "
+             f"{len(per)} dates (all in the verification JSON):")
+    L.append(f"    {'date':<10}  {'sunZenith':>9}  {'sunAzimuth':>10}  {'viewZenith':>10}  "
+             f"{'viewAzimuth':>11}")
+    for d in pick:
+        v = per[d]
+        L.append(f"    {d}  {_fmt_deg(v.get('sunZenithAngles'))}  "
+                 f"{_fmt_deg(v.get('sunAzimuthAngles'), 10)}  "
+                 f"{_fmt_deg(v.get('viewZenithMean'), 10)}  "
+                 f"{_fmt_deg(v.get('viewAzimuthMean'), 11)}")
+    return L
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  verification and overpass times
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2443,6 +3030,49 @@ def reference_grid(site, root=None, log=None):
         f"predicted from the bbox ({g['shape'][0]} x {g['shape'][1]} px, EPSG {g['epsg']})")
     return {"path": f"grid predicted from the {site} bbox", "kind": "predicted", "x": x, "y": y,
             "crs_wkt": wkt}
+
+
+def angles_reference_grid(site, root=None, log=None, res=ANGLES_RES_M):
+    """The 300 m grid an angles store of ``site`` must be on (``kind``):
+    a complete angles store of the site under ``root`` ("store": every year
+    of a site on one grid), else the site's 10 m reference grid
+    (``reference_grid``: the netCDF cube, a main store or the bbox) with
+    its frame snapped outward to the ``res`` lattice ("predicted"). The
+    10 m frame is kept (``fine_edges``) to check that the angles cover it."""
+    say = log or (lambda m: None)
+    for year in zc.list_angle_years(site, root):
+        sp = zc.angles_path(site, year, root)
+        ds = zc.open_store(sp)
+        try:
+            g = zc.grid_info(ds)
+            if np.isclose(abs(g["dx"]), res) and np.isclose(abs(g["dy"]), res):
+                say(f"angles grid guard: reference grid = the complete angles store {sp} "
+                    f"({g['shape'][0]} x {g['shape'][1]} cells of {res} m, EPSG {g['epsg']})")
+                return {"path": str(sp), "kind": "store", "x": np.asarray(ds["x"].values),
+                        "y": np.asarray(ds["y"].values), "crs_wkt": g["crs_wkt"], "res": res}
+        finally:
+            ds.close()
+    fine = reference_grid(site, root=root, log=None)
+    if fine is None:
+        say(f"ANGLES GRID GUARD OFF: no {RESOLUTION_M} m reference grid for {site}: the CRS and "
+            f"the lattice of the delivered angles are NOT checked")
+        return None
+    fx, fy = np.asarray(fine["x"], dtype="float64"), np.asarray(fine["y"], dtype="float64")
+    cx, cy = coarse_axes(fx, fy, res)
+    h = RESOLUTION_M / 2.0
+    if fine.get("kind") == "predicted":
+        name = f"the {RESOLUTION_M} m grid predicted from the {site} bbox"
+    else:
+        name = f"{Path(str(fine['path'])).name}"
+    say(f"angles grid guard: reference grid = "
+        + (name if fine.get("kind") == "predicted" else
+           f"the {RESOLUTION_M} m grid of {name} ({fine['kind']})")
+        + f" snapped outward to the {res} m lattice ({len(cy)} x {len(cx)} cells, EPSG "
+        f"{zc._epsg_from_wkt(fine['crs_wkt'])})")
+    return {"path": f"{res} m cells around {name}", "kind": "predicted", "x": cx, "y": cy,
+            "crs_wkt": fine["crs_wkt"], "res": res,
+            "fine_edges": [float(fx[0] - h), float(fx[-1] + h), float(fy[-1] - h),
+                           float(fy[0] + h)]}
 
 
 def verify_request(req, log):
@@ -2532,6 +3162,82 @@ def update_overpass(req, dates, log, network=True):
     return still
 
 
+def compare_dates(angle_dates, req):
+    """The dates of an angles store against those of the main store of the
+    same year (same root): ``{"compared", "angles", "main", "common",
+    "only_angles", "only_main", "main_store"}``; not compared while the main
+    store is not complete."""
+    main = zc.store_path(req.site, req.year, req.root)
+    out = {"main_store": str(main), "angles": len(angle_dates)}
+    if not zc.is_complete(main):
+        return dict(out, compared=False, main=None,
+                    reason=f"{main.name} is not complete (not downloaded yet?): compare later with "
+                           f"--verify-only")
+    ds = zc.open_store(main)
+    try:
+        mdates = zc.dates(ds)
+    finally:
+        ds.close()
+    sa, sm = set(angle_dates), set(mdates)
+    return dict(out, compared=True, main=len(mdates), common=len(sa & sm),
+                only_angles=sorted(sa - sm), only_main=sorted(sm - sa))
+
+
+def report_angle_dates(dates):
+    if not dates.get("compared"):
+        return [f"dates: {dates['angles']} in the angles store; NOT compared with the main store "
+                f"({dates.get('reason')})"]
+    same = not dates["only_angles"] and not dates["only_main"]
+    return [f"dates: angles {dates['angles']}, main store {dates['main']}, common {dates['common']}"
+            + ("; IDENTICAL" if same else
+               f"; only in the angles {dates['only_angles'][:12]}"
+               f"{' ...' if len(dates['only_angles']) > 12 else ''}; only in the main store "
+               f"{dates['only_main'][:12]}{' ...' if len(dates['only_main']) > 12 else ''}")]
+
+
+def verify_angles(req, log):
+    """Check a written angles store; JSON beside it (``<year>.angles.
+    verify.json``) and the log. The verdict lists the problems: dates that
+    differ from the main store of the year, values outside the physical
+    ranges, sun angles exactly 0 (an undeclared no-data), dates whose
+    sun-angle spread exceeds the geometric bound, dates without sun angles
+    (``angle_checks``); "ok" otherwise."""
+    ds = zc.open_store(req.store)
+    try:
+        dts = zc.dates(ds)
+        chk = angle_checks(ds)
+    finally:
+        ds.close()
+    dates = compare_dates(dts, req)
+    problems = []
+    if dates["compared"] and (dates["only_angles"] or dates["only_main"]):
+        problems.append(f"dates differ from the main store ({len(dates['only_angles'])} only in "
+                        f"the angles, {len(dates['only_main'])} only in the main store)")
+    oor = [b for b, r in chk["ranges"].items() if r["out_of_range"]]
+    if oor:
+        problems.append(f"values outside the physical range in {oor}")
+    zeros = sun_zeros(chk)
+    if zeros:
+        problems.append("sun angles exactly 0 (an undeclared no-data?): " + "; ".join(zeros))
+    if chk["dates_over_bound"]:
+        problems.append(f"{len(chk['dates_over_bound'])} date(s) with a sun-angle spread above the "
+                        f"bound")
+    if chk["dates_without_sun"]:
+        problems.append(f"{len(chk['dates_without_sun'])} date(s) without sun angles in the frame")
+    verdict = "; ".join(problems) if problems else (
+        "ok" if dates["compared"] else "ok (dates not compared: no complete main store)")
+    rep = {"site": req.site, "year": req.year, "window": [req.start, req.end],
+           "store": str(req.store), "checked_utc": utcnow().isoformat(timespec="seconds"),
+           "verdict": verdict, "problems": problems, "dates": dates}
+    rep.update(chk)
+    zc.write_json(rep, req.sidecar("verify.json"))
+    log("angles verification: " + ("PROBLEMS: " + verdict if problems else
+                                   "OK" if verdict == "ok" else "OK, " + verdict[4:-1]))
+    for line in report_angle_dates(dates) + report_angle_checks(chk):
+        log(f"  {line}")
+    return rep
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  one store, start to end
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2606,6 +3312,69 @@ def lattice_check(interp, ref_grid, whole=True):
     return None, None
 
 
+def _phase(a, b, step):
+    """Distance of ``a - b`` from the nearest multiple of ``step``, in steps."""
+    f = ((float(a) - float(b)) / step) % 1.0
+    return min(f, 1.0 - f)
+
+
+def angles_grid_check(interp, ref, whole=True, res=ANGLES_RES_M):
+    """``(error, extent, warning)`` of a delivered angles grid against the
+    angles reference grid (``angles_reference_grid``); the spacing (``res``)
+    was checked by ``interpret``.
+
+    error: another CRS; cell edges that are not lines of the 10 m lattice of
+    the main grid; or, against an angles store of the site already there,
+    another phase of the 300 m lattice (its years would not share a grid).
+    extent: the reference's 300 m lattice with another extent (the caller
+    crops / pads onto the reference; ignored for --test, ``whole=False``).
+    warning: the cells sit at another phase of the 10 m lattice than
+    predicted (the first store of a site: kept as delivered, and it becomes
+    the reference of the site's other years), or the angle frame does not
+    cover the 10 m frame."""
+    if ref is None:
+        return None, None, None
+    if ref.get("crs_wkt") and not zc.crs_equal(interp.crs_wkt, ref["crs_wkt"]):
+        return (f"the delivered CRS (EPSG {zc._epsg_from_wkt(interp.crs_wkt)}) is not the CRS of "
+                f"{ref['path']} (EPSG {zc._epsg_from_wkt(ref['crs_wkt'])})"), None, None
+    x, y = np.asarray(interp.x, dtype="float64"), np.asarray(interp.y, dtype="float64")
+    rx, ry = np.asarray(ref["x"], dtype="float64"), np.asarray(ref["y"], dtype="float64")
+    if not (len(x) and len(y) and len(rx) and len(ry)):
+        return None, None, None
+    name = Path(str(ref["path"])).name if ref.get("kind") == "store" else ref["path"]
+    warn, extent = None, None
+    if _phase(x[0], rx[0], res) > 1e-6 or _phase(y[0], ry[0], res) > 1e-6:
+        ex, ey = _phase(x[0], rx[0], RESOLUTION_M), _phase(y[0], ry[0], RESOLUTION_M)
+        off = (f"({(x[0] - rx[0]) % res:g}, {(y[0] - ry[0]) % res:g}) m from the cell centres of "
+               f"{name}")
+        if ex > 1e-3 or ey > 1e-3:
+            return (f"the delivered {res} m cells are {off}: their edges are not lines of the "
+                    f"{RESOLUTION_M} m lattice of the main grid"), None, None
+        if ref.get("kind") == "store":
+            return (f"the delivered {res} m cells are {off}, another phase of the {RESOLUTION_M} m "
+                    f"lattice than the site's angles store: the years would not share a "
+                    f"grid"), None, None
+        warn = (f"the delivered {res} m cells are {off} (not at multiples of {res} m, as "
+                f"predicted), but their edges are lines of the {RESOLUTION_M} m lattice of the "
+                f"main grid: kept as delivered; this store becomes the reference grid of the "
+                f"site's other years")
+    elif whole and (len(x) != len(rx) or len(y) != len(ry) or not np.isclose(x[0], rx[0], atol=1e-3)
+                    or not np.isclose(y[0], ry[0], atol=1e-3)):
+        extent = (f"same {res} m lattice as {name} but another extent: {len(y)} x {len(x)} cells "
+                  f"from ({x[0]}, {y[0]}) against {len(ry)} x {len(rx)} cells from ({rx[0]}, "
+                  f"{ry[0]})")
+    fe = ref.get("fine_edges")
+    if whole and fe is not None and extent is None:
+        h = res / 2.0
+        xe0, xe1, ye0, ye1 = x[0] - h, x[-1] + h, y[-1] - h, y[0] + h
+        if xe0 > fe[0] + 1e-6 or xe1 < fe[1] - 1e-6 or ye0 > fe[2] + 1e-6 or ye1 < fe[3] - 1e-6:
+            cover = (f"the angle frame (x {xe0:.0f}..{xe1:.0f}, y {ye0:.0f}..{ye1:.0f}) does not "
+                     f"cover the {RESOLUTION_M} m frame (x {fe[0]:.0f}..{fe[1]:.0f}, y "
+                     f"{fe[2]:.0f}..{fe[3]:.0f}): angles_at refuses points outside it")
+            warn = cover if warn is None else f"{warn}; {cover}"
+    return None, extent, warn
+
+
 def _store_date_hint(part, store_path, files):
     """The one datetime the assets of a delivered store declare (STAC), or
     None: the date of a store without a time dimension."""
@@ -2666,10 +3435,13 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
     only reported by --test."""
     from collections import Counter
 
+    spec = req.spec
+    main = not req.is_angles
     part = Path(req.part)
     lines = ["=" * 30 + f" FORMAT REPORT {req.tag} " + "=" * 30,
              f"request: {COLLECTION} bands {list(req.bands)} window [{req.start}, {req.end}) bbox "
-             f"{req.bbox}"]
+             f"{req.bbox}" + ("" if main else f"; resample_spatial({spec.resolution} m, "
+                                               f"{spec.method!r})")]
     files = {}
     found = {"stores": [], "netcdf": [], "geotiff": [], "other": []}
     raws, problems = [], []
@@ -2741,6 +3513,8 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
                               f"{found['other'][:5]} {problems}.{hint}")
         kw = dict(crs_hints=crs_hints, ref_grid=ref_grid, nodata=nodata,
                   strict_nodata=not req.test, count_nodata=req.test)
+        if not main:                # --nodata is the main bands'; the angles' grid is 300 m
+            kw.update(nodata=None, resolution=spec.resolution, product=spec)
         if len(raws) == 1:
             parts = [interpret(raws[0], req.bands,
                                date_hint=_store_date_hint(part, raws[0].source, files), **kw)]
@@ -2766,21 +3540,49 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
                               f"skipped: {problems}")
         if ref_grid is None:
             interp.warnings.append("no reference grid: CRS and 10 m lattice NOT checked")
-        err, extent = lattice_check(interp, ref_grid, whole=not req.test)
+        if main:
+            err, extent = lattice_check(interp, ref_grid, whole=not req.test)
+        else:
+            err, extent, note = angles_grid_check(interp, ref_grid, whole=not req.test)
+            if note:
+                interp.warnings.append(note)
         if err and allow_offset:
             interp.warnings.append(err + " (written anyway: --allow-grid-offset)")
         elif err:
             raise FormatError(err + "; nothing written (run again with --allow-grid-offset to "
                               "write the store anyway)")
         elif extent:
-            note = align_to_grid(interp, ref_grid["x"], ref_grid["y"])
+            note = align_to_grid(interp, ref_grid["x"], ref_grid["y"], res=spec.resolution)
             interp.warnings.append(f"{extent}; {note}")
-        ds = canonical_dataset(interp, req.bands)
-        lines += report_interp(interp, ds)
-        idx, dline = report_dates(ds, interp.fills)
-        lines += report_values(ds, interp.fills, idx, dline)
-        lines += report_resampling(ds, interp.fills, idx)
-        lines += report_summary(files, found, raws, interp)
+        if main:
+            ds = canonical_dataset(interp, req.bands)
+            lines += report_interp(interp, ds)
+            idx, dline = report_dates(ds, interp.fills)
+            lines += report_values(ds, interp.fills, idx, dline)
+            lines += report_resampling(ds, interp.fills, idx)
+            lines += report_summary(files, found, raws, interp)
+        else:
+            ds = canonical_dataset(interp, req.bands, product=spec)
+            lines += report_interp(interp, ds)
+            idx, dline = report_dates(ds, store_fills(interp, spec))
+            lines += report_angle_values(ds, idx, dline)
+            chk = angle_checks(ds)
+            lines += report_angle_checks(chk)
+            bad = sun_out_of_range(chk)
+            if bad and not req.test:
+                raise FormatError("sun angles outside their physical range (not degrees?): "
+                                  + "; ".join(bad))
+            if bad:
+                msg = "sun angles outside their physical range: " + "; ".join(bad)
+                interp.warnings.append(msg)
+                lines.append("  WARNING: " + msg)
+            zeros = sun_zeros(chk)
+            if zeros:
+                msg = ("sun angles exactly 0 (impossible at these sites: a no-data written as 0 "
+                       "without being declared?): " + "; ".join(zeros) + " - kept as delivered")
+                interp.warnings.append(msg)
+                lines.append("  WARNING: " + msg)
+            lines += report_summary(files, found, raws, interp, product=spec)
         lines.append("=> normalisable: " + ("YES" if not interp.warnings else
                                              "YES, with the warnings above"))
     except Exception as exc:
@@ -2815,7 +3617,7 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
     import zarr
     import numcodecs
 
-    return {
+    attrs = {
         "process_graph_source": graph_source,
         "input_baselines": json.dumps(input_products(results_meta)),
         "grid_reference": (f"{ref_grid.get('kind', 'netcdf')}: {ref_grid.get('path')}" if ref_grid
@@ -2856,6 +3658,22 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
                                 "openeo": openeo.__version__}),
         "written_by": "experiments/download_cube_zarr.py",
     }
+    if req.is_angles:
+        attrs.update({
+            "title": (f"Sentinel-2 L2A sun and view angles, {req.site} {req.year}"
+                      + (" (format test)" if req.test else "")),
+            "product": ANGLES.name,
+            "resampling": ANGLES_RESAMPLING,
+            "chunks": json.dumps(zc.ANGLES_CHUNKS),
+            "grid_resolution_m": int(ANGLES_RES_M),
+            "units": "degree",
+            "nodata": "NaN (float32); the delivered no-data value, if any, mapped to NaN",
+            "delivered_nodata": json.dumps({b: repr(f) for b, f in interp.fills.items()}),
+            "main_store": str(zc.store_path(req.site, req.year, req.root)),
+            "purpose": ("sun angles at the site, to recompute the time the satellite passed over "
+                        "it (the scene labels are datatake starts); view angles for diagnostics"),
+        })
+    return attrs
 
 
 def recorded_title(part):
@@ -2888,10 +3706,15 @@ def superseded_parts(req):
 
 
 def run_request(ctx, req, log):
-    """Download, normalise, verify and time one store. Returns a summary."""
+    """Download, normalise, verify and time one store (of either product).
+    Returns a summary."""
     t0 = time.time()
-    if not req.test and zc.is_complete(req.store):      # also with --new-job: never paid twice
+    angles = req.is_angles
+    if not req.test and req.complete():                 # also with --new-job: never paid twice
         log(f"{req.store} is complete: nothing to download")
+        if angles:                  # cheap; the main store of the year may have come since
+            rep = verify_angles(req, log)
+            return {"status": "skipped", "dates": rep["dates"]["angles"], "verdict": rep["verdict"]}
         ds = zc.open_store(req.store)
         dates = zc.dates(ds)
         ds.close()
@@ -2941,7 +3764,9 @@ def run_request(ctx, req, log):
         graph, gsrc = cur["process_graph"], f"submitted with job {cur.get('job_id')}"
     else:
         graph, gsrc = flat, "built offline (the submitted graph was not recorded)"
-    ref = reference_grid(req.site, root=req.root.parent if req.test else req.root, log=log)
+    ref_root = req.root.parent if req.test else req.root
+    ref = (angles_reference_grid(req.site, root=ref_root, log=log) if angles else
+           reference_grid(req.site, root=ref_root, log=log))
     ds, interp, lines = normalise(req, log, job_info=info, results_meta=meta, ref_grid=ref,
                                   allow_offset=ctx.allow_offset, nodata=ctx.nodata,
                                   report_all=req.test, backend_format=ctx.backend_format)
@@ -2956,15 +3781,36 @@ def run_request(ctx, req, log):
                 log(ln)
     attrs = provenance(req, info, meta, interp, ctx, graph, graph_source=gsrc, ref_grid=ref,
                        job_options=cur.get("job_options"))
-    log(f"writing {req.store} ({ds.sizes['t']} dates, {ds.sizes['y']} x {ds.sizes['x']} px, "
-        f"{len(req.bands)} bands)")
-    write_store(ds, interp.fills, req.store, attrs, log=log, groups=interp.groups)
+    log(f"writing {req.store} ({ds.sizes['t']} dates, {ds.sizes['y']} x {ds.sizes['x']} "
+        + (f"cells of {req.spec.resolution} m, {len(req.bands)} angles as float32)" if angles else
+           f"px, {len(req.bands)} bands)"))
+    write_store(ds, store_fills(interp, req.spec), req.store, attrs, log=log, groups=interp.groups,
+                chunks=req.spec.chunks, format_id=req.spec.format_id)
     size = sum(f.stat().st_size for f in Path(req.store).rglob("*") if f.is_file())
-    log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk)")
+    log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk)" if not angles else
+        f"store complete: {req.store} ({size / 1e6:.2f} MB on disk)")
     job_side = {"ledger": json.loads(led_path.read_text(encoding="utf-8"))
                 if led_path.is_file() else {}, "job": info, "results_metadata": meta}
     zc.write_json(job_side, req.sidecar("job.json"))
-    if req.test:
+    if req.test and angles:
+        cube = zc.open_angles(req.site, req.start, req.end, root=req.root)
+        names = zc.band_names(cube)
+        log(f"open_angles({req.site!r}, {req.start!r}, {req.end!r}, root={str(req.root)!r}): "
+            f"{dict(cube.sizes)}; dates {zc.dates(cube)}")
+        log(f"  angles {names}; dtypes {sorted({str(cube[b].dtype) for b in names})}; chunks "
+            f"{cube[names[0]].encoding.get('chunks') if names else None}; CRS EPSG "
+            f"{zc.grid_info(cube)['epsg']}; cells {zc.grid_info(cube)['dx']:g} m")
+        cube.close()
+        lon, lat = TEST_CENTRE
+        try:
+            at = zc.angles_at(req.site, lon, lat, req.start, req.end, root=req.root)
+            log(f"angles_at({req.site!r}, {lon}, {lat}, {req.start!r}, {req.end!r}) at x "
+                f"{at.attrs['x']:.1f}, y {at.attrs['y']:.1f} (bilinear):")
+            for ln in at.round(4).to_string().splitlines():
+                log(f"  {ln}")
+        except ValueError as exc:             # informative: the point may fall outside
+            log(f"angles_at({req.site!r}, {lon}, {lat}, ...): {exc}")
+    elif req.test:
         cube = zc.open_cube(req.site, req.start, req.end, root=req.root)
         log(f"open_cube({req.site!r}, {req.start!r}, {req.end!r}, root={str(req.root)!r}): "
             f"{dict(cube.sizes)}; dates {zc.dates(cube)}")
@@ -2973,9 +3819,13 @@ def run_request(ctx, req, log):
             f"{sorted({str(zc.fill_of(cube[b])) for b in zc.band_names(cube)})}; chunks "
             f"{cube['B03'].encoding.get('chunks')}; CRS EPSG {zc.grid_info(cube)['epsg']}")
         cube.close()
-    rep = verify_request(req, log)
-    dates = zc.dates(ds)
-    still = update_overpass(req, dates, log, network=ctx.network)
+    if angles:                      # the overpass file belongs to the main store's dates
+        rep = verify_angles(req, log)
+        dates, still = zc.dates(ds), []
+    else:
+        rep = verify_request(req, log)
+        dates = zc.dates(ds)
+        still = update_overpass(req, dates, log, network=ctx.network)
     if not (ctx.keep_raw or req.test):
         shutil.rmtree(part, ignore_errors=True)
         log(f"raw download removed ({part}); the store keeps the provenance")
@@ -2987,6 +3837,9 @@ def run_request(ctx, req, log):
             + (f"; superseded folders kept: {[p.name for p in superseded_parts(req)]}"
                if superseded_parts(req) else ""))
     log(f"done in {(time.time() - t0) / 60:.0f} min")
+    if angles:
+        return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
+                "mb": round(size / 1e6, 2), "job": info.get("id")}
     return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
             "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id"),
             "radiometry": (rep.get("radiometry") or {}).get("offset_state")}
@@ -3001,27 +3854,38 @@ def _size(nbytes):
     return f"{nbytes / 1e9:.1f} GB" if nbytes >= 1e9 else f"{nbytes / 1e6:.1f} MB"
 
 
+def _size_small(nbytes):
+    """``_size``, with kB below 1 MB (the angles of a short window)."""
+    return _size(nbytes) if nbytes >= 1e6 else f"{nbytes / 1e3:.1f} kB"
+
+
 def dry_run(reqs, ctx):
-    """Process graphs, outputs, their state and a size estimate; no network."""
-    total = {"px_dates": 0.0, "raw": 0.0, "disk": 0.0, "biggest_raw": 0.0, "todo": 0}
-    shown = set()
-    refs = {}
+    """Process graphs, outputs, their state and a size estimate per
+    product; no network."""
+    totals = {}
+    shown, guarded = set(), set()
+    refs, angle_refs = {}, {}
+
+    def say(m):
+        print(f"   {m}", flush=True)
+
     for req in reqs:
+        spec, angles = req.spec, req.is_angles
         sr = build_process(req, None, ctx.backend_format, ctx.format_options)
         flat = sr.flat_graph()
         title = job_title(req, graph_hash(flat))
         print(f"\n== {req.tag}: window [{req.start}, {req.end}) bbox {req.bbox}", flush=True)
         print(f"   job '{title}', format {ctx.backend_format} {ctx.format_options or {}}, "
               f"job options {ctx.job_options}", flush=True)
-        if req.site not in shown:
+        if (req.site, spec.name) not in shown:
             print("   process graph:\n" + "\n".join("     " + ln for ln in
                                                      json.dumps(flat, indent=2).splitlines()),
                   flush=True)
-            shown.add(req.site)
+            shown.add((req.site, spec.name))
         else:
             print("   process graph: as above, temporal_extent "
                   f"{flat['loadcollection1']['arguments']['temporal_extent']}", flush=True)
-        complete = (not req.test) and zc.is_complete(req.store)
+        complete = (not req.test) and req.complete()
         state = ("COMPLETE (skipped)" if complete else
                  "partial download present" if Path(req.part).exists() else "to download")
         led = Ledger(req.part).current() if (Path(req.part) / LEDGER).is_file() else None
@@ -3029,16 +3893,30 @@ def dry_run(reqs, ctx):
                                                        f"({led.get('status')})" if led else ""),
               flush=True)
         print(f"            {req.sidecar('verify.json').name}, {req.sidecar('format.txt').name}, "
-              f"{req.sidecar('job.json').name}, {zc.overpass_path(req.site, req.root)}", flush=True)
+              f"{req.sidecar('job.json').name}"
+              + ("" if angles else f", {zc.overpass_path(req.site, req.root)}"), flush=True)
         if req.site not in refs:
             refs[req.site] = None if req.test else reference_summary(req.site)
+        if (req.site, spec.name) not in guarded:
+            guarded.add((req.site, spec.name))
+            ref_root = req.root.parent if req.test else req.root
             try:
-                reference_grid(req.site, root=req.root.parent if req.test else req.root,
-                               log=lambda m: print(f"   {m}", flush=True))
+                if angles:
+                    angle_refs[req.site] = angles_reference_grid(req.site, root=ref_root, log=say)
+                else:
+                    reference_grid(req.site, root=ref_root, log=say)
             except Exception as exc:          # informative only
                 print(f"   grid guard: could not prepare the reference grid ({exc})", flush=True)
         ref = refs[req.site]
-        if ref and not req.test:
+        if angles:
+            ag = angle_refs.get(req.site)
+            if ag is not None and not req.test:
+                shape, gsrc = [len(ag["y"]), len(ag["x"])], ag["path"]
+            else:
+                g = predict_grid(req.bbox, res=spec.resolution)
+                shape, gsrc = g["shape"], (f"bbox envelope on the {spec.resolution} m lattice, "
+                                           f"EPSG:{g['epsg']}")
+        elif ref and not req.test:
             shape, gsrc = ref["shape"], f"existing cube {Path(ref['path']).name}"
         else:
             g = predict_grid(req.bbox)
@@ -3051,14 +3929,24 @@ def dry_run(reqs, ctx):
             n = TYPICAL_DATES.get(req.year, 145) * min(1.0, days / 365.0)
             dsrc = "typical count for the year"
         px = shape[0] * shape[1]
-        raw = px * n * 2 * len(req.bands)
-        disk = px * n * BYTES_PER_PIXEL_DATE
+        raw = px * n * spec.raw_itemsize * len(req.bands)
+        disk = px * n * spec.disk_per_px_date
+        total = totals.setdefault(spec.name, {"px_dates": 0.0, "raw": 0.0, "disk": 0.0,
+                                              "biggest_raw": 0.0, "todo": 0, "of": 0})
+        total["of"] += 1
         if not complete:
             total["px_dates"] += px * n
             total["raw"] += raw
             total["disk"] += disk
             total["biggest_raw"] = max(total["biggest_raw"], raw)
             total["todo"] += 1
+        if angles:
+            print(f"   grid {shape[0]} x {shape[1]} cells of {spec.resolution} m ({gsrc}); "
+                  f"~{n:.0f} dates ({dsrc})", flush=True)
+            print(f"   size: {px * n:.0f} cell-dates; {_size_small(raw)} as float32 "
+                  f"({len(req.bands)} angles), ~{_size_small(disk)} on disk (estimate "
+                  f"{spec.disk_per_px_date} B per cell-date)", flush=True)
+            continue
         print(f"   grid {shape[0]} x {shape[1]} px ({gsrc}); ~{n:.0f} dates ({dsrc})", flush=True)
         print(f"   size: {px * n / 1e9:.3f} G pixel-dates; {_size(raw)} as int16, ~{_size(disk)} "
               f"on disk (estimate {BYTES_PER_PIXEL_DATE} B per pixel-date)", flush=True)
@@ -3067,11 +3955,20 @@ def dry_run(reqs, ctx):
     while not probe.exists() and probe.parent != probe:
         probe = probe.parent
     free = shutil.disk_usage(probe).free
-    print(f"\nTOTAL {total['todo']} store(s) to make (of {len(reqs)}): "
-          f"{total['px_dates'] / 1e9:.2f} G pixel-dates, {_size(total['raw'])} as int16, "
-          f"~{_size(total['disk'])} on disk; while a year is processed its raw download also "
-          f"needs up to ~{_size(total['biggest_raw'])} (zip + extracted, removed after it); "
-          f"free under {probe}: {_size(free)}", flush=True)
+    print("", flush=True)
+    for name, t in totals.items():
+        if name == MAIN.name:
+            print(f"TOTAL main: {t['todo']} store(s) to make (of {t['of']}): "
+                  f"{t['px_dates'] / 1e9:.2f} G pixel-dates, {_size(t['raw'])} as int16, "
+                  f"~{_size(t['disk'])} on disk; while a year is processed its raw download also "
+                  f"needs up to ~{_size(t['biggest_raw'])} (zip + extracted, removed after it)",
+                  flush=True)
+        else:
+            print(f"TOTAL {name}: {t['todo']} store(s) to make (of {t['of']}): "
+                  f"{t['px_dates'] / 1e6:.3f} M cell-dates, {_size_small(t['raw'])} as "
+                  f"{PRODUCTS[name].store_dtype}, ~{_size_small(t['disk'])} on disk; one small "
+                  f"job each", flush=True)
+    print(f"free under {probe}: {_size(free)}", flush=True)
     return 0
 
 
@@ -3079,9 +3976,13 @@ def verify_only(reqs):
     bad = 0
     for req in reqs:
         log = make_log(req)
-        if not zc.is_complete(req.store):
+        if not req.complete():
             log(f"{req.store}: not downloaded (or not complete)")
             bad += 1
+            continue
+        if req.is_angles:
+            if verify_angles(req, log)["problems"]:
+                bad += 1
             continue
         rep = verify_request(req, log)
         ds = zc.open_store(req.store)
@@ -3108,8 +4009,15 @@ def parse_args(argv=None):
                     help="years or ranges: 2023-2025 | 2017-2022 2025 | 2023,2025 "
                          "(default 2023-2025)")
     ap.add_argument("--test", action="store_true",
-                    help="format test: 2 km x 2 km in Villaviciosa, 2025-06-01..15, all bands, "
-                         "into <root>/_test; prints the FORMAT REPORT")
+                    help="format test: 2 km x 2 km in Villaviciosa, 2025-06-01..15, all bands "
+                         "and the angles (the --products), into <root>/_test; prints a FORMAT "
+                         "REPORT per product")
+    ap.add_argument("--products", default=",".join(PRODUCTS),
+                    help="the stores to make, comma-separated: main (<year>.zarr: the nine bands "
+                         f"at {RESOLUTION_M} m, int16) and/or angles (<year>.angles.zarr: sun and "
+                         f"view angles on {ANGLES_RES_M} m cells, float32 degrees; one small "
+                         "separate job). Default: both. A complete store is skipped, so a year "
+                         "whose main store exists only fetches its angles")
     ap.add_argument("--login", action="store_true",
                     help="only authenticate with the Copernicus Data Space (interactive, once)")
     ap.add_argument("--dry-run", action="store_true",
@@ -3124,9 +4032,10 @@ def parse_args(argv=None):
     ap.add_argument("--keep-raw", action="store_true",
                     help="keep <year>.part (the backend's files) after a store is complete")
     ap.add_argument("--nodata", type=int, default=None,
-                    help="no-data value of the bands whose delivered data declare none (no "
+                    help="no-data value of the main bands whose delivered data declare none (no "
                          "_FillValue / nodata attribute); needed only when a run stops with "
-                         "AMBIGUOUS NO-DATA (see the FORMAT REPORT of --test)")
+                         "AMBIGUOUS NO-DATA (see the FORMAT REPORT of --test). Not used for the "
+                         "angles (their Zarr fill_value or NaN is the no-data)")
     ap.add_argument("--new-job", action="store_true",
                     help="pay for a fresh job: move <year>.part aside and do not reattach a job "
                          "of the same title (use once; drop it when resuming). Complete stores "
@@ -3152,6 +4061,10 @@ def parse_args(argv=None):
         a.years = parse_years(a.years) if a.years else list(DEFAULT_YEARS)
     except ValueError as exc:
         ap.error(str(exc))
+    try:
+        a.products = parse_products(a.products)
+    except ValueError as exc:
+        ap.error(f"--products: {exc}")
     for opt in ("job_options", "format_options"):
         v = getattr(a, opt)
         if v:
@@ -3175,7 +4088,8 @@ def main(argv=None):
         return 0
     root = zc.cubes_root(a.root)
     ctx = Context(a)
-    reqs = [test_request(root)] if a.test else year_requests(a.sites, a.years, root)
+    reqs = (test_requests(root, a.products) if a.test else
+            year_requests(a.sites, a.years, root, a.products))
     if a.dry_run:
         return dry_run(reqs, ctx)
     if a.verify_only:
@@ -3206,13 +4120,14 @@ def main(argv=None):
                         log(f"FAILED: {type(exc).__name__}: {exc}")
                         for ln in traceback.format_exc().splitlines()[-12:]:
                             log(f"  {ln}")
-                        log(f"run the same command again to resume; finished years are skipped, "
+                        log(f"run the same command again to resume; finished stores are skipped, "
                             f"the raw download in {req.part} is reused")
             finally:
                 lock.__exit__(None, None, None)
     except KeyboardInterrupt:
         print("\ninterrupted. A job that was running keeps running on the backend; run the same "
-              "command again to reattach to it (its id is in <year>.part/job.json).", flush=True)
+              "command again to reattach to it (its id is in <year>.part/job.json, or "
+              "<year>.angles.part/job.json for the angles).", flush=True)
         return 130
     print("\nSUMMARY", flush=True)
     for tag, r in results.items():
@@ -3222,6 +4137,10 @@ def main(argv=None):
     missing = {t: r["missing_overpass"] for t, r in results.items() if r.get("missing_overpass")}
     if missing:
         print(f"  overpass times missing for {missing}: those scenes would be dropped", flush=True)
+    odd = {t: r.get("verdict") for t, r in results.items()
+           if " angles" in t and not str(r.get("verdict", "")).startswith("ok")}
+    if odd:
+        print(f"  angles to look at (see <year>.angles.verify.json): {odd}", flush=True)
     return 1 if failed or missing else 0
 
 

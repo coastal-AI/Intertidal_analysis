@@ -114,3 +114,8 @@ bathymetry_hsr*/
 # datos pesados v4: fuera del repo; su procedencia queda en sealed/registry.jsonl
 data_v4/
 *.nc
+
+# credentials and per-user config kept inside the project on the server (never commit)
+.config/
+.copernicusmarine-credentials
+**/.copernicusmarine-credentials

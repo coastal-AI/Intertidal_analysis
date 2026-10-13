@@ -11,7 +11,8 @@ selects the window. Years can be added later (2023-2025 first, 2017-2022
 afterwards) without touching the stores already there.
 
 This module depends on numpy, pandas, xarray, zarr and numcodecs only (no
-pyintertidal, no openEO), so a notebook can use it anywhere the stores are.
+pyintertidal, no openEO; pyproj for :func:`angles_at`), so a notebook can
+use it anywhere the stores are.
 
 Layout of every store (``FORMAT_ID``)
 -------------------------------------
@@ -19,9 +20,11 @@ Layout of every store (``FORMAT_ID``)
   with zarr-python 3.2 reads it reliably (zarr-python 3.2 v3 stores trip
   xarray 2025.1) and because GDAL, R and older zarr read it as well.
 * dims ``t, y, x``. ``t``: the acquisition date as openEO labels it
-  (00:00 UTC; the overpass time is in ``overpass_times.json`` beside the
-  stores). ``y`` descending, ``x`` ascending: pixel CENTRES in metres in the
-  site's UTM CRS, 10 m apart, the grid of the existing netCDF cubes.
+  (00:00 UTC; the time in ``overpass_times.json`` beside the stores is the
+  datatake START, not the time the satellite passed over the site: that one
+  is recomputed from the sun angles of the angles stores, below). ``y``
+  descending, ``x`` ascending: pixel CENTRES in metres in the site's UTM
+  CRS, 10 m apart, the grid of the existing netCDF cubes.
 * One variable per band, ``B02 B03 B04 B08 B8A B11 B12 SCL CLD``, with the
   values EXACTLY as the backend delivered them (int16 digital numbers: 10000
   x reflectance for the spectral bands, class codes for SCL, cloud
@@ -47,6 +50,25 @@ Reading
 downloads ([YYYY-01-01, YYYY+1-01-01)). Data come back raw (int16 with the
 fill in ``attrs['_FillValue']``) and lazy (dask); ``masked=True`` gives
 float32 with NaN instead.
+
+Angles stores (``ANGLES_FORMAT_ID``)
+------------------------------------
+Beside every ``<year>.zarr``, ``<year>.angles.zarr`` holds the sun and view
+angles of the same scenes (``ANGLE_BANDS``: ``sunZenithAngles
+sunAzimuthAngles viewZenithMean viewAzimuthMean``), which the openEO backend
+derives from the 5 km angle grids of the Sentinel-2 tile metadata, fetched
+by a separate small job: float32 DEGREES, NaN = no data, dims ``t, y, x``
+with the same ``t`` labels, on a 300 m grid (``ANGLES_RES_M``) in the same
+CRS whose cell edges are lines of the 10 m lattice (cells of exactly 30 x 30
+pixels; the angle frame is the cube's frame snapped outward to 300 m, so it
+contains it). Same Zarr v2 layout, ``crs`` variable, provenance and
+``complete`` flag as the cubes; chunks ``ANGLES_CHUNKS``. They exist to
+recompute the time the satellite passed over a site (a solar-ephemeris
+inversion of the sun angles, done by the validation code, not here):
+
+>>> ang = zc.open_angles("ems", "2023-01-01", "2026-01-01")        # (t, y, x) float32
+>>> df = zc.angles_at("ems", 7.05, 53.36, "2023-01-01", "2024-01-01")
+>>> df.loc["2023-06-14", ["sunZenithAngles", "sunAzimuthAngles"]]
 """
 from __future__ import annotations
 
@@ -101,6 +123,24 @@ CHUNKS = {"t": 16, "y": 256, "x": 256}
 #: level 7 adds <1 % on reflectance at twice the time
 COMPRESSOR = {"cname": "zstd", "clevel": 5, "shuffle": "shuffle"}
 
+#: the angle bands of the angles stores, in store order (float32 degrees)
+ANGLE_BANDS = ("sunZenithAngles", "sunAzimuthAngles", "viewZenithMean", "viewAzimuthMean")
+#: the physical range of each angle (degrees)
+ANGLE_RANGES = {"sunZenithAngles": (0.0, 90.0), "sunAzimuthAngles": (0.0, 360.0),
+                "viewZenithMean": (0.0, 90.0), "viewAzimuthMean": (0.0, 360.0)}
+#: the azimuths: circular, interpolated across 0/360 by :func:`sample_point`
+AZIMUTH_BANDS = ("sunAzimuthAngles", "viewAzimuthMean")
+#: cell size of the angles stores (m); multiples of 300 m in the site's UTM
+#: CRS are lines of the 10 m (and 20 m, 60 m) lattice (see
+#: download_cube_zarr: why 300 m)
+ANGLES_RES_M = 300
+#: identifier of the angles store layout (module docstring)
+ANGLES_FORMAT_ID = "pyintertidal-zarr-angles/1"
+#: chunks of the angles stores: a site-year is at most ~115 x 115 cells x
+#: ~175 dates, so a chunk holds 64 dates of the whole frame (<= 3.4 MB of
+#: float32): a point's year reads 3 chunks per angle, a map 1
+ANGLES_CHUNKS = {"t": 64, "y": 256, "x": 256}
+
 #: SCL class codes -> (name, colour) for maps and legends
 SCL_CLASSES = {
     0: ("no data", "#000000"), 1: ("saturated / defective", "#ff0000"),
@@ -134,6 +174,12 @@ def site_dir(site, root=None):
 def store_path(site, year, root=None):
     """``<root>/<site>/<year>.zarr``."""
     return site_dir(site, root) / f"{int(year)}.zarr"
+
+
+def angles_path(site, year, root=None):
+    """``<root>/<site>/<year>.angles.zarr``: the sun and view angles of the
+    scenes of ``<year>.zarr`` (read with :func:`open_angles`)."""
+    return site_dir(site, root) / f"{int(year)}.angles.zarr"
 
 
 def sidecar_path(site, year, kind, root=None):
@@ -222,15 +268,17 @@ def store_baselines(attrs):
     return {"counts": dict(sorted(counts.items())), "pre_04_dates": pre, "per_date": per}
 
 
-def is_complete(path):
-    """True for a finished store: consolidated, this layout, ``complete = 1``.
+def is_complete(path, fmt=FORMAT_ID):
+    """True for a finished store: consolidated, the layout ``fmt`` (the
+    cubes' ``FORMAT_ID``, or ``ANGLES_FORMAT_ID`` for an angles store),
+    ``complete = 1``.
 
     The downloader writes a store under ``<year>.zarr.tmp`` and renames it
     only after every block was read back and compared, so a store that is
     there is normally complete; this also rejects a copy cut short.
     """
     attrs = store_attrs(path)
-    return attrs.get("complete") == 1 and attrs.get("format") == FORMAT_ID
+    return attrs.get("complete") == 1 and attrs.get("format") == fmt
 
 
 def list_years(site, root=None):
@@ -242,6 +290,19 @@ def list_years(site, root=None):
     for p in d.iterdir():
         m = re.fullmatch(r"(\d{4})\.zarr", p.name)
         if m and p.is_dir() and is_complete(p):
+            years.append(int(m.group(1)))
+    return sorted(years)
+
+
+def list_angle_years(site, root=None):
+    """Years with a complete angles store (``<year>.angles.zarr``) for ``site``."""
+    d = site_dir(site, root)
+    if not d.is_dir():
+        return []
+    years = []
+    for p in d.iterdir():
+        m = re.fullmatch(r"(\d{4})\.angles\.zarr", p.name)
+        if m and p.is_dir() and is_complete(p, ANGLES_FORMAT_ID):
             years.append(int(m.group(1)))
     return sorted(years)
 
@@ -332,10 +393,11 @@ def open_store(path, bands=None, masked=False, chunks=None):
 
 
 def band_names(ds):
-    """The band variables of a cube dataset (everything but ``crs``), in the
-    order of ``BANDS`` (others after, alphabetically)."""
+    """The band variables of a cube or angles dataset (everything but
+    ``crs``), in the order of ``BANDS`` then ``ANGLE_BANDS`` (others after,
+    alphabetically)."""
     names = [v for v in ds.data_vars if v != "crs" and set(ds[v].dims) >= {"y", "x"}]
-    rank = {b: i for i, b in enumerate(BANDS)}
+    rank = {b: i for i, b in enumerate(BANDS + ANGLE_BANDS)}
     return sorted(names, key=lambda b: (rank.get(b, len(rank)), str(b)))
 
 
@@ -514,6 +576,189 @@ def read_overpass(site, root=None):
     with open(p, encoding="utf-8") as f:
         raw = json.load(f)
     return {k: parse_date(v) for k, v in raw.items()}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  angles stores
+# ─────────────────────────────────────────────────────────────────────────────
+
+def open_angles(site, start, end=None, root=None, bands=None, chunks=None, missing="raise"):
+    """The sun and view angles of ``site`` over ``[start, end)``, lazily, across years.
+
+    The counterpart of :func:`open_cube` for the ``<year>.angles.zarr``
+    stores: float32 degrees with NaN for no data, dims ``(t, y, x)`` on the
+    site's 300 m angle grid (cell centres in the cube's CRS), one variable
+    per angle (``ANGLE_BANDS``, or ``bands``). The ``t`` labels are those of
+    the angles job, which should be the cube's dates (the downloader's
+    verification, ``<year>.angles.verify.json``, lists any difference).
+    Only the yearly stores that overlap the window are opened; they must
+    share the grid. ``end`` is exclusive (``None``: up to the last date);
+    ``missing="raise"`` refuses a window that needs a year without an
+    angles store, ``"skip"`` returns what is there (and says which years
+    were missing in ``attrs['missing_years']``).
+    """
+    t0 = parse_date(start)
+    t1 = parse_date(end) if end is not None else None
+    if t1 is not None and t1 <= t0:
+        raise ValueError(f"empty window [{t0.date()}, {t1.date()})")
+    have = list_angle_years(site, root)
+    if not have:
+        raise FileNotFoundError(
+            f"no complete angles store for {site!r} under {site_dir(site, root)}; download them "
+            f"with `python -m experiments.download_cube_zarr {site} --years ... --products angles`")
+    last = (t1 - pd.Timedelta(1, "ns")).year if t1 is not None else max(have)
+    wanted = list(range(t0.year, last + 1))
+    absent = [y for y in wanted if y not in have]
+    if absent and missing == "raise":
+        raise FileNotFoundError(
+            f"{site}: the window [{t0.date()}, {t1.date() if t1 is not None else 'end'}) needs the "
+            f"angles of years {absent}, not downloaded (complete angles stores: {have}); download "
+            f"them with `python -m experiments.download_cube_zarr {site} --years "
+            f"{','.join(str(y) for y in absent)} --products angles` or pass missing='skip'")
+    years = [y for y in wanted if y in have]
+    if not years:
+        raise FileNotFoundError(f"{site}: no angles store overlaps the window (have {have})")
+    parts = [open_store(angles_path(site, y, root), bands=bands, chunks=chunks) for y in years]
+    names = band_names(parts[0])
+    for y, p in zip(years[1:], parts[1:]):
+        if not _same_grid(parts[0], p):
+            raise ValueError(f"{site}: the {y} angles store is not on the grid of the "
+                             f"{years[0]} angles store")
+        if band_names(p) != names:
+            raise ValueError(f"{site}: the {y} angles store has {band_names(p)}, the {years[0]} "
+                             f"one {names}")
+    sources = [{"year": y, "store": str(angles_path(site, y, root)),
+                "job_id": p.attrs.get("job_id"), "processing_date": p.attrs.get("processing_date")}
+               for y, p in zip(years, parts)]
+    if len(parts) == 1:
+        ds = parts[0]
+    else:
+        ds = xr.concat(parts, dim="t", data_vars="minimal", coords="minimal",
+                       compat="override", join="exact", combine_attrs="override")
+    t = ds["t"].values
+    if len(t) > 1 and not np.all(np.diff(t) > np.timedelta64(0, "ns")):
+        raise ValueError(f"{site}: angle dates not strictly increasing across the yearly stores")
+    i0 = int(np.searchsorted(t, np.datetime64(t0), side="left"))
+    i1 = int(np.searchsorted(t, np.datetime64(t1), side="left")) if t1 is not None else len(t)
+    ds = ds.isel(t=slice(i0, i1))
+    attrs = {k: v for k, v in ds.attrs.items()
+             if k in ("format", "collection", "backend", "bands", "resampling", "grid_epsg",
+                      "grid_resolution_m", "units", "Conventions")}
+    attrs.update({"site": site, "window_start": str(t0.date()),
+                  "window_end_exclusive": str(t1.date()) if t1 is not None else "",
+                  "years": years, "missing_years": absent, "sources": json.dumps(sources)})
+    ds.attrs = attrs
+    return ds
+
+
+def _axis_position(coords, v, name, cell=None):
+    """``(i0, i1, w)``: the two cell centres of a regular axis on either
+    side of ``v`` and the weight of ``i1``. Between the outermost centre and
+    the frame edge (half a cell) the edge value is held. Outside the frame:
+    ValueError. ``cell``: the cell size when the axis has a single centre."""
+    c = np.asarray(coords, dtype="float64")
+    n = len(c)
+    if n == 0:
+        raise ValueError(f"empty {name} axis")
+    step = float(c[1] - c[0]) if n > 1 else float(cell or 0.0)
+    if step == 0.0:                       # one centre and no known cell size
+        return 0, 0, 0.0
+    f = (float(v) - c[0]) / step          # fractional index (step < 0 on y)
+    if not -0.5 - 1e-9 <= f <= n - 0.5 + 1e-9:
+        lo, hi = sorted((c[0] - step / 2.0, c[-1] + step / 2.0))
+        raise ValueError(f"{name} = {float(v):.2f} is outside the frame ({lo:.2f} .. {hi:.2f})")
+    if n == 1:
+        return 0, 0, 0.0
+    f = min(max(f, 0.0), n - 1.0)
+    i0 = min(int(np.floor(f)), n - 2)
+    return i0, i0 + 1, f - i0
+
+
+def sample_point(ds, x, y, bands=None):
+    """Bilinear interpolation of the ``(t, y, x)`` variables of ``ds`` at the
+    projected point ``(x, y)`` (metres, in the dataset's CRS), every date.
+
+    Returns a DataFrame indexed by date (``t``) with one column per band.
+    The four cell centres around the point are weighted bilinearly; a
+    neighbour without data (NaN or the band's fill) is left out and the
+    weights of the others renormalised (NaN when none has data). Between
+    the outermost centres and the frame edge the edge value is held (for the
+    sun angles of a 300 m grid, < 0.002 deg). Azimuths (``AZIMUTH_BANDS``)
+    whose neighbours straddle 0/360 are unwrapped first (result in [0,
+    360)); otherwise every band is plain bilinear. A point outside the frame
+    raises ValueError. Only the 2 x 2 cells around the point are read.
+    """
+    names = ([bands] if isinstance(bands, str) else list(bands)) if bands is not None \
+        else band_names(ds)
+    cx = cy = None
+    gt = ds["crs"].attrs.get("GeoTransform") if "crs" in ds.variables else None
+    if gt:
+        try:
+            vals = [float(v) for v in str(gt).split()]
+            cx, cy = abs(vals[1]), abs(vals[5])
+        except (ValueError, IndexError):
+            pass
+    j0, j1, wx = _axis_position(ds["x"].values, x, "x", cx)
+    i0, i1, wy = _axis_position(ds["y"].values, y, "y", cy)
+    w = np.array([[(1.0 - wy) * (1.0 - wx), (1.0 - wy) * wx], [wy * (1.0 - wx), wy * wx]])
+    out = {}
+    for b in names:
+        blk = np.array(ds[b].isel(y=[i0, i1], x=[j0, j1]).values, dtype="float64")   # (t, 2, 2)
+        f = fill_of(ds[b])
+        if f is not None:
+            blk[blk == f] = np.nan
+        ok = np.isfinite(blk)
+        if b in AZIMUTH_BANDS and blk.size:
+            with np.errstate(invalid="ignore"):
+                hi = np.where(ok, blk, -np.inf).max(axis=(1, 2))
+                lo = np.where(ok, blk, np.inf).min(axis=(1, 2))
+            wrap = (hi - lo) > 180.0
+            if wrap.any():
+                flat = blk.reshape(len(blk), -1)
+                ref = flat[np.arange(len(flat)), np.argmax(np.isfinite(flat), axis=1)]
+                unwrapped = ref[:, None, None] + (np.mod(blk - ref[:, None, None] + 180.0, 360.0)
+                                                  - 180.0)
+                blk = np.where(wrap[:, None, None], unwrapped, blk)
+        ws = np.where(ok, w, 0.0)
+        tot = ws.sum(axis=(1, 2))
+        num = (np.where(ok, blk, 0.0) * ws).sum(axis=(1, 2))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            val = np.where(tot > 0, num / np.where(tot > 0, tot, 1.0), np.nan)
+        if b in AZIMUTH_BANDS:
+            val = np.where(np.isfinite(val) & ((val < 0) | (val >= 360.0)), np.mod(val, 360.0), val)
+        out[b] = val
+    return pd.DataFrame(out, index=pd.DatetimeIndex(ds["t"].values, name="date"))
+
+
+def angles_at(site, lon, lat, start, end=None, root=None, bands=None, missing="raise"):
+    """The angles of every scene of ``site`` in ``[start, end)`` at one point.
+
+    ``lon``, ``lat``: WGS84 degrees. Opens the angles stores of the window
+    (:func:`open_angles`), projects the point into their CRS and
+    interpolates the angles bilinearly there (:func:`sample_point`).
+    Returns a pandas DataFrame indexed by date (the ``t`` labels, 00:00 UTC)
+    with one column per angle (``sunZenithAngles sunAzimuthAngles
+    viewZenithMean viewAzimuthMean``, degrees, NaN without data);
+    ``df.attrs`` holds the site, the point in both CRSs and the years read.
+    The UTC time each scene was sensed at the point is the validation's to
+    recompute from the sun angles (a solar ephemeris), not this module's.
+    """
+    from pyproj import CRS, Transformer
+
+    ds = open_angles(site, start, end, root=root, bands=bands, missing=missing)
+    try:
+        g = grid_info(ds)
+        if not g["crs_wkt"]:
+            raise ValueError(f"{site}: the angles stores carry no CRS")
+        tf = Transformer.from_crs("EPSG:4326", CRS.from_user_input(g["crs_wkt"]), always_xy=True)
+        x, y = tf.transform(float(lon), float(lat))
+        df = sample_point(ds, x, y, bands=bands)
+        df.attrs = {"site": site, "lon": float(lon), "lat": float(lat), "x": float(x),
+                    "y": float(y), "epsg": g["epsg"], "years": list(ds.attrs.get("years", [])),
+                    "missing_years": list(ds.attrs.get("missing_years", []))}
+    finally:
+        ds.close()
+    return df
 
 
 # ─────────────────────────────────────────────────────────────────────────────

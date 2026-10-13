@@ -583,13 +583,16 @@ def test_verify_only_cli(two_years, tmp_path, wkt, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     zc.write_json({str(d.date()): f"{d.date()}T11:00:00" for d in t},
                   zc.overpass_path("villaviciosa", root))
-    assert dcz.main(["villaviciosa", "--years", "2023", "--verify-only", "--root", str(root)]) == 0
+    assert dcz.main(["villaviciosa", "--years", "2023", "--verify-only", "--root", str(root),
+                     "--products", "main"]) == 0
     rep = json.loads(zc.sidecar_path("villaviciosa", 2023, "verify.json", root).read_text())
     assert rep["verdict"] == "identical" and rep["dates"]["common"] == len(t)
     assert "IDENTICAL" in capsys.readouterr().out
+    # with the default products the angles of 2023 are missing
+    assert dcz.main(["villaviciosa", "--years", "2023", "--verify-only", "--root", str(root)]) == 1
     # 2024 lacks overpass times and is outside the reference; 2025 is not downloaded
     assert dcz.main(["villaviciosa", "--years", "2024-2025", "--verify-only", "--root",
-                     str(root)]) == 1
+                     str(root), "--products", "main"]) == 1
     rep24 = json.loads(zc.sidecar_path("villaviciosa", 2024, "verify.json", root).read_text())
     assert rep24["verdict"] == "no reference"
 
