@@ -183,8 +183,9 @@ def _write_main_case(name, tmp, wkt):
         raw = write_raw_v2(src / "a.zarr", t, y, x, data, wkt, fill_value=None)
         place(req, [("a.zarr", raw, "x")])
         kw["nodata"] = 0
-    elif name == "padded_onto_reference":
+    elif name == "padded_onto_reference":       # padded on one side: needs --allow-padding now
         ref = {"path": "ref.nc", "kind": "netcdf", "x": x[2:36], "y": y[3:20], "crs_wkt": wkt}
+        kw["allow_padding"] = True
         sub = {b: a[:, 0:22, 5:40] for b, a in data.items()}
         raw = write_raw_v2(src / "e.zarr", t, y[0:22], x[5:40], sub, wkt)
         place(req, [("e.zarr", raw, "x")])
@@ -212,7 +213,14 @@ MAIN_CASES = ("zip_v2_big_endian", "v3_bands_dimension", "zarr_default_fill", "n
               "padded_onto_reference", "netcdf", "test_ambiguous_nodata")
 
 #: fingerprints of the main product made by the downloader of commit 57669c1
-#: (before the angles product), with these library versions
+#: (before the angles product), with these library versions. One intended
+#: change since: "padded_onto_reference" crops a margin that holds data, and
+#: its report and ``delivered_notes`` now say so (the 'cropped-away margin'
+#: line of ``margin_summary``, a note: the margin lies outside the frame);
+#: it is padded on one side, which a production year now refuses, so it is
+#: written with ``allow_padding`` (--allow-padding), whose warning is the
+#: 57669c1 one. With ``margin_summary`` returning None its core and bytes
+#: are still the 57669c1 ones (62179b9f..., ca75e004...)
 MAIN_GOLDEN_VERSIONS = {"zarr": "3.2.1", "numcodecs": "0.16.5", "numpy": "2.4.6",
                         "xarray": "2025.1.1", "openeo": "0.50.0"}
 _GRAPH = "208a9557f1c6566a017431cc1be74ff0f9905437db96bf794537485addbf5ba3"
@@ -230,8 +238,8 @@ MAIN_GOLDEN = {
         "core": "20326e9b0098416f818d1c24cc1ace65116e745862e305f0ebf3ca09deea7f96",
         "bytes": "b75e8269f72ca60322ff9778b05c55b0cdf5f75dbc20f9226bd9168db096d2d4", "graph": _GRAPH},
     "padded_onto_reference": {
-        "core": "62179b9f03d01c58afef374f03962a39c54b02e07d628c7cba351361493a4019",
-        "bytes": "ca75e0045c73bcf552f11064f2ac1a0714da11f90e263fff50d11b1d487a10d3", "graph": _GRAPH},
+        "core": "aac5a7ba4dda3c37fa813fa849e289f2315e202019e4e051233839d7323e05fd",
+        "bytes": "7b785e08fef2bc4995452188fe62ead83f947c8b8ac4e17e68dafde23693f486", "graph": _GRAPH},
     "netcdf": {
         "core": "c4d19bf140ba6fa420594d9abe7f04965f46b000fa19cf537abc5be839812f5b",
         "bytes": "859c307ef6e120aa1678decbda36bc28098ebbc56ef6b222647d104f0865812c", "graph": _GRAPH},
@@ -385,11 +393,11 @@ def angles_request(root, year=2025, test=False, start=None, end=None):
                        test=test, product="angles")
 
 
-def write_angles_store(req, ref_grid=None):
+def write_angles_store(req, ref_grid=None, **kw):
     """normalise -> provenance -> write_store, as run_request does;
     returns ``(interpretation, report lines)``."""
     ds, interp, rep = dcz.normalise(req, lambda m: None, job_info={"id": "j-ang", "title": "a"},
-                                    results_meta={}, ref_grid=ref_grid)
+                                    results_meta={}, ref_grid=ref_grid, **kw)
     flat = dcz.build_process(req).flat_graph()
     attrs = dcz.provenance(req, {"id": "j-ang", "title": "a"}, {}, interp, dcz.Context(), flat,
                            ref_grid=ref_grid)
@@ -572,12 +580,15 @@ def test_angles_grid_guard(tmp_path, wkt, monkeypatch):
     fe = ref["fine_edges"]
     assert ref["x"][0] - RES / 2 <= fe[0] < fe[1] <= ref["x"][-1] + RES / 2
     assert ref["y"][-1] - RES / 2 <= fe[2] < fe[3] <= ref["y"][0] + RES / 2
-    # on that lattice, a smaller extent: put on the reference grid, padded with NaN
+    # on that lattice, a smaller extent: a production year stops (NaN inside the frame
+    # would read as no data); --allow-padding puts it on the reference grid, padded with NaN
     t, y, x, data = angle_cube(2025, x0=ref["x"][3], y0=ref["y"][2])
     raw_a = write_angles_v2(tmp_path / "src" / "a.zarr", t, y, x, data, wkt)
     req = angles_request(root)
     place(req, [("a.zarr", raw_a, "x")])
-    interp, _ = write_angles_store(req, ref_grid=ref)
+    with pytest.raises(dcz.FormatError, match="does not cover the whole reference grid"):
+        dcz.normalise(req, lambda m: None, ref_grid=ref)
+    interp, _ = write_angles_store(req, ref_grid=ref, allow_padding=True)
     assert any("same 300 m lattice" in w and "another extent" in w for w in interp.warnings)
     ds = zc.open_store(req.store)
     np.testing.assert_array_equal(ds["x"].values, ref["x"])
@@ -836,7 +847,15 @@ def test_products_option_and_requests(tmp_path):
     flat = dcz.build_process(r).flat_graph()
     lc = flat["loadcollection1"]["arguments"]
     main_lc = dcz.build_process(reqs[0]).flat_graph()["loadcollection1"]["arguments"]
-    assert lc["bands"] == list(zc.ANGLE_BANDS) and lc["spatial_extent"] == main_lc["spatial_extent"]
+    assert lc["bands"] == list(zc.ANGLE_BANDS)
+    # the angles extent: the main (10 m) extent snapped OUTWARD to multiples of 300 m
+    me, ae = main_lc["spatial_extent"], lc["spatial_extent"]
+    assert me["crs"] == ae["crs"] == 32630 and r.extent == ae
+    assert all(ae[k] % 300 == 0 for k in ("west", "south", "east", "north"))
+    assert (ae["west"] <= me["west"] < ae["west"] + 300 and ae["south"] <= me["south"] < ae["south"] + 300
+            and ae["east"] - 300 < me["east"] <= ae["east"]
+            and ae["north"] - 300 < me["north"] <= ae["north"])
+    assert ae == dcz.extent_of(dcz.snap_frame(dcz.site_frame("villaviciosa", tmp_path), 300))
     assert lc["temporal_extent"] == ["2023-01-01", "2024-01-01"]
     assert lc.get("properties") == main_lc.get("properties")          # the same scenes
     rs = flat["resamplespatial1"]["arguments"]

@@ -172,10 +172,10 @@ def place(req, items, datetimes=None):
                   Path(req.part) / dcz.ASSETS_DONE)
 
 
-def normalise_and_write(req, ref_grid=None):
+def normalise_and_write(req, ref_grid=None, **kw):
     lines = []
     ds, interp, rep = dcz.normalise(req, lines.append, job_info={"id": "j-test", "title": "t"},
-                                    results_meta={}, ref_grid=ref_grid)
+                                    results_meta={}, ref_grid=ref_grid, **kw)
     flat = dcz.build_process(req).flat_graph()
     attrs = dcz.provenance(req, {"id": "j-test", "title": "t"}, {}, interp, dcz.Context(), flat,
                            ref_grid=ref_grid)
@@ -205,6 +205,109 @@ def check_store(store, t, y, x, data, bands=BANDS, job_id="j-test"):
     assert json.loads(ds.attrs["bands"]) == list(BANDS)
     assert zc.band_names(ds) == [b for b in BANDS if b in bands]
     ds.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  frames on the Villaviciosa lattice, and deliveries like the backend's Zarr
+#  of the format test of 2026-10-13
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: (west, south, east, north) of ndwi_cube_villaviciosa_grande_10y.nc (EPSG:32630)
+VILLA_FRAME = (301020.0, 4815690.0, 310170.0, 4824840.0)
+#: a 300 x 300 px frame on that lattice around the --test centre: a light reference cube
+TEST_FRAME = (305000.0, 4820000.0, 308000.0, 4823000.0)
+#: the --test window the downloader puts in either frame (2,040 m, corners on 60 m)
+TEST_WIN = (305400.0, 4820340.0, 307440.0, 4822380.0)
+
+
+def axes_of(frame, res=10.0):
+    """Pixel-centre axes (x ascending, y descending) of a (west, south, east, north) frame."""
+    west, south, east, north = frame
+    nx, ny = int(round((east - west) / res)), int(round((north - south) / res))
+    return west + res / 2 + res * np.arange(nx), north - res / 2 - res * np.arange(ny)
+
+
+def frame_dict(frame, wkt, epsg=32630, res=10.0):
+    """A frame as the downloader's frame helpers return it."""
+    west, south, east, north = frame
+    return {"west": west, "south": south, "east": east, "north": north, "res": res, "epsg": epsg,
+            "crs_wkt": wkt, "source": "a synthetic frame", "kind": "netcdf", "origin": "synthetic"}
+
+
+def lattice_values(b, n, x, y):
+    """Deterministic int16 values of band ``b`` on ``n`` dates at pixel
+    centres ``x`` (columns) by ``y`` (rows), a function of the UTM position
+    only, so any two grids on the lattice agree where they overlap. The 20 m
+    bands are constant on the 20 m cells of the lattice (nearest neighbour
+    from the native grid); date 0 has no data on two 20 m rows (y 4821005..35)."""
+    res = float(zc.NATIVE_RES_M[b])
+    xv, yv = np.asarray(x, dtype="float64"), np.asarray(y, dtype="float64")
+    X = np.floor(xv / res)[None, None, :]
+    Y = np.floor(yv / res)[None, :, None]
+    k = np.arange(n, dtype="float64")[:, None, None]
+    hi = 12 if b == "SCL" else 101 if b == "CLD" else 10000
+    out = np.mod(X * 7919 + Y * 104729 + k * 1299709 + (BANDS.index(b) + 1) * 15485863,
+                 hi).astype("int16")
+    out[0, (yv > 4821000) & (yv < 4821040), :] = FILL
+    return out
+
+
+def frame_nc(path, frame, wkt, n=1, bands=("B03",), start="2024-06-02", values=False):
+    """A light reference netCDF cube on ``frame``: ``n`` dates (5 days apart)
+    of ``bands``, constant values (compress to nothing) unless ``values``
+    (then ``lattice_values``)."""
+    x, y = axes_of(frame)
+    t = pd.date_range(start, periods=n, freq="5D")
+    data = {b: (lattice_values(b, n, x, y) if values else np.full((n, len(y), len(x)), 1000, "int16"))
+            for b in bands}
+    return write_nc(path, t, y, x, data, wkt, bands=tuple(bands))
+
+
+def server_axes(west, north, n_cols, n_rows, res=10.0):
+    """Cell centres of a delivery anchored on (west, north), as the backend's
+    Zarr path does it, n_cols x n_rows (padded to whole chunks)."""
+    return (west + res / 2 + res * np.arange(n_cols), north - res / 2 - res * np.arange(n_rows))
+
+
+def f32_like_the_backend(x, y):
+    """x / y as the backend's Zarr writer delivers them: float32 (the
+    float64 axes cast, rounding to nearest: the 2026-10-13 delivery's y
+    4822370.74 came as 4822370.5). Pixel centres on the lattice are whole
+    metres, exact in float32, so a delivery on the lattice comes back exact;
+    ``test_a_real_offset_is_still_refused`` covers values off it."""
+    return (np.asarray(x, dtype="float64").astype("float32"),
+            np.asarray(y, dtype="float64").astype("float32"))
+
+
+def write_server_zarr(path, t, y, x, data, wkt, extent, chunks=(1, 128, 128), dtype=">i2",
+                      fill_value=FILL):
+    """A delivery like the backend's Zarr of 2026-10-13: Zarr v2, one
+    (time, y, x) array per band (``_ARRAY_DIMENSIONS``), big-endian int16 with
+    fill -32768, Blosc lz4 chunks [1, 128, 128]; time big-endian int64 in
+    'milliseconds since 01/01/1970 - 00:00:00' (proleptic_gregorian); x / y as
+    given (float32 for the backend's); root attributes 'extent' and '_CRS'
+    (WKT), no grid-mapping variable."""
+    import numcodecs
+
+    comp = numcodecs.Blosc(cname="lz4", clevel=5, shuffle=numcodecs.Blosc.SHUFFLE)
+    g = zarr.open_group(str(path), mode="w", zarr_format=2)
+    g.attrs.update({"extent": [float(v) for v in extent], "_CRS": wkt})
+    for b, a in data.items():
+        arr = g.create_array(b, shape=a.shape, dtype=dtype, chunks=chunks, fill_value=fill_value,
+                             compressors=comp)
+        arr[:] = a
+        arr.attrs["_ARRAY_DIMENSIONS"] = ["time", "y", "x"]
+    ms = ((pd.DatetimeIndex(t) - pd.Timestamp("1970-01-01")) // pd.Timedelta("1ms")).values
+    for name, vals, attrs in (
+            ("time", np.asarray(ms, dtype=">i8"),
+             {"units": "milliseconds since 01/01/1970 - 00:00:00",
+              "calendar": "proleptic_gregorian"}),
+            ("x", np.asarray(x), {}), ("y", np.asarray(y), {})):
+        dt_ = ">i8" if name == "time" else np.asarray(vals).dtype.newbyteorder(">")
+        arr = g.create_array(name, shape=vals.shape, dtype=dt_, chunks=vals.shape, compressors=comp)
+        arr[:] = vals
+        arr.attrs.update(dict(attrs, _ARRAY_DIMENSIONS=[name]))
+    return Path(path)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -389,13 +492,20 @@ def test_grid_off_the_reference_lattice_stops(tmp_path, wkt):
     assert not req.store.exists()
     _, interp, _ = dcz.normalise(req, lambda m: None, ref_grid=ref, allow_offset=True)
     assert any("--allow-grid-offset" in w for w in interp.warnings)
-    # same lattice, smaller extent: put on the reference grid (padded), with a warning
+    # same lattice, smaller extent: a production year stops (the fill would read as
+    # no-data inside the frame); --allow-padding puts it on the reference grid, warned
     sub = {b: a[:, 2:10, 3:20] for b, a in data.items()}
     raw2 = write_raw_v2(tmp_path / "src" / "s.zarr", t, y[2:10], x[3:20], sub, wkt)
     req2 = make_request(tmp_path / "c2")
     place(req2, [("s.zarr", raw2, "x")])
-    ds2, interp2, _ = dcz.normalise(req2, lambda m: None, ref_grid=ref)
-    assert any("another extent" in w for w in interp2.warnings)
+    with pytest.raises(dcz.FormatError, match=r"does not cover the whole reference grid.*"
+                                              r"--allow-padding"):
+        dcz.normalise(req2, lambda m: None, ref_grid=ref)
+    assert not req2.store.exists()
+    assert "NOT NORMALISABLE" in req2.sidecar("format.txt").read_text(encoding="utf-8")
+    ds2, interp2, _ = dcz.normalise(req2, lambda m: None, ref_grid=ref, allow_padding=True)
+    assert any("another extent" in w and "padded with the fill top 2" in w
+               for w in interp2.warnings)
     np.testing.assert_array_equal(ds2["x"].values, x)
     np.testing.assert_array_equal(ds2["B03"].values[:, 2:10, 3:20], sub["B03"])
     assert (ds2["B03"].values[:, :2, :] == FILL).all()
@@ -715,7 +825,13 @@ def test_job_options_are_those_of_download_cube():
 
 
 def test_same_process_as_the_existing_cubes(tmp_path, monkeypatch):
-    """SentinelCube.ensure's graph == ours, but for the bands and the format."""
+    """SentinelCube.ensure's graph == ours, but for the THREE intended
+    differences of the module docstring: the bands, the format, and the
+    spatial extent (the site's frame in its UTM CRS, ``crs`` an EPSG integer,
+    instead of the lon/lat box). ``--lonlat-extent`` gives the old extent
+    back: then only the bands and the format differ."""
+    import copy
+
     from openeo.rest.datacube import DataCube
     from openeo.rest.result import SaveResult
 
@@ -743,15 +859,33 @@ def test_same_process_as_the_existing_cubes(tmp_path, monkeypatch):
         cube.ensure(Conn(), job_options=dcz.JOB_OPTIONS, verbose=False)
     old = captured["graph"]
     assert old["loadcollection1"]["arguments"]["bands"] == ["B03", "B08", "SCL"]
+    assert old["loadcollection1"]["arguments"]["spatial_extent"] == dcz.site_bbox("ferrol")
     assert captured["kw"]["job_options"] == dcz.JOB_OPTIONS
-    req = dcz.Request(site="ferrol", year=2023, start="2023-01-01", end="2024-01-01",
-                      bbox=dcz.site_bbox("ferrol"), root=tmp_path)
+    root = tmp_path / "cubes"
+    req = dcz.year_requests(["ferrol"], [2023], root)[0]
     new = dcz.build_process(req).flat_graph()
-    assert new["loadcollection1"]["arguments"]["bands"] == list(BANDS)
+    lc = new["loadcollection1"]["arguments"]
+    assert lc["bands"] == list(BANDS)
     assert new["saveresult1"]["arguments"]["format"] == "Zarr"
-    old["loadcollection1"]["arguments"]["bands"] = list(BANDS)
-    old["saveresult1"]["arguments"]["format"] = "Zarr"
-    assert old == new
+    # the extent: the frame of the site's reference grid (its 10 m netCDF cube where it is on
+    # this machine, else the lon/lat box snapped outward to 60 m), in UTM zone 29
+    ext = lc["spatial_extent"]
+    assert ext == dcz.extent_of(dcz.site_frame("ferrol", root)) == req.extent
+    assert sorted(ext) == ["crs", "east", "north", "south", "west"]
+    assert ext["crs"] == 32629 and type(ext["crs"]) is int
+    assert all(ext[k] % 10 == 0 for k in ("west", "south", "east", "north"))
+    want = copy.deepcopy(old)
+    want["loadcollection1"]["arguments"].update(bands=list(BANDS), spatial_extent=ext)
+    want["saveresult1"]["arguments"]["format"] = "Zarr"
+    assert want == new                                    # nothing else differs
+    # --lonlat-extent: the request before 2026-10-13
+    lreq = dcz.year_requests(["ferrol"], [2023], root, lonlat=True)[0]
+    assert lreq.extent is None and lreq.spatial_extent == dcz.site_bbox("ferrol")
+    want_ll = copy.deepcopy(old)
+    want_ll["loadcollection1"]["arguments"]["bands"] = list(BANDS)
+    want_ll["saveresult1"]["arguments"]["format"] = "Zarr"
+    assert dcz.build_process(lreq).flat_graph() == want_ll
+    assert dcz.job_title(lreq, "0" * 12) == dcz.job_title(req, "0" * 12)     # titles: by the hash
 
 
 def test_predicted_grid_matches_the_existing_cubes():
@@ -791,6 +925,13 @@ def test_dry_run_is_offline(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     for s in ('"load_collection"', '"Zarr"', '"B8A"', '"CLD"', '"near"', "TOTAL", "2025-06-16"):
         assert s in out
+    # the UTM extents of the --test window (the same with the netCDF frame or the snapped box)
+    for s in ("spatial extent: EPSG:32630 west 305400 south 4820340 east 307440 north 4822380 "
+              "(204 x 204 px of 10 m)",
+              "spatial extent: EPSG:32630 west 305400 south 4820100 east 307500 north 4822500 "
+              "(8 x 7 cells of 300 m)", "SPATIAL EXTENTS requested", '"crs": 32630',
+              "lon/lat box (kept in the provenance, not requested)"):
+        assert s in out, s
     assert not (tmp_path / "cubes").exists()
 
 
@@ -1040,41 +1181,78 @@ def test_failed_normalisation_keeps_the_raw_for_the_next_run(tmp_path, wkt, monk
 
 
 def test_format_test_run(tmp_path, wkt, monkeypatch, fake_build):
-    """--test: report, a store opened through open_cube, comparison on the
-    common window of the reference cube, raw download kept."""
-    t, y, x, data = synth(2025, n=4, H=30, W=44, seed=42, start="2025-06-02")
-    iy = (np.floor(y / 20) - np.floor(y / 20).min()).astype(int)       # 20 m cells
-    ix = (np.floor(x / 20) - np.floor(x / 20).min()).astype(int)
-    for b in ("B8A", "B11", "B12", "SCL", "CLD"):                    # nearest from 20 m
-        data[b] = data[b][:, :iy.max() + 1, :ix.max() + 1][:, iy][:, :, ix]
-    nc = write_nc(tmp_path / "ref.nc", t, y, x, data, wkt)
+    """--test with the UTM extent, the delivery shaped like the backend's Zarr
+    of 2026-10-13 (zipped v2, >i2, Blosc lz4 chunks [1, 128, 128], x/y
+    float32, time in ms since 01/01/1970, arrays padded to 256 x 256 px with
+    the fill): the store is the 204 x 204 px window, bitwise (axes = the
+    lattice's float64 values, values = the delivered ones); report, a store
+    opened through open_cube, comparison on the common window of the
+    reference cube, raw download kept."""
+    t = pd.date_range("2025-06-02", periods=3, freq="5D")
+    rx, ry = axes_of(TEST_FRAME)
+    nc = write_nc(tmp_path / "ref.nc", t, ry, rx, {b: lattice_values(b, 3, rx, ry)
+                                                  for b in ("B03", "B08", "SCL")}, wkt)
     monkeypatch.setitem(dcz.SITE_CONFIG, "villaviciosa", dict(
         dcz.SITE_CONFIG["villaviciosa"], reference=str(nc),
         reference_period=("2016-01-01", "2025-12-31"), pipeline_overpass=str(tmp_path / "none.json")))
-    sub = {b: a[:, 5:25, 4:30] for b, a in data.items()}
-    raw = write_raw_v2(tmp_path / "src" / "openEO.zarr", t, y[5:25], x[4:30], sub, wkt)
-    z = zip_store(raw, tmp_path / "src" / "openEO.zarr")
+    req = dcz.test_request(tmp_path / "cubes")
+    assert req.extent == {"west": 305400, "south": 4820340, "east": 307440, "north": 4822380,
+                          "crs": 32630}
+    wx, wy = axes_of(TEST_WIN)
+    assert len(wx) == len(wy) == 204
+    dx, dy = server_axes(TEST_WIN[0], TEST_WIN[3], 256, 256)       # 2 x 2 chunks of 128 px
+    data = {}
+    for b in BANDS:
+        a = np.full((3, 256, 256), FILL, "int16")
+        a[:, :204, :204] = lattice_values(b, 3, wx, wy)
+        data[b] = a
+    xf, yf = f32_like_the_backend(dx, dy)
+    raw = write_server_zarr(tmp_path / "src" / "out.zarr", t, yf, xf, data, wkt, extent=TEST_WIN)
+    z = zip_store(raw, tmp_path / "src" / "out.zarr")
 
     def fake_download(job, req, log, workers=4):
-        place(req, [("openEO.zarr.zip", z, "application/zip")])
-        return {"assets": {"openEO.zarr.zip": {"href": "https://h/openEO.zarr.zip",
-                                               "type": "application/zip"}}}
+        place(req, [("out.zarr.zip", z, "application/zip")])
+        return {"assets": {"out.zarr.zip": {"href": "https://h/out.zarr.zip",
+                                            "type": "application/zip"}}}
 
     monkeypatch.setattr(dcz, "download_results", fake_download)
-    ctx, _ = _ctx(FakeConn())
+    conn = FakeConn()
+    ctx, _ = _ctx(conn)
     ctx.network = False
-    req = dcz.test_request(tmp_path / "cubes")
-    req.start, req.end = "2025-06-01", "2025-08-01"
     msgs = []
     res = dcz.run_request(ctx, req, msgs.append)
     text = "\n".join(msgs)
     assert res["status"] == "done" and res["verdict"] == "identical on the common window"
+    assert "with the warnings above" not in text
+    assert conn.jobs["j-1"]["title"].startswith("zarr_cube_test_villaviciosa_2025-06-01_2025-06-16_")
     for s_ in ("backend output format 'ZARR'", "FORMAT REPORT", "zip extracted", "open_cube(",
                "p1/p50/p99", "SUMMARY", "band naming: B02<-B02", "B11 100.0 %", "SCL 100.0 %",
-               "=> normalisable: YES"):
+               "extent EPSG:32630 west 305400 south 4820340 east 307440 north 4822380 (204 x 204 px",
+               "is not the --test window", "cropped rows 0:204 cols 0:204",
+               "cropped-away margin", ": only the fill",
+               "the delivered 'extent' attribute [305400.0, 4820340.0, 307440.0, 4822380.0] is the "
+               "requested extent",
+               "x delivered as >f4 (float32)", "the lattice's exact float64 values are used",
+               "'milliseconds since 01/01/1970 - 00:00:00' decoded explicitly",
+               "global attribute '_CRS'", "=> normalisable: YES"):
         assert s_ in text, s_
+    assert "WARNING" not in text.split("=> normalisable")[0].split("interpretation:")[-1]
+    # the store IS the window: the lattice's exact axes and the delivered values, bitwise
+    ds = zc.open_store(req.store)
+    assert ds["x"].dtype == np.float64 and ds["y"].dtype == np.float64
+    np.testing.assert_array_equal(ds["x"].values, wx)
+    np.testing.assert_array_equal(ds["y"].values, wy)
+    assert [str(d) for d in pd.DatetimeIndex(ds["t"].values).date] == [str(d.date()) for d in t]
+    for b in BANDS:
+        assert ds[b].dtype == np.int16 and zc.fill_of(ds[b]) == FILL
+        np.testing.assert_array_equal(ds[b].values, lattice_values(b, 3, wx, wy))
+    assert json.loads(ds.attrs["spatial_extent"]) == req.extent
+    assert json.loads(ds.attrs["spatial_extent_lonlat"]) == dcz.test_bbox()
+    assert ds.attrs["spatial_extent_source"].startswith("the --test window, 2040 x 2040 m")
+    assert '"crs": 32630' in ds.attrs["process_graph"]
+    ds.close()
     cube = zc.open_cube("villaviciosa", "2025-06-01", "2025-08-01", root=tmp_path / "cubes" / "_test")
-    assert cube.sizes["t"] == 4 and zc.band_names(cube) == list(BANDS)
+    assert cube.sizes["t"] == 3 and zc.band_names(cube) == list(BANDS)
     cube.close()
     assert Path(req.part).is_dir()                       # the test keeps the backend's files
     assert "FORMAT REPORT" in req.sidecar("format.txt").read_text(encoding="utf-8")
@@ -1267,8 +1445,14 @@ def test_other_extent_is_put_on_the_reference_grid(tmp_path, wkt):
     raw = write_raw_v2(tmp_path / "src" / "e.zarr", t, y[0:22], x[5:40], sub, wkt)
     req = make_request(tmp_path / "cubes")
     place(req, [("e.zarr", raw, "x")])
-    interp, _, _ = normalise_and_write(req, ref_grid=ref)
+    with pytest.raises(dcz.FormatError, match="does not cover the whole reference grid"):
+        dcz.normalise(req, lambda m: None, ref_grid=ref)          # 3 columns padded: stops
+    interp, _, _ = normalise_and_write(req, ref_grid=ref, allow_padding=True)
     assert any("put on the reference grid" in w for w in interp.warnings)
+    # the cropped margin holds data (pixels outside the frame): a note, not a warning
+    assert not any("cropped-away margin" in w for w in interp.warnings)
+    assert any("cropped-away margin" in n and "holds data" in n and "OUTSIDE the requested frame"
+               in n for n in interp.notes)
     ds = zc.open_store(req.store)
     np.testing.assert_array_equal(ds["x"].values, ref["x"])
     np.testing.assert_array_equal(ds["y"].values, ref["y"])
@@ -1290,25 +1474,33 @@ def test_reference_grid_falls_back_to_a_store_then_to_the_bbox(tmp_path, wkt, mo
     msgs = []
     g = dcz.reference_grid("villaviciosa", root=root, log=msgs.append)
     assert g["kind"] == "predicted" and "GRID GUARD WEAKER" in msgs[-1]
-    assert (len(g["y"]), len(g["x"])) == (915, 915) and (g["x"][0], g["y"][0]) == (X0, Y0)
+    # the box snapped OUTWARD to multiples of 60 m: the netCDF cube's 915 x 915 px frame
+    # (301020 / 4824840, its upper-left corner, already on 60 m) and 3 px more east and south
+    assert "snapped outward to multiples of 60 m" in msgs[-1]
+    assert (len(g["y"]), len(g["x"])) == (918, 918) and (g["x"][0], g["y"][0]) == (X0, Y0)
+    assert (g["x"][-1] + 5.0, g["y"][-1] - 5.0) == (310200.0, 4815660.0)
     t, y, x, data = synth(2023, seed=55)
     raw = write_raw_v2(tmp_path / "src" / "s.zarr", t, y, x, data, wkt)
     req = make_request(root)
     place(req, [("s.zarr", raw, "x")])
-    interp, _, _ = normalise_and_write(req, ref_grid=g)       # a 24 x 40 delivery, padded
+    interp, _, _ = normalise_and_write(req, ref_grid=g, allow_padding=True)  # 24 x 40, padded
     ds = zc.open_store(req.store)
     assert ds.attrs["grid_reference"].startswith("predicted: ")
     ds.close()
     g2 = dcz.reference_grid("villaviciosa", root=root, log=msgs.append)
     assert g2["kind"] == "store" and g2["path"] == str(req.store) and "weaker" in msgs[-1]
-    assert (len(g2["y"]), len(g2["x"])) == (915, 915)
+    assert (len(g2["y"]), len(g2["x"])) == (918, 918)
+    fr = dcz.site_frame("villaviciosa", root)             # the store's frame is then requested
+    assert dcz.extent_of(fr) == {"west": 301020, "south": 4815660, "east": 310200,
+                                 "north": 4824840, "crs": 32630}
+    assert fr["origin"].startswith("complete store 2023.zarr")
     # the store's CRS is used when a delivery carries none
     shutil.rmtree(raw / "crs")
     for b in BANDS:
         zarr.open_array(store=str(raw / b), mode="r+").attrs.pop("grid_mapping", None)
     req2 = make_request(tmp_path / "c2")
     place(req2, [("s.zarr", raw, "x")])
-    _, i2, _ = dcz.normalise(req2, lambda m: None, ref_grid=g2)
+    _, i2, _ = dcz.normalise(req2, lambda m: None, ref_grid=g2, allow_padding=True)
     assert i2.crs_source.startswith("reference store")
 
 
@@ -1534,3 +1726,633 @@ def test_padding_onto_a_large_grid_stays_a_few_blocks():
         assert np.prod(p.numblocks) <= 3 * 4 * 5
     np.testing.assert_array_equal(dcz._pad_tyx(a, 1, 1, 1, 1, FILL),
                                   np.pad(a, ((0, 0), (1, 1), (1, 1)), constant_values=FILL))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  the UTM extent on the reference lattice (after the format test of
+#  2026-10-13), the normalisation of a delivery like the backend's, the time
+#  units, and a changed request on the server's _test folder
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: the 2 km lon/lat test box reprojected to EPSG:32630 (the 'extent' attribute
+#: of the server's delivery of 2026-10-13): the old request
+OLD_TEST_BOX_UTM = (305408.66, 4820322.70, 307468.56, 4822375.74)
+
+
+def _wkt_of(epsg):
+    from pyproj import CRS
+
+    return CRS.from_epsg(epsg).to_wkt("WKT1_GDAL")
+
+
+def _ref_site(monkeypatch, nc, site="villaviciosa", **extra):
+    """``nc`` as the reference netCDF of ``site`` (a missing path: none on this machine)."""
+    monkeypatch.setitem(dcz.SITE_CONFIG, site, dict(dcz.SITE_CONFIG[site], reference=str(nc),
+                                                    **extra))
+
+
+def _edges(fr):
+    return tuple(float(fr[k]) for k in ("west", "south", "east", "north"))
+
+
+@pytest.mark.parametrize("frame,epsg", [
+    (VILLA_FRAME, 32630),                                   # upper-left corner on 60 m
+    ((551720.0, 4818000.0, 552330.0, 4818920.0), 32629),    # Ferrol-like x0 551725: west not on 60 m
+    ((305030.0, 4820010.0, 305640.0, 4820490.0), 32630),    # odd origin: edges on 10 m only
+])
+def test_main_extent_is_the_reference_frame(tmp_path, monkeypatch, frame, epsg):
+    """The main jobs request exactly the reference netCDF's frame (pixel
+    centres +- 5 m) in its UTM CRS: ``crs`` an EPSG integer, edges whole
+    metres, and the extent's axes are the reference axes bitwise."""
+    nc = frame_nc(tmp_path / "ref.nc", frame, _wkt_of(epsg))
+    _ref_site(monkeypatch, nc)
+    root = tmp_path / "cubes"
+    fr = dcz.site_frame("villaviciosa", root)
+    ext = dcz.extent_of(fr)
+    west, south, east, north = frame
+    assert ext == {"west": int(west), "south": int(south), "east": int(east), "north": int(north),
+                   "crs": epsg}
+    assert all(type(v) is int for v in ext.values())
+    assert fr["kind"] == "netcdf" and fr["origin"] == "reference netCDF ref.nc"
+    assert "NOTE" not in fr["source"]
+    rx, ry = axes_of(frame)
+    x, y = dcz.frame_axes(ext, 10)
+    np.testing.assert_array_equal(x, rx)
+    np.testing.assert_array_equal(y, ry)
+    req = dcz.year_requests(["villaviciosa"], [2024], root)[0]
+    assert req.extent == ext and req.spatial_extent == ext and req.extent_source == fr["source"]
+    assert dcz.build_process(req).flat_graph()["loadcollection1"]["arguments"]["spatial_extent"] == ext
+    assert dcz.describe_extent(ext, 10).endswith(f"({len(ry)} x {len(rx)} px of 10 m)")
+    assert dcz.extent_line(req).endswith("<- reference netCDF ref.nc")
+
+
+def test_a_reference_off_the_native_lattice_is_requested_as_it_is(tmp_path, monkeypatch, wkt):
+    """Edges not on multiples of 10 m: the reference is still the target
+    (requested exactly), and the source says it is not the native lattice."""
+    frame = (305025.0, 4820015.0, 305635.0, 4820485.0)
+    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", frame, wkt))
+    fr = dcz.site_frame("villaviciosa", tmp_path / "cubes")
+    assert _edges(fr) == frame and "not the native Sentinel-2 lattice" in fr["source"]
+
+
+def test_frame_without_a_10_m_reference_is_the_box_snapped_out_to_60_m(tmp_path, monkeypatch, wkt):
+    """A 20 m cube (as the local Escalda one) is no 10 m reference: the
+    frame is the lon/lat box projected to UTM and snapped OUTWARD to
+    multiples of 60 m (a line of the 10, 20 and 60 m lattices)."""
+    f20 = (301020.0, 4815660.0, 310200.0, 4824840.0)
+    x20, y20 = axes_of(f20, res=20.0)
+    nc = write_nc(tmp_path / "ref20.nc", pd.date_range("2024-06-02", periods=1), y20, x20,
+                  {b: np.full((1, len(y20), len(x20)), 1000, "int16") for b in ("B03", "B08", "SCL")},
+                  wkt)
+    _ref_site(monkeypatch, nc)
+    fr = dcz.site_frame("villaviciosa", tmp_path / "cubes")
+    assert fr["kind"] == "predicted"
+    assert fr["origin"].startswith("SNAPPING: the lon/lat box outward to multiples of 60 m")
+    assert "ref20.nc is on a 20 m grid" in fr["source"]
+    ext = dcz.extent_of(fr)
+    assert ext == {"west": 301020, "south": 4815660, "east": 310200, "north": 4824840, "crs": 32630}
+    assert all(ext[k] % 60 == 0 for k in ("west", "south", "east", "north"))
+    g = dcz.predict_grid(dcz.site_bbox("villaviciosa"), res=10)    # the netCDF cubes' envelope
+    (x0, x1), (y0, y1) = g["x_edges"], g["y_edges"]
+    assert ext["west"] <= x0 < ext["west"] + 60 and ext["east"] - 60 < x1 <= ext["east"]
+    assert ext["south"] <= y0 < ext["south"] + 60 and ext["north"] - 60 < y1 <= ext["north"]
+    # frames of axes on other lattices, and the outward snapping
+    f = dcz.frame_from_axes(x20, y20, wkt, 20)
+    assert _edges(f) == f20 and f["epsg"] == 32630 and f["res"] == 20.0
+    with pytest.raises(ValueError, match="not a regular 20 m axis"):
+        dcz.frame_from_axes(np.r_[x20[:3], x20[3] + 1.0], y20, wkt, 20)
+    with pytest.raises(ValueError, match="no EPSG code"):
+        dcz.extent_of(dict(f, epsg=None))
+    box = dict(zip(("west", "south", "east", "north"), OLD_TEST_BOX_UTM))
+    assert _edges(dcz.snap_frame(box, 60)) == (305400.0, 4820280.0, 307500.0, 4822380.0)
+    assert _edges(dcz.snap_frame(box, 10)) == (305400.0, 4820320.0, 307470.0, 4822380.0)
+    on = dict(box, west=305400.0, east=307440.0)                 # lines stay where they are
+    assert _edges(dcz.snap_frame(on, 60))[0::2] == (305400.0, 307440.0)
+
+
+def test_the_test_window(wkt):
+    """--test: 2,040 x 2,040 m (204 x 204 px) inside the frame, corners on
+    multiples of 60 m, next to the old 2 km lon/lat box; the same window
+    whether the frame is the netCDF's or the snapped box."""
+    villa = frame_dict(VILLA_FRAME, wkt)
+    win = dcz.test_window(villa)
+    assert _edges(win) == TEST_WIN and dcz.frame_shape(win) == [204, 204]
+    assert all(v % 60 == 0 for v in TEST_WIN) and dcz.TEST_SIZE_M % 60 == 0
+    assert "corners on multiples of 60 m" in win["source"] and win["kind"] == "test"
+    ow, os_, oe, on = OLD_TEST_BOX_UTM
+    assert abs(win["west"] - ow) < 60 and abs(win["north"] - on) < 60
+    assert abs(win["east"] - oe) < 60 and abs(win["south"] - os_) < 60
+    snapped = frame_dict((301020.0, 4815660.0, 310200.0, 4824840.0), wkt)
+    assert _edges(dcz.test_window(snapped)) == TEST_WIN
+    # a frame with an odd origin (edges on the 10 m lattice only): corners still on 60 m
+    odd = frame_dict((301030.0, 4815680.0, 310180.0, 4824830.0), wkt)
+    assert _edges(dcz.test_window(odd)) == TEST_WIN
+    # a frame whose lattice is not on multiples of 10 m: corners on its own lattice
+    ph = frame_dict((301025.0, 4815695.0, 310175.0, 4824845.0), wkt)
+    w5 = dcz.test_window(ph)
+    assert "corners on the 10 m lattice of the frame" in w5["source"]
+    assert (w5["west"] - 301025.0) % 10 == 0 and (w5["north"] - 4824845.0) % 10 == 0
+    assert dcz.frame_shape(w5) == [204, 204]
+    # a frame the window would stick out of: moved inside, still on 60 m
+    narrow = frame_dict((301020.0, 4815690.0, 306000.0, 4824840.0), wkt)
+    assert _edges(dcz.test_window(narrow)) == (303960.0, 4820340.0, 306000.0, 4822380.0)
+    with pytest.raises(ValueError, match="does not fit"):
+        dcz.test_window(frame_dict((305000.0, 4820000.0, 307000.0, 4822000.0), wkt))
+    with pytest.raises(ValueError, match="whole number"):
+        dcz.test_window(villa, size=2045)
+
+
+def test_angles_extent_is_the_frame_snapped_out_to_300_m(tmp_path, monkeypatch, wkt):
+    """The angles jobs request the 10 m frame snapped OUTWARD to multiples of
+    300 m (the rule of the angles reference grid, ``coarse_axes``); --test
+    requests its window snapped outward to the 300 m cells of the site."""
+    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", VILLA_FRAME, wkt))
+    root = tmp_path / "cubes"
+    af = dcz.angles_frame("villaviciosa", root)
+    aext = {"west": 300900, "south": 4815600, "east": 310200, "north": 4824900, "crs": 32630}
+    assert dcz.extent_of(af) == aext and dcz.frame_shape(af, 300) == [31, 31]
+    assert af["origin"] == "reference netCDF ref.nc, snapped outward to multiples of 300 m"
+    ag = dcz.angles_reference_grid("villaviciosa", root)
+    x, y = dcz.frame_axes(aext, 300)
+    np.testing.assert_array_equal(x, ag["x"])
+    np.testing.assert_array_equal(y, ag["y"])
+    tw = dcz.test_angles_window(root)
+    text = {"west": 305400, "south": 4820100, "east": 307500, "north": 4822500, "crs": 32630}
+    assert dcz.extent_of(tw) == text and dcz.frame_shape(tw, 300) == [8, 7]
+    main, ang = dcz.year_requests(["villaviciosa"], [2024], root, ["main", "angles"])
+    assert ang.extent == aext and main.extent == dcz.extent_of(dcz.site_frame("villaviciosa", root))
+    tm, ta = dcz.test_requests(root)
+    assert _edges(tm.extent) == TEST_WIN and ta.extent == text
+    assert tm.root == root / dcz.TEST_ROOT and ta.root == root / dcz.TEST_ROOT
+    # a frame with an odd origin (Ferrol's): edges on 300 m, containing it
+    ferrol = (551720.0, 4809870.0, 568790.0, 4818920.0)
+    fr = dcz.snap_frame(frame_dict(ferrol, _wkt_of(32629), epsg=32629), 300)
+    assert _edges(fr) == (551700.0, 4809600.0, 568800.0, 4819200.0)
+    cx, cy = dcz.coarse_axes(*axes_of(ferrol))
+    assert (cx[0] - 150, cy[-1] - 150, cx[-1] + 150, cy[0] + 150) == _edges(fr)
+    # --lonlat-extent: no UTM extent, the lon/lat box (diagnosis), under _test_lonlat
+    ll = dcz.test_requests(root, lonlat=True)
+    assert all(q.extent is None and q.spatial_extent == dcz.test_bbox() for q in ll)
+    assert all(q.root == root / dcz.TEST_ROOT_LONLAT for q in ll)
+
+
+def test_time_units_of_the_backend_decoded_explicitly():
+    """'milliseconds since 01/01/1970 - 00:00:00' (the backend's Zarr) and
+    its variants, into exact dates; a reference whose day and month cannot
+    be told apart is refused."""
+    t0 = np.datetime64("1970-01-01T00:00:00", "ns")
+    for units, ns, ref in (
+            ("milliseconds since 01/01/1970 - 00:00:00", 10 ** 6, t0),
+            ("milliseconds since 01/01/1970", 10 ** 6, t0),
+            ("ms since 1970-01-01", 10 ** 6, t0),
+            ("milliseconds since 1970-01-01T00:00:00Z", 10 ** 6, t0),
+            ("seconds since 1970-01-01 00:00:00 UTC", 10 ** 9, t0),
+            ("days since 1990-01-01", 86400 * 10 ** 9, np.datetime64("1990-01-01", "ns")),
+            ("Milliseconds Since 13/01/1970 - 00:00:00", 10 ** 6, np.datetime64("1970-01-13", "ns")),
+            ("hours since 01/13/1970 - 06:30:00", 3600 * 10 ** 9,
+             np.datetime64("1970-01-13T06:30", "ns"))):
+        assert dcz.parse_time_units(units) == (ns, ref), units
+    for bad, msg in (("milliseconds since 02/03/1970 - 00:00:00", "ambiguous"),
+                     ("fortnights since 1970-01-01", "not understood"),
+                     ("milliseconds after 1970-01-01", "not '<unit> since <date>'"),
+                     ("ms since 1970/01/01", "not understood")):
+        with pytest.raises(ValueError, match=msg):
+            dcz.parse_time_units(bad)
+    days = pd.DatetimeIndex(["2025-06-02", "2025-06-07T10:56:31.024", "2025-06-12T11:06:29"])
+    ms = ((days - pd.Timestamp("1970-01-01")) // pd.Timedelta("1ms")).values.astype(">i8")
+    units = "milliseconds since 01/01/1970 - 00:00:00"
+    for vals in (ms, ms.astype("<i8"), ms.astype(">f8")):
+        got = dcz.decode_time_values(vals, units)
+        assert got.dtype == np.dtype("datetime64[ns]")
+        np.testing.assert_array_equal(got, days.values)
+    var = xr.Variable(("t",), ms, attrs={"units": units, "calendar": "proleptic_gregorian"})
+    notes = []
+    np.testing.assert_array_equal(dcz._decode_time(var, notes), days.values)
+    assert notes == [f"time units {units!r} decoded explicitly (reference date read as "
+                     f"1970-01-01T00:00:00, >i8 values)"]
+    with pytest.raises(dcz.FormatError, match="ambiguous"):
+        dcz._decode_time(xr.Variable(("t",), ms, attrs={"units": "ms since 02/03/1970"}), [])
+    # 'since' in any case reaches the case-insensitive parser
+    shout = xr.Variable(("t",), ms, attrs={"units": "Milliseconds SINCE 01/01/1970 - 00:00:00"})
+    np.testing.assert_array_equal(dcz._decode_time(shout, []), days.values)
+    with pytest.raises(dcz.FormatError, match="numeric without CF units"):
+        dcz._decode_time(xr.Variable(("t",), ms, attrs={"units": "milliseconds sincere"}), [])
+    # float32 times: refused where a float32 step is coarser than a second (ms since 1970:
+    # 131072 ms), accepted where it resolves the second (hours since a near date)
+    with pytest.raises(dcz.FormatError, match=r"one float32 step is 131\.072 s"):
+        dcz._decode_time(xr.Variable(("t",), ms.astype(">f4"), attrs={"units": units}), [])
+    hrs = np.array([24.0, 144.5, 264.25], dtype=">f4")
+    got = dcz._decode_time(xr.Variable(("t",), hrs, attrs={"units": "hours since 2025-06-01"}), [])
+    np.testing.assert_array_equal(got, (pd.Timestamp("2025-06-01")
+                                        + pd.to_timedelta([24.0, 144.5, 264.25], "h")).values)
+
+
+def test_a_delivery_like_the_backends_lands_bitwise_on_the_reference_grid(tmp_path, wkt,
+                                                                          monkeypatch):
+    """Production: the request is the reference frame (here a 300 x 300 px
+    netCDF cube); the delivery is shaped as on 2026-10-13 (zipped Zarr v2,
+    >i2 with fill -32768, Blosc lz4 chunks [1, 128, 128], float32 x/y (exact:
+    centres in whole metres), time in ms since 01/01/1970, padded to whole
+    chunks: 384 x 384 px): cropped onto the frame, the store's axes are the
+    reference's float64 values and its values the delivered ones, bitwise,
+    in native int16; the cropped margin held only the fill, so no warning."""
+    t = pd.date_range("2025-06-02", periods=2, freq="5D")
+    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", TEST_FRAME, wkt))
+    root = tmp_path / "cubes"
+    req = dcz.year_requests(["villaviciosa"], [2025], root)[0]
+    assert req.extent == {"west": 305000, "south": 4820000, "east": 308000, "north": 4823000,
+                          "crs": 32630}
+    assert req.extent_origin == "reference netCDF ref.nc"
+    rx, ry = axes_of(TEST_FRAME)
+    data = {}
+    for b in BANDS:
+        a = np.full((2, 384, 384), FILL, "int16")
+        a[:, :300, :300] = lattice_values(b, 2, rx, ry)
+        data[b] = a
+    xf, yf = f32_like_the_backend(*server_axes(TEST_FRAME[0], TEST_FRAME[3], 384, 384))
+    assert xf.dtype == yf.dtype == np.float32
+    raw = write_server_zarr(tmp_path / "src" / "out.zarr", t, yf, xf, data, wkt, extent=TEST_FRAME)
+    place(req, [("out.zarr.zip", zip_store(raw, tmp_path / "src" / "out.zarr"), "application/zip")])
+    ref = dcz.reference_grid("villaviciosa", root=root)
+    interp, rep, lines = normalise_and_write(req, ref_grid=ref)
+    assert interp.warnings == []
+    notes = "\n".join(interp.notes)
+    for s_ in ("same 10 m lattice as ref.nc but another extent: 384 x 384 px",
+               "cropped rows 0:300 cols 0:300", "padded with the fill top 0 bottom 0 left 0 right 0",
+               "cropped-away margin", ": only the fill (-32768) / NaN",
+               "time units 'milliseconds since 01/01/1970 - 00:00:00' decoded explicitly",
+               "x (delivered as >f4) 0.000 m (0.000 px) from the 10 m lattice of ref.nc: exactly "
+               "its float32 values; the lattice's exact float64 values are used",
+               "y (delivered as >f4) 0.000 m (0.000 px) from the 10 m lattice of ref.nc: exactly "
+               "its float32 values",
+               "the delivered 'extent' attribute [305000.0, 4820000.0, 308000.0, 4823000.0] is the "
+               "requested extent"):
+        assert s_ in notes, s_
+    ds = zc.open_store(req.store)
+    assert ds["x"].dtype == ds["y"].dtype == np.float64
+    np.testing.assert_array_equal(ds["x"].values, ref["x"])
+    np.testing.assert_array_equal(ds["y"].values, ref["y"])
+    np.testing.assert_array_equal(ds["t"].values, t.values)
+    for b in BANDS:
+        assert ds[b].dtype == np.dtype("int16") and ds[b].dtype.byteorder in "=|<"
+        assert zc.fill_of(ds[b]) == FILL
+        np.testing.assert_array_equal(ds[b].values, lattice_values(b, 2, rx, ry))
+    assert json.loads(ds.attrs["spatial_extent"]) == req.extent
+    assert json.loads(ds.attrs["spatial_extent_lonlat"]) == dcz.site_bbox("villaviciosa")
+    assert ds.attrs["spatial_extent_source"] == "the frame of the reference netCDF ref.nc (300 x 300 px)"
+    ds.close()
+
+
+def test_a_real_offset_is_still_refused(tmp_path, wkt):
+    """The delivery of the lon/lat request of 2026-10-13, anchored on the
+    reprojected box's upper-left corner with float32 x/y, is (0.134, 0.450)
+    px off the lattice: refused unless --allow-grid-offset. ON the lattice
+    means every float32 value is the float32 rounding of a lattice value
+    (the lattice in whole metres is exact in float32); a uniform shift by a
+    float32 step or more (0.0625 m in x, 0.5 m in y) is a real offset and
+    refused, as is any offset of float64 axes; values off the lattice on
+    some rows only leave the regular axis (their median) on it."""
+    t = pd.date_range("2025-06-02", periods=1)
+    rx, ry = axes_of(TEST_FRAME)
+    ref = {"path": "ref.nc", "kind": "netcdf", "x": rx, "y": ry, "crs_wkt": wkt}
+
+    def deliver(name, x, y):
+        data = {b: np.full((1, len(y), len(x)), 1000, "int16") for b in BANDS}
+        raw = write_server_zarr(tmp_path / "src" / name / "out.zarr", t, y, x, data, wkt,
+                                extent=OLD_TEST_BOX_UTM)
+        req = make_request(tmp_path / name, year=2025)
+        place(req, [("out.zarr.zip", zip_store(raw, tmp_path / "src" / name / "out.zarr"),
+                     "application/zip")])
+        return req
+
+    ox, oy = server_axes(OLD_TEST_BOX_UTM[0], OLD_TEST_BOX_UTM[3], 256, 256)
+    req = deliver("old", ox.astype("float32"), oy.astype("float32"))
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.134, 0\.450\) px .* this is a real "
+                                              r"offset; nothing written"):
+        dcz.normalise(req, lambda m: None, ref_grid=ref)
+    assert not req.store.exists()
+    _, interp, _ = dcz.normalise(req, lambda m: None, ref_grid=ref, allow_offset=True)
+    assert any("--allow-grid-offset" in w for w in interp.warnings)
+    x0, y0 = server_axes(TEST_FRAME[0], TEST_FRAME[3], 300, 300)
+    # exact float32: on the lattice, the lattice's float64 values
+    ds, interp, _ = dcz.normalise(deliver("f32_exact", x0.astype("float32"), y0.astype("float32")),
+                                  lambda m: None, ref_grid=ref)
+    np.testing.assert_array_equal(ds["x"].values, rx)
+    np.testing.assert_array_equal(ds["y"].values, ry)
+    assert any(n.startswith("y (delivered as >f4) 0.000 m (0.000 px) from the 10 m lattice of "
+                            "ref.nc: exactly its float32 values") for n in interp.notes)
+    # uniform shifts of one or two float32 steps are no rounding: refused (before, the
+    # 0.5 m tolerance relabelled them as rounding)
+    xs = (x0 + 0.0625).astype("float32")                   # 2 float32 steps at x ~ 3e5 m
+    assert np.all(xs.astype("float64") - x0 == 0.0625)
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.006, 0\.000\) px .* real offset"):
+        dcz.normalise(deliver("f32_x2ulp", xs, y0.astype("float32")), lambda m: None, ref_grid=ref)
+    ys = (y0 + 0.5).astype("float32")                      # 1 float32 step at y ~ 4.8e6 m
+    assert np.all(ys.astype("float64") - y0 == 0.5)
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.000, 0\.050\) px .* real offset"):
+        dcz.normalise(deliver("f32_y1ulp", x0.astype("float32"), ys), lambda m: None, ref_grid=ref)
+    # 0.04 px in float32 (accepted as rounding before): a real offset
+    x4 = (x0 + 0.4).astype("float32")
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.041, 0\.000\) px"):
+        dcz.normalise(deliver("f32_004", x4, y0.astype("float32")), lambda m: None, ref_grid=ref)
+    # one float32 step off on every 7th row only: the regular axis (median) is on the
+    # lattice, so the store is; the note counts the odd values
+    yj = y0.astype("float32")
+    yj[::7] = np.nextafter(yj[::7], np.float32(np.inf))
+    ds, interp, _ = dcz.normalise(deliver("f32_rows", x0.astype("float32"), yj), lambda m: None,
+                                  ref_grid=ref)
+    np.testing.assert_array_equal(ds["y"].values, ry)
+    assert any("y (delivered as >f4): 43 of 300 values are not the float32 rounding" in n
+               and "the lattice check decides on the regular axis" in n for n in interp.notes)
+    assert interp.warnings == []
+    # a lattice whose centres are not whole metres: float32 rounding within half a step
+    rf = rx + 0.3
+    ds, interp, _ = dcz.normalise(deliver("f32_frac", rf.astype("float32"), y0.astype("float32")),
+                                  lambda m: None, ref_grid=dict(ref, x=rf))
+    np.testing.assert_allclose(ds["x"].values, rf, rtol=0, atol=1e-6)
+    assert any(n.startswith("x (delivered as >f4) 0.0") and "float32 rounding (at most half a "
+               "float32 step, 0.016 m here)" in n for n in interp.notes)
+    # 0.07 px in float32, and 0.04 px in float64: real offsets
+    x7 = (x0 + 0.7).astype("float32")
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.069, 0\.000\) px"):
+        dcz.normalise(deliver("f32_007", x7, y0.astype("float32")), lambda m: None, ref_grid=ref)
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.040, 0\.000\) px"):
+        dcz.normalise(deliver("f64_004", x0 + 0.4, y0), lambda m: None, ref_grid=ref)
+
+
+def test_the_first_utm_test_makes_a_new_job_and_keeps_the_old_part(tmp_path, wkt, monkeypatch,
+                                                                   fake_build):
+    """The server after the format test of 2026-10-13: <root>/_test/
+    villaviciosa/2025.part holds the job and the download of the lon/lat
+    request, refused by the grid guard. The --test of the UTM extent has
+    another graph, so another job title: the old part is moved aside (kept;
+    --test never deletes it), a NEW job is made and its delivery lands on the
+    window. --lonlat-extent (under <root>/_test_lonlat) finds the old job
+    again by its title: no new job, no credits."""
+    t = pd.date_range("2025-06-02", periods=1)
+    rx, ry = axes_of(TEST_FRAME)
+    nc = write_nc(tmp_path / "ref.nc", t, ry, rx, {b: lattice_values(b, 1, rx, ry)
+                                                  for b in ("B03", "B08", "SCL")}, wkt)
+    _ref_site(monkeypatch, nc, reference_period=("2016-01-01", "2025-12-31"),
+              pipeline_overpass=str(tmp_path / "none.json"))
+    root = tmp_path / "cubes"
+    # the old delivery: 256 x 256 px anchored on the reprojected lon/lat box, float32 x/y
+    ox, oy = server_axes(OLD_TEST_BOX_UTM[0], OLD_TEST_BOX_UTM[3], 256, 256)
+    old_raw = write_server_zarr(tmp_path / "src" / "old" / "out.zarr", t, oy.astype("float32"),
+                                ox.astype("float32"),
+                                {b: np.full((1, 256, 256), 1000, "int16") for b in BANDS}, wkt,
+                                extent=OLD_TEST_BOX_UTM)
+    # the new delivery: the window, padded to 256 x 256 px
+    wx, wy = axes_of(TEST_WIN)
+    data = {}
+    for b in BANDS:
+        a = np.full((1, 256, 256), FILL, "int16")
+        a[:, :204, :204] = lattice_values(b, 1, wx, wy)
+        data[b] = a
+    nx_, ny_ = server_axes(TEST_WIN[0], TEST_WIN[3], 256, 256)
+    new_raw = write_server_zarr(tmp_path / "src" / "new" / "out.zarr", t, ny_.astype("float32"),
+                                nx_.astype("float32"), data, wkt, extent=TEST_WIN)
+    deliveries = {"j-1": zip_store(old_raw, tmp_path / "src" / "old" / "out.zarr"),
+                  "j-2": zip_store(new_raw, tmp_path / "src" / "new" / "out.zarr")}
+
+    def fake_download(job, req, log, workers=4):
+        place(req, [("out.zarr.zip", deliveries[job.job_id], "application/zip")])
+        return {"assets": {"out.zarr.zip": {"href": "https://h/out.zarr.zip",
+                                            "type": "application/zip"}}}
+
+    monkeypatch.setattr(dcz, "download_results", fake_download)
+    conn = FakeConn()
+    ctx, _ = _ctx(conn)
+    ctx.network = False
+    # 2026-10-13: the lon/lat request, under <root>/_test as the code of that day had it
+    old = dcz.test_request(root, lonlat=True)
+    old.root = root / dcz.TEST_ROOT
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.134, 0\.450\) px"):
+        dcz.run_request(ctx, old, lambda m: None)
+    part = Path(old.part)
+    old_title = dcz.recorded_title(part)
+    assert old_title and conn.created == ["j-1"] and (part / "assets" / "out.zarr.zip").is_file()
+    kept = sorted(p.relative_to(part).as_posix() for p in part.rglob("*") if p.is_file())
+    # today: the --test of the UTM extent, same part folder, another title
+    new = dcz.test_request(root)
+    assert Path(new.part) == part
+    flat = dcz.build_process(new).flat_graph()
+    assert dcz.job_title(new, dcz.graph_hash(flat)) != old_title
+    msgs = []
+    res = dcz.run_request(ctx, new, msgs.append)
+    text = "\n".join(msgs)
+    assert res["status"] == "done", text
+    assert conn.created == ["j-1", "j-2"] and conn.jobs["j-2"]["title"] != old_title
+    assert dcz.recorded_title(part) == conn.jobs["j-2"]["title"]
+    aside = dcz.superseded_parts(new)
+    assert len(aside) == 1 and aside[0].name.startswith("2025.part.superseded-")
+    assert dcz.recorded_title(aside[0]) == old_title
+    assert sorted(p.relative_to(aside[0]).as_posix() for p in aside[0].rglob("*")
+                  if p.is_file()) == kept
+    assert "the request changed since 2025.part was made" in text
+    assert "kept: --test never deletes it" in text
+    ds = zc.open_store(new.store)
+    np.testing.assert_array_equal(ds["x"].values, wx)
+    np.testing.assert_array_equal(ds["y"].values, wy)
+    np.testing.assert_array_equal(ds["B03"].values, lattice_values("B03", 1, wx, wy))
+    ds.close()
+    # --lonlat-extent: the old request again, under _test_lonlat: its part is copied from
+    # the folder set aside (same title), so no new job and no new download, even if the
+    # results of 2026-10-13 have expired on the backend
+    ll = dcz.test_request(root, lonlat=True)
+    assert ll.root == root / dcz.TEST_ROOT_LONLAT
+    downloads = []
+    monkeypatch.setattr(dcz, "download_results", lambda *a, **k: downloads.append(a) or {})
+    lmsgs = []
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.134, 0\.450\) px"):
+        dcz.run_request(ctx, ll, lmsgs.append)
+    assert conn.created == ["j-1", "j-2"] and downloads == []
+    assert any(f"copied from {aside[0]}" in m and "no new job" in m for m in lmsgs)
+    assert dcz.recorded_title(ll.part) == old_title
+    assert dcz.superseded_parts(new) == aside and aside[0].is_dir()
+    assert sorted(p.relative_to(aside[0]).as_posix() for p in aside[0].rglob("*")
+                  if p.is_file()) == kept                        # the source is untouched
+    # a second run finds its own part; nothing is copied again
+    lmsgs.clear()
+    with pytest.raises(dcz.FormatError, match=r"offset by \(0\.134, 0\.450\) px"):
+        dcz.run_request(ctx, ll, lmsgs.append)
+    assert not any("copied from" in m for m in lmsgs) and downloads == []
+
+
+def test_dry_run_prints_each_sites_utm_extent_and_its_origin(tmp_path, monkeypatch, capsys, wkt):
+    import re
+
+    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", TEST_FRAME, wkt))
+    _ref_site(monkeypatch, tmp_path / "missing.nc", site="ferrol")
+    monkeypatch.chdir(tmp_path)
+    cubes = str(tmp_path / "cubes")
+    assert dcz.main(["villaviciosa", "ferrol", "--years", "2024", "--dry-run", "--root", cubes]) == 0
+    out = capsys.readouterr().out
+    assert '"crs": 32630' in out and '"crs": 32629' in out
+    tail = out.split("SPATIAL EXTENTS requested")[1]
+    rows = {tuple(ln.split()[:2]): ln for ln in tail.splitlines() if ln.startswith("  ")}
+    assert ("EPSG:32630 west 305000 south 4820000 east 308000 north 4823000 (300 x 300 px of 10 m)"
+            "  <- reference netCDF ref.nc") in rows[("villaviciosa", "main")]
+    assert ("EPSG:32630 west 304800 south 4819800 east 308100 north 4823100 (11 x 11 cells of 300 m)"
+            "  <- reference netCDF ref.nc, snapped outward to multiples of 300 m") in \
+        rows[("villaviciosa", "angles")]
+    fm = rows[("ferrol", "main")]
+    assert "EPSG:32629" in fm and ("<- SNAPPING: the lon/lat box outward to multiples of 60 m "
+                                   "(missing.nc is not on this machine, no complete store)") in fm
+    edges = [int(v) for v in re.search(r"west (\d+) south (\d+) east (\d+) north (\d+)", fm).groups()]
+    assert all(v % 60 == 0 for v in edges)
+    assert "spatial extent: EPSG:32630 west 305000" in out and "origin: reference netCDF ref.nc" in out
+    # the snapped rows are marked: a production run refuses them before any job
+    assert fm.endswith("[REFUSED: no reference netCDF; --allow-snapped-frame]")
+    assert rows[("ferrol", "angles")].endswith("[REFUSED: no reference netCDF; --allow-snapped-frame]")
+    assert "REFUSED" not in rows[("villaviciosa", "main")] + rows[("villaviciosa", "angles")]
+    assert (f"REFUSED before any job (production lands only on a reference frame): ferrol main, "
+            f"ferrol angles. Missing here: {tmp_path / 'missing.nc'}") in out
+    assert dcz.main(["ferrol", "--years", "2024", "--dry-run", "--root", cubes,
+                     "--allow-snapped-frame"]) == 0
+    assert "REFUSED" not in capsys.readouterr().out
+    # --lonlat-extent: the old lon/lat box, said to be off the lattice
+    assert dcz.main(["villaviciosa", "--years", "2024", "--dry-run", "--lonlat-extent",
+                     "--root", cubes]) == 0
+    out = capsys.readouterr().out
+    assert "spatial extent: the lon/lat box" in out and "NOT on the lattice" in out
+    assert '"crs"' not in out.split("SPATIAL EXTENTS requested")[0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  review of the UTM extent: production refuses a snapped frame and padding,
+#  the odd --test window, the angles' phase, the margin of a sample of dates
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_production_refuses_a_snapped_frame_before_any_job(tmp_path, monkeypatch, capsys,
+                                                           fake_build):
+    """A site whose 10 m netCDF is missing on the machine would be requested
+    on the lon/lat box snapped to 60 m, which is not the netCDF frame (and
+    would become the reference of the other years): a production run stops
+    before any job, network or folder; --allow-snapped-frame lets it go;
+    --test and --dry-run never refuse."""
+    import socket
+
+    def no_net(*a, **k):
+        raise AssertionError("network used by a refused run")
+
+    _ref_site(monkeypatch, tmp_path / "missing.nc", site="ferrol")
+    monkeypatch.setattr(socket, "create_connection", no_net)
+    monkeypatch.chdir(tmp_path)
+    cubes = tmp_path / "cubes"
+    assert dcz.main(["ferrol", "--years", "2024", "--root", str(cubes)]) == 2
+    out = capsys.readouterr().out
+    assert "REFUSED, nothing started (no job, no download):" in out
+    assert "ferrol 2024: the extent EPSG:32629 west" in out and "ferrol 2024 angles:" in out
+    assert "--allow-snapped-frame" in out and str(tmp_path / "missing.nc") in out
+    assert not cubes.exists()
+    # run_request refuses too (any caller), before the part folder or a job
+    req = dcz.year_requests(["ferrol"], [2024], cubes)[0]
+    assert dcz.snapped(req) and req.extent_origin.startswith("SNAPPING")
+    conn = FakeConn()
+    ctx, _ = _ctx(conn)
+    with pytest.raises(dcz.FrameRefused, match="not the frame of the site's reference netCDF"):
+        dcz.run_request(ctx, req, lambda m: None)
+    assert conn.created == [] and not Path(req.part).exists()
+    # --allow-snapped-frame: the refusal is lifted (the job is made)
+    ctx.allow_snapped = True
+
+    def stop(*a, **k):
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(dcz, "download_results", stop)
+    with pytest.raises(RuntimeError, match="stop here"):
+        dcz.run_request(ctx, req, lambda m: None)
+    assert conn.created == ["j-1"]
+    assert dcz.parse_args(["ferrol", "--allow-snapped-frame"]).allow_snapped_frame
+    # a reference netCDF frame, the --test window or a lon/lat request: never refused
+    assert dcz.refuse_snapped(dcz.test_request(cubes)) is None
+    lonlat = dcz.year_requests(["ferrol"], [2024], cubes, lonlat=True)[0]
+    assert not dcz.snapped(lonlat) and dcz.refuse_snapped(lonlat) is None
+
+
+def test_the_odd_test_window(tmp_path, monkeypatch, wkt):
+    """--test --odd-window: 2,050 x 2,050 m (205 px, odd), west and south
+    edges 10 m past a multiple of 20 m, north and east on 20 m, inside the
+    Villaviciosa frame; main product only, under <root>/_test_odd, its own
+    job title."""
+    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", VILLA_FRAME, wkt))
+    root = tmp_path / "cubes"
+    win = dcz.test_odd_window(dcz.site_frame("villaviciosa", root))
+    assert _edges(win) == (305410.0, 4820330.0, 307460.0, 4822380.0)
+    assert dcz.frame_shape(win) == [205, 205]
+    assert win["west"] % 20 == 10 and win["south"] % 20 == 10
+    assert win["east"] % 20 == 0 and win["north"] % 20 == 0
+    assert "west/south edge(s) 10 m past a multiple of 20 m" in win["source"]
+    reqs = dcz.test_requests(root, odd=True)
+    assert [r.product for r in reqs] == ["main"] and reqs[0].root == root / dcz.TEST_ROOT_ODD
+    assert reqs[0].extent == {"west": 305410, "south": 4820330, "east": 307460, "north": 4822380,
+                              "crs": 32630}
+    std = dcz.test_request(root)
+    t_std = dcz.job_title(std, dcz.graph_hash(dcz.build_process(std).flat_graph()))
+    t_odd = dcz.job_title(reqs[0], dcz.graph_hash(dcz.build_process(reqs[0]).flat_graph()))
+    assert t_odd != t_std and t_odd.startswith("zarr_cube_test_villaviciosa_2025-06-01_2025-06-16_")
+    with pytest.raises(ValueError, match="main product of the UTM extent only"):
+        dcz.test_request(root, "angles", odd=True)
+    with pytest.raises(ValueError, match="not inside the frame"):
+        dcz.test_odd_window(frame_dict((305400.0, 4820340.0, 307440.0, 4822380.0), wkt))
+    for argv in (["--odd-window"], ["--test", "--odd-window", "--lonlat-extent"]):
+        with pytest.raises(SystemExit):
+            dcz.parse_args(argv)
+    assert dcz.parse_args(["--test", "--odd-window"]).odd_window
+
+
+def test_angles_keep_the_phase_of_a_frame_off_multiples_of_10_m(tmp_path, monkeypatch, wkt):
+    """A reference frame whose edges are at ...5 m (not the native lattice,
+    requested as it is): its 300 m angle cells keep that offset, so their
+    edges are lines of its lattice (before, they sat on multiples of 300 m,
+    half a pixel off it)."""
+    frame = (305025.0, 4820015.0, 305635.0, 4820485.0)
+    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", frame, wkt))
+    root = tmp_path / "cubes"
+    af = dcz.angles_frame("villaviciosa", root)
+    assert _edges(af) == (304805.0, 4819805.0, 305705.0, 4820705.0)
+    assert "plus (5, 5) m, the 10 m frame's own offset" in af["origin"]
+    assert all((v - 5.0) % 10 == 0 for v in _edges(af))
+    assert af["west"] <= frame[0] and af["east"] >= frame[2]
+    assert af["south"] <= frame[1] and af["north"] >= frame[3]
+    ag = dcz.angles_reference_grid("villaviciosa", root)
+    x, y = dcz.frame_axes(dcz.extent_of(af), 300)
+    np.testing.assert_array_equal(x, ag["x"])
+    np.testing.assert_array_equal(y, ag["y"])
+    assert dcz.lattice_phase(305025.0) == 5.0 and dcz.lattice_phase(301020.0) == 0.0
+    assert dcz.lattice_phase(301019.9999999) == 0.0
+    # the sites' frames (edges on multiples of 10 m): multiples of 300 m, as before
+    cx, cy = dcz.coarse_axes(*axes_of(VILLA_FRAME))
+    assert (cx[0] - 150, cy[0] + 150) == (300900.0, 4824900.0)
+
+
+def test_the_margin_line_is_a_note_and_says_when_dates_are_sampled(tmp_path, wkt):
+    """What the cropped-away margin held is a note either way (it lies
+    outside the frame); on a sample of the dates the line says 'sampled'."""
+    m = {"shape": [384, 384], "rows": [0, 300], "cols": [0, 300], "dates": 12, "of": 173,
+         "other": 0, "zero": 0, "bands": {"B03": {"cells": 12 * 1000, "fill": 12 * 1000, "nan": 0,
+                                                  "zero": 0, "other": 0, "min": None,
+                                                  "max": None}}}
+    line, clean = dcz.format_margin(m, {"B03": FILL})
+    assert clean and "12 of 173 dates sampled)" in line
+    assert line.endswith(": only the fill (-32768) / NaN on the sampled dates")
+    whole = dict(m, dates=8, of=8)
+    line, _ = dcz.format_margin(whole, {"B03": FILL})
+    assert "sampled" not in line and line.endswith(": only the fill (-32768) / NaN")
+    data = dict(m, other=5, bands={"B03": dict(m["bands"]["B03"], fill=11995, other=5, min=10.0,
+                                               max=900.0)})
+    line, clean = dcz.format_margin(data, {"B03": FILL})
+    assert not clean and "holds data on the sampled dates" in line
+    assert "pixels OUTSIDE the requested frame" in line and "nothing inside the frame is lost" in line
+    # a production delivery larger than the frame, its margin holding data: cropped, notes only
+    t, y, x, d = synth(2023, H=24, W=40, seed=61)
+    ref = {"path": "ref.nc", "kind": "netcdf", "x": x[2:36], "y": y[3:20], "crs_wkt": wkt}
+    raw = write_raw_v2(tmp_path / "src" / "m.zarr", t, y, x, d, wkt)
+    req = make_request(tmp_path / "cubes")
+    place(req, [("m.zarr", raw, "x")])
+    ds, interp, lines = dcz.normalise(req, lambda m_: None, ref_grid=ref)
+    assert interp.warnings == [] and "=> normalisable: YES" in lines
+    assert any("cropped rows 3:20 cols 2:36" in n for n in interp.notes)
+    assert any(n.startswith("cropped-away margin") and "holds data" in n for n in interp.notes)
+    np.testing.assert_array_equal(ds["B03"].values, d["B03"][:, 3:20, 2:36])

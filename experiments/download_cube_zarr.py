@@ -13,12 +13,41 @@ read any window with ``zarr_cubes.open_cube(site, start, end)``).
 
 The process is the one of the existing cubes (``SentinelCube.ensure`` and,
 for Villaviciosa, the notebook download of ``ndwi_cube_villaviciosa_grande_
-10y.nc``): ``load_collection(SENTINEL2_L2A, bbox, [start, end), bands,
+10y.nc``): ``load_collection(SENTINEL2_L2A, extent, [start, end), bands,
 max_cloud_cover=100)`` -> ``resample_spatial(resolution=10, method="near")``
--> ``save_result``, only with more bands and ``format="Zarr"``. Same bbox,
-same resolution, same call, so the same grid: the bbox's UTM envelope
-snapped outward to the 10 m lattice of the Sentinel-2 tiles (checked against
-the Villaviciosa and Ferrol cubes). Resampling: B02/B03/B04/B08 are native
+-> ``save_result``, with THREE INTENDED DIFFERENCES and no other (a test
+compares the two graphs): more bands, ``format="Zarr"``, and the SPATIAL
+EXTENT, which is no longer the site's lon/lat box but the site's reference
+frame in its UTM CRS, ``{"west", "south", "east", "north", "crs": <EPSG
+code>}`` (the bounding-box form of ``load_collection``'s ``spatial_extent``
+in the openEO process specification: ``crs`` an integer EPSG code, default
+4326; the client passes the dict through unchanged).
+
+Why the UTM extent. The netCDF path of the backend snapped a lon/lat box to
+the native 10 m lattice of the Sentinel-2 tiles (the existing cubes: pixel
+edges on multiples of 10 m in UTM). Its Zarr path does not (format test of
+2026-10-13): the grid is anchored on the upper-left corner of the box
+reprojected to UTM (305408.66 / 4822375.74 for the 2 km test box), so pixel
+centres sat 0.134 and 0.450 px off the lattice of the reference cube, which
+with nearest-neighbour resampling mislabels native pixels by up to half a
+pixel; the arrays were also larger than asked (256 x 256 px for a ~206 x
+207 px box: whole chunks of 128 px) and x/y came as float32 (the graph's
+``resample_spatial`` carries the client's default ``align="upper-left"``,
+unchanged from the netCDF cubes' graph). So the request
+is an extent whose edges ARE lattice lines: the reference frame of the site
+(the existing 10 m netCDF cube's pixel centres +- 5 m, exactly, e.g.
+Villaviciosa 301020..310170 x 4815690..4824840 in EPSG:32630; a site
+without that cube on the machine: a complete store of the site, else the
+lon/lat box projected to UTM and snapped OUTWARD to multiples of 60 m, a
+multiple of the 10 and 20 m pixels: ``FRAME_SNAP_M``). ``--lonlat-extent``
+sends the old lon/lat box instead, to reproduce the old request for
+diagnosis (its offset grid is refused unless ``--allow-grid-offset``). The
+stores record the extent sent (``spatial_extent``), where it came from
+(``spatial_extent_source``) and the old lon/lat box
+(``spatial_extent_lonlat``). A changed extent changes the process graph and
+so the job title: an old download or job is never reused for it.
+
+Resampling: B02/B03/B04/B08 are native
 10 m (the call is the identity for them); B8A/B11/B12, SCL and CLD are 20 m
 and reach 10 m by NEAREST NEIGHBOUR, the pipeline's method (its only 20 m
 band so far was SCL): no new interpolation, and the 20 m bands can be
@@ -29,8 +58,28 @@ pixels). A store whose grid is in another CRS or off the existing cube's
 10 m lattice is refused; a store on that lattice with another extent is
 cropped / padded (with the fill) to the reference grid, so every year of a
 site has the same grid. The reference grid is the site's 10 m netCDF cube,
-else a complete store of the site, else the grid predicted from the bbox
-(the log says which). Values are kept as delivered (int16, fill -32768);
+else a complete store of the site, else the bbox snapped outward to 60 m
+(the log says which). A PRODUCTION run refuses, before any job is made,
+a request whose frame is that snapped box (``--allow-snapped-frame``
+overrides): such a store would sit on the native lattice but not on the
+netCDF frame, and would then be the reference of the site's other years; the
+dry run marks those rows. Delivered x/y in float32 are on the reference
+lattice when every value is the float32 rounding of a lattice value (pixel
+centres in whole metres below 2^24 m are exact in float32, so a delivery on
+the lattice deviates by 0; anything beyond half a float32 step, 0.016-0.03 m
+in x and 0.25 m in y, is not rounding) and then take the lattice's exact
+float64 values; otherwise the lattice check decides on the regular axis
+through their median, and an offset is refused. Arrays larger than the
+request (the Zarr writer pads to whole chunks) are cropped onto the
+reference frame by coordinates on the checked lattice, and the FORMAT REPORT
+says what the cropped-away margin held (a note: the fill, or data outside
+the frame, on a sample of dates). A delivery that does not cover the frame
+(it would be padded with the fill, which reads as no-data inside the frame)
+stops a production year (``--allow-padding`` overrides); --test only warns.
+A time axis in ``milliseconds since 01/01/1970 - 00:00:00`` (and
+other ``<unit> since <date>`` forms, any case, day-first slashes included)
+is decoded explicitly; float times narrower than float64 that cannot resolve
+a second at their values are refused. Values are kept as delivered (int16, fill -32768);
 nothing is rescaled. The no-data value is the one the delivered data
 DECLARE (``_FillValue``/``nodata`` attribute) or a Zarr ``fill_value`` of
 -32768; zarr's default ``fill_value`` 0 is never taken as no-data on its
@@ -50,8 +99,9 @@ session is reattached (job id in ``<year>.part/job.json``, or found by its
 title on the backend) instead of paid for twice; a job that failed leaves its
 backend error log in ``<year>.part/`` and the next job is made with twice the
 executor memory (capped at 8G); a ``<year>.part/`` made for another request
-(other ``--format-options``, ``--backend-format`` or bands: the job title
-carries the graph hash) is moved aside to ``<year>.part.superseded-<time>``
+(other ``--format-options``, ``--backend-format``, bands or spatial extent:
+the job title carries the graph hash) is moved aside to
+``<year>.part.superseded-<time>``
 and a new job is made, so an old download is never normalised for a new
 request, and files of two jobs never mix. Every store records the share of
 low B12 digital numbers per date and the processing baselines of its input
@@ -70,15 +120,30 @@ or off the 10 m lattice of the existing cube (``--allow-grid-offset``
 overrides). Whatever goes wrong while reading the delivered files, the
 FORMAT REPORT gathered so far (with the raw Zarr metadata when zarr cannot
 open a store, and the traceback) is written to ``<year>.format.txt`` and
-printed. ``--test`` runs ONE tiny job per product first (2 km x 2 km inside
-Villaviciosa, 2025-06-01..15: all nine bands, then the angles), prints what
-the backend says about its Zarr format and a FORMAT REPORT of what came back
-for each, writes ``<root>/_test/villaviciosa/2025.zarr`` and
-``2025.angles.zarr`` and opens them through ``zarr_cubes.open_cube`` /
-``open_angles`` / ``angles_at``. Run it again to re-normalise the same
-downloads (no new job); add ``--new-job`` (once) to pay for new ones:
-deleting ``<root>/_test`` is not enough, the finished jobs would be found
-again on the backend by their titles.
+printed. ``--test`` runs ONE tiny job per product first (a window of 2,040 x
+2,040 m = 204 x 204 px inside the Villaviciosa frame, corners on multiples
+of 60 m, near the old 2 km test box: ``TEST_SIZE_M``; 2025-06-01..15: all
+nine bands, then the angles on that window snapped outward to 300 m), prints
+what the backend says about its Zarr format and a FORMAT REPORT of what came
+back for each, crops the delivery onto the window, writes
+``<root>/_test/villaviciosa/2025.zarr`` and ``2025.angles.zarr`` and opens
+them through ``zarr_cubes.open_cube`` / ``open_angles`` / ``angles_at``. Run
+it again to re-normalise the same downloads (no new job); add ``--new-job``
+(once) to pay for new ones: deleting ``<root>/_test`` is not enough, the
+finished jobs would be found again on the backend by their titles. A
+``<year>.part`` made for another request (another extent, too: the job
+title carries the hash of the process graph) is moved aside to
+``<year>.part.superseded-<time>``, never deleted by --test, and the job of
+the new request is made. ``--test --lonlat-extent`` repeats the old
+request under ``<root>/_test_lonlat`` (its finished job is found again by
+its unchanged title, and its download is copied from the folder the --test
+of the UTM extent set aside, so no new job and no new download).
+``--test --odd-window`` (main product only, one more small job, under
+``<root>/_test_odd``) requests a 2,050 x 2,050 m window (205 x 205 px, an
+odd size) whose west and south edges are lines 10 m past a multiple of 20 m
+(north and east on multiples of 20 m): the production frames have such
+edges (Villaviciosa east/south, Ferrol east/south), the --test window has
+none, so this shows whether the backend snaps or rounds such an extent.
 
 The ANGLES product
 ------------------
@@ -92,9 +157,13 @@ the bands ``sunZenithAngles sunAzimuthAngles viewZenithMean
 viewAzimuthMean`` of the same collection (float32 degrees, which the backend
 derives from the 5 km angle grids of the tile metadata; the view angles are
 for diagnostics), from ONE SEPARATE small job per site and year:
-``load_collection(SENTINEL2_L2A, same bbox, same window, the four angle
+``load_collection(SENTINEL2_L2A, 300 m frame, same window, the four angle
 bands, max_cloud_cover=100)`` -> ``resample_spatial(resolution=300,
-method="bilinear")`` -> ``save_result(format="Zarr")``. The property filter
+method="bilinear")`` -> ``save_result(format="Zarr")``, where the 300 m
+frame is the main frame snapped OUTWARD to multiples of 300 m in the same
+UTM CRS (the existing rule of the angles reference grid; a complete angles
+store of the site, when there is one, gives its own frame), sent as a UTM
+extent like the main one. The property filter
 is the main job's (it keeps every scene), so both jobs select the same
 products; there is no cloud filtering. Never in the main job: float bands in
 the main cube could change the dtype the backend delivers for all of it.
@@ -103,23 +172,26 @@ Why 300 m. The angle fields are smooth (the sun zenith changes by at most
 ~0.01 deg per km) and sampled every 5 km: 300 m samples the backend's
 interpolation ~17 times per 5 km cell, so the bilinear interpolation of the
 store at any point (``zarr_cubes.angles_at``) reproduces it far below the
-precision of the angle grids, while the 2 km --test frame still gets 8 x 7
+precision of the angle grids, while the ~2 km --test window still gets 8 x 7
 cells (enough to measure a spread inside a frame; 500 m would leave 4 x 4)
 and the largest site 115 x 94 cells (0.17 MB a date as float32, ~30 MB a
 year raw, a few MB on disk; ~1/2000 of the values of the main job; 100 m
 would only add cells). Bilinear, because nearest would turn the 5 km grid
 into 5 km steps.
 Alignment: 300 m is a multiple of 10, 20 and 60 m, so the 300 m lattice of
-the site's UTM CRS (cell edges at multiples of 300 m, what the backend makes
-of a bbox, as at 10 m) is a sub-lattice of the 10 m lattice of the main
-grid: every cell edge is a line of that lattice, every cell is exactly 30 x
-30 pixels of the main grid, and the angle frame is the main frame snapped
-outward to 300 m (it contains it; Ems: 108 x 114 cells around 3206 x 3413
-px). The guard checks the delivered grid against that frame (another CRS or
-cell edges off the 10 m lattice stop; another extent is cropped / padded
-with NaN); when the backend's 300 m cells sit at another phase of the 10 m
-lattice than predicted, the first store of the site is kept as delivered
-and becomes the reference of its other years.
+the site's UTM CRS (cell edges at multiples of 300 m, shifted by the 10 m
+frame's own offset from multiples of 10 m when it has one) is a sub-lattice
+of the 10 m lattice of the main grid: every cell edge is a line of that
+lattice, every cell is exactly 30 x 30 pixels of the main grid, and the
+angle frame is the main frame snapped outward to 300 m (it contains it;
+Ems: 108 x 114 cells around 3206 x 3413 px), which the angles job requests
+as its UTM extent (the backend's Zarr path anchors its grid on the extent's
+upper-left corner, so the extent's edges must be those lines). The guard
+checks the delivered grid against that frame (another CRS or cell edges
+off the 10 m lattice stop; another extent, e.g. the padding to whole
+chunks, is cropped / padded with NaN); when the backend's 300 m cells sit
+at another phase of the 10 m lattice than predicted, the first store of the
+site is kept as delivered and becomes the reference of its other years.
 
 Store: float32 degrees, NaN = no data (a delivered no-data value, declared
 or the Zarr fill_value, becomes NaN; CF scale_factor/add_offset would be
@@ -148,8 +220,10 @@ complete fetches only its angles.
 Usage (from the repository root; on the server after ``source env.sh``)::
 
     $PY -X utf8 -m experiments.download_cube_zarr --login          # once, interactive
-    $PY -X utf8 -m experiments.download_cube_zarr --test --dry-run
+    $PY -X utf8 -m experiments.download_cube_zarr --test --dry-run # the UTM extents, no network
     $PY -X utf8 -m experiments.download_cube_zarr --test           # the format test, both products
+    $PY -X utf8 -m experiments.download_cube_zarr --test --lonlat-extent   # the old request (diagnosis)
+    $PY -X utf8 -m experiments.download_cube_zarr --test --odd-window      # odd edges, main only
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023-2025 --dry-run
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023-2025
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2023-2025 --products angles
@@ -243,13 +317,51 @@ SITE_CONFIG.update({s: {"bbox": None, "reference": dutch_cube(s), "reference_per
                     for s in DUTCH_SITES})
 SITES = zc.SITES
 
-#: --test: 2 km x 2 km inside the Villaviciosa grid around the outer ria
-#: (channel, flats and shore), 2025-06-01..2025-06-15, every band
+#: --test: a TEST_SIZE_M x TEST_SIZE_M m window (204 x 204 px, a multiple of
+#: 60 m) on the Villaviciosa lattice around the outer ria (channel, flats
+#: and shore), corners on multiples of FRAME_SNAP_M m (``test_window``),
+#: 2025-06-01..2025-06-15, every band. TEST_HALF_M: the old lon/lat test box
+#: (``test_bbox``: provenance, and the request of --lonlat-extent)
 TEST_SITE = "villaviciosa"
 TEST_CENTRE = (-5.395, 43.52)          # lon, lat
 TEST_HALF_M = 1000.0
+TEST_SIZE_M = 2040
 TEST_WINDOW = ("2025-06-01", "2025-06-16")
 TEST_ROOT = "_test"
+#: --test --lonlat-extent (the old request, for diagnosis) works under
+#: <root>/_test_lonlat, so it never sets aside or overwrites what the --test
+#: of the UTM extent made (and its finished job of 2026-10-13 is found again
+#: by its title: same graph, same title, no new credits unless --new-job)
+TEST_ROOT_LONLAT = "_test_lonlat"
+#: --test --odd-window: a window of this size (205 x 205 px, odd) whose
+#: west edge is TEST_ODD_SHIFT_M east of the --test window's (a line 10 m
+#: past a multiple of 20 m) and whose north edge is the --test window's: west
+#: and south edges on odd 10 m lines, as the east / south edges of the
+#: production frames; under <root>/_test_odd, main product only
+TEST_ODD_SIZE_M = 2050
+TEST_ODD_SHIFT_M = 10
+TEST_ROOT_ODD = "_test_odd"
+
+#: the frame of a site without its reference netCDF cube on the machine (and
+#: no complete store): the lon/lat box projected to UTM and snapped OUTWARD
+#: to multiples of this (m). The Sentinel-2 tile corners sit on multiples of
+#: 60 m, so such edges are lines of the native 10, 20 and 60 m lattices.
+FRAME_SNAP_M = 60
+#: x/y delivered as float32 (the backend's Zarr writer) carry up to half a
+#: float32 step of rounding (0.25 m at northings below 8.4e6 m, where the
+#: step is 0.5 m; 0.016-0.03 m at eastings). ``interpret`` accepts a float32
+#: axis as regular within this many 10 m pixels of a regular axis (an axis
+#: anchored anywhere, e.g. the lon/lat box of 2026-10-13, rounds by up to half
+#: a step); ON THE LATTICE is stricter (``snap_to_lattice``): every value must
+#: be the float32 rounding of a lattice value, and an offset of the regular
+#: axis is refused by the lattice check (1e-3 px) unless --allow-grid-offset.
+F32_TOL_PX = 0.05
+F32_TOL_M = F32_TOL_PX * RESOLUTION_M
+#: what ``spatial_extent_source`` says of a --lonlat-extent request
+LONLAT_SOURCE = ("--lonlat-extent: the lon/lat box (EPSG:4326), the request before 2026-10-13, "
+                 "for diagnosis (its grid is anchored on the reprojected box, off the lattice)")
+#: the short origin of a --lonlat-extent request (the dry run prints it)
+LONLAT_ORIGIN = "--lonlat-extent: the old lon/lat box, NOT on the lattice (diagnosis only)"
 
 #: dates per year in the existing cubes (Villaviciosa 2016-2025; the other
 #: sites have the same within a few), for size estimates of years no cube has
@@ -330,6 +442,11 @@ class LockedError(RuntimeError):
     """Another download of the same site is running."""
 
 
+class FrameRefused(RuntimeError):
+    """A production request whose frame is the snapped lon/lat box, not a
+    reference grid's (``--allow-snapped-frame``)."""
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  requests
 # ─────────────────────────────────────────────────────────────────────────────
@@ -376,7 +493,16 @@ def parse_products(text):
 @dataclass
 class Request:
     """One store to produce: a site, a year (the store name), a window and
-    the product (``main``: the nine-band cube; ``angles``: its angles)."""
+    the product (``main``: the nine-band cube; ``angles``: its angles).
+
+    ``extent``: the ``spatial_extent`` the job requests, ``{"west", "south",
+    "east", "north", "crs": EPSG code}`` in the site's UTM CRS, edges on the
+    reference lattice (``year_requests`` / ``test_request`` fill it in);
+    None requests the lon/lat ``bbox`` instead (the request before
+    2026-10-13: ``--lonlat-extent``). ``bbox`` is always the lon/lat box (the
+    stores keep it in their provenance); ``extent_source`` says where the
+    extent comes from, ``extent_origin`` the same in a few words (reference
+    netCDF, complete store, or SNAPPING of the lon/lat box)."""
     site: str
     year: int
     start: str
@@ -386,12 +512,20 @@ class Request:
     bands: tuple = None          # None: the product's bands
     test: bool = False
     product: str = MAIN.name
+    extent: dict = None          # UTM extent requested; None: the lon/lat bbox
+    extent_source: str = ""
+    extent_origin: str = ""
 
     def __post_init__(self):
         if self.product not in PRODUCTS:
             raise ValueError(f"unknown product {self.product!r}; choose from {list(PRODUCTS)}")
         if self.bands is None:
             self.bands = PRODUCTS[self.product].bands
+
+    @property
+    def spatial_extent(self):
+        """What ``load_collection`` gets: the UTM extent, else the lon/lat box."""
+        return dict(self.extent) if self.extent is not None else dict(self.bbox)
 
     @property
     def spec(self):
@@ -467,24 +601,64 @@ def parse_years(tokens):
     return sorted(years)
 
 
-def year_requests(sites, years, root, products=(MAIN.name,)):
+def year_requests(sites, years, root, products=(MAIN.name,), lonlat=False, extents=True):
     """The requests of a run: per site, per year, the products in order
     (the angles of a year right after its main store, so their dates can be
-    compared at once)."""
-    return [Request(site=s, year=y, start=zc.year_window(y)[0], end=zc.year_window(y)[1],
-                    bbox=site_bbox(s), root=root, product=p)
-            for s in sites for y in years for p in products]
+    compared at once). Each carries its UTM extent: the site's 10 m frame
+    (``site_frame``) for the main store, its 300 m frame (``angles_frame``)
+    for the angles; ``lonlat``: the lon/lat box instead (--lonlat-extent);
+    ``extents=False``: none (--verify-only needs none)."""
+    frames, out = {}, []
+    for s in sites:
+        for y in years:
+            for p in products:
+                ext, src, org = None, "", ""
+                if lonlat:
+                    src, org = LONLAT_SOURCE, LONLAT_ORIGIN
+                elif extents:
+                    if (s, p) not in frames:
+                        fr = angles_frame(s, root) if p == ANGLES.name else site_frame(s, root)
+                        frames[(s, p)] = (extent_of(fr), fr["source"], fr["origin"])
+                    ext, src, org = frames[(s, p)]
+                out.append(Request(site=s, year=y, start=zc.year_window(y)[0],
+                                   end=zc.year_window(y)[1], bbox=site_bbox(s), root=root,
+                                   product=p, extent=ext, extent_source=src, extent_origin=org))
+    return out
 
 
-def test_request(root, product=MAIN.name):
+def test_request(root, product=MAIN.name, lonlat=False, odd=False):
+    """The --test request of ``product`` (``root``: the cubes root; the
+    test writes under ``<root>/_test``): the TEST_SIZE_M window on the
+    Villaviciosa lattice (``test_window``), for the angles that window
+    snapped outward to the site's 300 m cells; ``lonlat``: the old 2 km
+    lon/lat box (``test_bbox``), under ``<root>/_test_lonlat``; ``odd``
+    (main only): the window with odd edges (``test_odd_window``), under
+    ``<root>/_test_odd``."""
+    ext, src, org, sub = None, LONLAT_SOURCE, LONLAT_ORIGIN, TEST_ROOT_LONLAT
+    if odd and (lonlat or product != MAIN.name):
+        raise ValueError("the odd --test window is for the main product of the UTM extent only")
+    if not lonlat:
+        fr = (test_angles_window(root) if product == ANGLES.name else
+              test_odd_window(site_frame(TEST_SITE, root)) if odd else
+              test_window(site_frame(TEST_SITE, root)))
+        ext, src, org = extent_of(fr), fr["source"], fr["origin"]
+        sub = TEST_ROOT_ODD if odd else TEST_ROOT
     return Request(site=TEST_SITE, year=int(TEST_WINDOW[0][:4]), start=TEST_WINDOW[0],
-                   end=TEST_WINDOW[1], bbox=test_bbox(), root=Path(root) / TEST_ROOT, test=True,
-                   product=product)
+                   end=TEST_WINDOW[1], bbox=test_bbox(), root=Path(root) / sub, test=True,
+                   product=product, extent=ext, extent_source=src, extent_origin=org)
 
 
-def test_requests(root, products=tuple(PRODUCTS)):
-    """The --test requests, one per product."""
-    return [test_request(root, p) for p in products]
+def test_requests(root, products=tuple(PRODUCTS), lonlat=False, odd=False):
+    """The --test requests, one per product (``odd``: the main product only)."""
+    if odd:
+        return [test_request(root, MAIN.name, odd=True)]
+    return [test_request(root, p, lonlat=lonlat) for p in products]
+
+
+def snapped(req):
+    """Is the request's extent the lon/lat box snapped to 60 m (no reference
+    grid on this machine), rather than a reference grid's frame?"""
+    return req.extent is not None and str(req.extent_origin).startswith("SNAPPING")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -601,6 +775,8 @@ def ensure_gitignore(root):
 def build_process(req, connection=None, backend_format=BACKEND_FORMAT, format_options=None):
     """``load_collection -> resample_spatial -> save_result``: (10, near)
     for the main product, (300, bilinear) and the angle bands for the angles.
+    The spatial extent is the request's UTM extent (``Request.extent``,
+    with its EPSG code as ``crs``), or the lon/lat box for --lonlat-extent.
 
     Without a connection the graph is built offline (dry run, job title);
     with one, the client also checks the bands and the output format
@@ -609,7 +785,7 @@ def build_process(req, connection=None, backend_format=BACKEND_FORMAT, format_op
     from openeo.rest.datacube import DataCube
 
     spec = req.spec
-    kw = dict(spatial_extent=dict(req.bbox), temporal_extent=[req.start, req.end],
+    kw = dict(spatial_extent=req.spatial_extent, temporal_extent=[req.start, req.end],
               bands=list(req.bands), max_cloud_cover=MAX_CLOUD_COVER)
     if connection is not None:
         cube = connection.load_collection(COLLECTION, **kw)
@@ -659,24 +835,317 @@ def predict_grid(bbox, res=RESOLUTION_M):
             "x_edges": [x0, x1], "y_edges": [y0, y1]}
 
 
+def lattice_phase(edge, step=RESOLUTION_M):
+    """Offset (m, in [0, step)) of a frame edge from the multiples of
+    ``step``: 0 for the sites' frames (edges on multiples of 10 m)."""
+    p = float(edge) % float(step)
+    return 0.0 if min(p, float(step) - p) < 1e-6 else round(p, 6)
+
+
 def coarse_axes(x, y, res=ANGLES_RES_M):
     """Cell centres (x ascending, y descending) of the ``res`` m grid whose
     cells cover a finer grid of pixel centres ``x``, ``y``: the finer
-    frame's edges snapped outward to multiples of ``res``, as the backend
-    snaps a bbox (``predict_grid``). With ``res`` a multiple of the finer
-    spacing, every coarse cell edge is a line of the finer lattice. Applied
-    to the 10 m grid of a site it is ``predict_grid(bbox, res)``."""
+    frame's edges snapped outward to the lines ``phase + k * res``, where
+    ``phase`` is the finer frame's offset from multiples of RESOLUTION_M
+    (``lattice_phase``; 0 for the sites' frames, so multiples of ``res``, as
+    the backend snaps a bbox: ``predict_grid``). With ``res`` a multiple of
+    the finer spacing, every coarse cell edge is then a line of the finer
+    lattice, whatever its phase. Applied to the 10 m grid of a site (edges
+    on multiples of 10 m) it is ``predict_grid(bbox, res)``."""
     x = np.asarray(x, dtype="float64")
     y = np.asarray(y, dtype="float64")
     dx = abs(float(x[1] - x[0])) if len(x) > 1 else float(RESOLUTION_M)
     dy = abs(float(y[1] - y[0])) if len(y) > 1 else float(RESOLUTION_M)
-    x0 = math.floor((x[0] - dx / 2.0) / res + 1e-9) * res
-    x1 = math.ceil((x[-1] + dx / 2.0) / res - 1e-9) * res
-    y0 = math.floor((y[-1] - dy / 2.0) / res + 1e-9) * res
-    y1 = math.ceil((y[0] + dy / 2.0) / res - 1e-9) * res
+    px, py = lattice_phase(x[0] - dx / 2.0), lattice_phase(y[0] + dy / 2.0)
+    x0 = px + math.floor((x[0] - dx / 2.0 - px) / res + 1e-9) * res
+    x1 = px + math.ceil((x[-1] + dx / 2.0 - px) / res - 1e-9) * res
+    y0 = py + math.floor((y[-1] - dy / 2.0 - py) / res + 1e-9) * res
+    y1 = py + math.ceil((y[0] + dy / 2.0 - py) / res - 1e-9) * res
     nx, ny = int(round((x1 - x0) / res)), int(round((y1 - y0) / res))
     return (x0 + res / 2.0 + res * np.arange(nx, dtype="float64"),
             y1 - res / 2.0 - res * np.arange(ny, dtype="float64"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  the request extent: the site's frame in its UTM CRS, edges on the lattice
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _num(v):
+    """An edge for the process graph: an int when whole (301020, not 301020.0)."""
+    v = float(v)
+    return int(v) if v.is_integer() else v
+
+
+def _wkt_of_epsg(epsg):
+    from pyproj import CRS
+
+    return CRS.from_epsg(int(epsg)).to_wkt("WKT1_GDAL")
+
+
+def frame_from_axes(x, y, crs_wkt, res, source="", kind="", origin=""):
+    """The frame of pixel-centre axes ``x`` (ascending) and ``y``
+    (descending), ``res`` m apart: ``{"west", "south", "east", "north",
+    "res", "epsg", "crs_wkt", "source", "kind", "origin"}`` (edges = outer
+    centres +- res / 2; ``source``: where the frame comes from, ``origin``:
+    the same in a few words). Irregular axes raise ValueError."""
+    x = np.asarray(x, dtype="float64")
+    y = np.asarray(y, dtype="float64")
+    if not len(x) or not len(y):
+        raise ValueError("an empty grid has no frame")
+    for name, v, sign in (("x", x, 1.0), ("y", y, -1.0)):
+        if len(v) > 1 and not np.allclose(np.diff(v), sign * res, rtol=0, atol=1e-6 * res):
+            raise ValueError(f"the {name} axis is not a regular {res:g} m axis "
+                             f"({'ascending' if sign > 0 else 'descending'})")
+    h = res / 2.0
+    epsg = zc._epsg_from_wkt(crs_wkt)
+    return {"west": float(x[0] - h), "south": float(y[-1] - h), "east": float(x[-1] + h),
+            "north": float(y[0] + h), "res": float(res), "epsg": int(epsg) if epsg else None,
+            "crs_wkt": crs_wkt, "source": source, "kind": kind, "origin": origin}
+
+
+def frame_shape(frame, res=None):
+    """``[rows, cols]`` of a frame (or of an extent dict) at ``res`` m."""
+    res = float(res or frame["res"])
+    return [int(round((float(frame["north"]) - float(frame["south"])) / res)),
+            int(round((float(frame["east"]) - float(frame["west"])) / res))]
+
+
+def frame_axes(frame, res=None):
+    """Pixel-centre axes of a frame (or of an extent dict): x ascending, y
+    descending, float64, ``res`` m apart from the edges (exact for edges and
+    spacings in whole metres)."""
+    res = float(res or frame["res"])
+    ny, nx = frame_shape(frame, res)
+    return (float(frame["west"]) + res / 2.0 + res * np.arange(nx, dtype="float64"),
+            float(frame["north"]) - res / 2.0 - res * np.arange(ny, dtype="float64"))
+
+
+def extent_of(frame):
+    """The ``spatial_extent`` of ``load_collection`` for a frame: its edges
+    and ``crs`` = its EPSG code as an integer (the bounding-box form of the
+    openEO process specification: an EPSG code or a WKT2 string, default
+    4326)."""
+    if not frame.get("epsg"):
+        raise ValueError(f"the frame ({frame.get('source')}) has no EPSG code to request it with")
+    return {"west": _num(frame["west"]), "south": _num(frame["south"]),
+            "east": _num(frame["east"]), "north": _num(frame["north"]), "crs": int(frame["epsg"])}
+
+
+def describe_extent(ext, res):
+    """``EPSG:32630 west 305400 south 4820340 east 307440 north 4822380
+    (204 x 204 px of 10 m)``."""
+    ny, nx = frame_shape(ext, res)
+    unit = "px" if res <= RESOLUTION_M else "cells"
+    return (f"EPSG:{ext.get('crs', ext.get('epsg'))} west {_num(ext['west'])} south "
+            f"{_num(ext['south'])} east {_num(ext['east'])} north {_num(ext['north'])} "
+            f"({ny} x {nx} {unit} of {res:g} m)")
+
+
+def snap_frame(frame, step, origin_x=0.0, origin_y=0.0):
+    """``frame`` with its edges snapped OUTWARD to the lines ``origin + k *
+    step`` (multiples of ``step`` by default): it contains ``frame``."""
+    w = origin_x + math.floor((frame["west"] - origin_x) / step + 1e-9) * step
+    e = origin_x + math.ceil((frame["east"] - origin_x) / step - 1e-9) * step
+    s = origin_y + math.floor((frame["south"] - origin_y) / step + 1e-9) * step
+    n = origin_y + math.ceil((frame["north"] - origin_y) / step - 1e-9) * step
+    return dict(frame, west=float(w), east=float(e), south=float(s), north=float(n))
+
+
+def snapped_bbox_frame(bbox, step=FRAME_SNAP_M, res=RESOLUTION_M):
+    """The frame of a site without a reference grid: the lon/lat box's UTM
+    envelope (zone of the box centre, ``predict_grid``) snapped OUTWARD to
+    multiples of ``step`` m, on the ``res`` m lattice."""
+    g = predict_grid(bbox, res=step)
+    (x0, x1), (y0, y1) = g["x_edges"], g["y_edges"]
+    return {"west": float(x0), "south": float(y0), "east": float(x1), "north": float(y1),
+            "res": float(res), "epsg": int(g["epsg"]), "crs_wkt": _wkt_of_epsg(g["epsg"]),
+            "source": (f"the lon/lat box projected to EPSG:{g['epsg']} and snapped outward to "
+                       f"multiples of {step} m"), "kind": "predicted",
+            "origin": f"SNAPPING: the lon/lat box outward to multiples of {step} m"}
+
+
+def site_frame(site, root=None, log=None):
+    """The 10 m frame of ``site``, which its main jobs request: the frame of
+    its reference grid (``reference_grid``: the site's 10 m netCDF cube, else
+    a complete store under ``root``, else the lon/lat box snapped outward to
+    multiples of FRAME_SNAP_M m), ``source`` / ``origin`` saying which."""
+    ref = reference_grid(site, root=root, log=log)
+    if ref is None:
+        raise ValueError(f"{site}: no reference grid (not even one predicted from the bbox), so "
+                         f"no UTM extent to request (--lonlat-extent requests the lon/lat box)")
+    fr = frame_from_axes(ref["x"], ref["y"], ref["crs_wkt"], RESOLUTION_M, kind=ref["kind"])
+    shape = f"{len(ref['y'])} x {len(ref['x'])} px"
+    why = ref.get("why", f"no {RESOLUTION_M} m reference netCDF")
+    if ref["kind"] == "netcdf":
+        fr["source"] = f"the frame of the reference netCDF {Path(ref['path']).name} ({shape})"
+        fr["origin"] = f"reference netCDF {Path(ref['path']).name}"
+    elif ref["kind"] == "store":
+        fr["source"] = f"the frame of the complete store {ref['path']} ({shape}; {why})"
+        fr["origin"] = f"complete store {Path(ref['path']).name} ({why})"
+    else:
+        fr["source"] = (f"the lon/lat box of {site} projected to EPSG:{fr['epsg']} and snapped "
+                        f"outward to multiples of {FRAME_SNAP_M} m ({shape}; {why}, no complete "
+                        f"store)")
+        fr["origin"] = (f"SNAPPING: the lon/lat box outward to multiples of {FRAME_SNAP_M} m "
+                        f"({why}, no complete store)")
+    off = [k for k in ("west", "south", "east", "north")
+           if abs(fr[k] / RESOLUTION_M - round(fr[k] / RESOLUTION_M)) > 1e-6]
+    if off:                          # requested as it is: the reference grid is the target
+        fr["source"] += (f" - NOTE: its {'/'.join(off)} edge(s) are not on multiples of "
+                         f"{RESOLUTION_M} m, i.e. not the native Sentinel-2 lattice")
+    return fr
+
+
+def angles_frame(site, root=None, log=None, res=ANGLES_RES_M):
+    """The 300 m frame of ``site``, which its angles jobs request: the frame
+    of ``angles_reference_grid`` (a complete angles store of the site, else
+    the 10 m frame snapped outward to multiples of ``res`` m, which contains
+    it: the rule of ``coarse_axes``; a 10 m frame whose edges are not on
+    multiples of 10 m keeps its offset, so the cell edges stay lines of its
+    lattice), ``source`` / ``origin`` saying which."""
+    ref = angles_reference_grid(site, root=root, log=log, res=res)
+    if ref is None:
+        raise ValueError(f"{site}: no {res} m reference grid, so no UTM extent for the angles")
+    fr = frame_from_axes(ref["x"], ref["y"], ref["crs_wkt"], res, kind=ref["kind"])
+    shape = f"{len(ref['y'])} x {len(ref['x'])} cells of {res} m"
+    if ref["kind"] == "store":
+        fr["source"] = f"the frame of the complete angles store {ref['path']} ({shape})"
+        fr["origin"] = f"complete angles store {Path(ref['path']).name}"
+    else:
+        fine = site_frame(site, root)
+        ph = (lattice_phase(fine["west"]), lattice_phase(fine["north"]))
+        lines = (f"multiples of {res} m" if ph == (0.0, 0.0) else
+                 f"multiples of {res} m plus ({ph[0]:g}, {ph[1]:g}) m, the {RESOLUTION_M} m "
+                 f"frame's own offset")
+        fr["source"] = (f"the {RESOLUTION_M} m frame snapped outward to {lines} "
+                        f"({shape}; the {RESOLUTION_M} m frame: {fine['source']})")
+        fr["origin"] = f"{fine['origin']}, snapped outward to {lines}"
+    return fr
+
+
+def test_window(frame, centre=None, size=None, align=FRAME_SNAP_M):
+    """The --test window inside ``frame`` (a site's 10 m frame): ``size`` x
+    ``size`` m (TEST_SIZE_M) around ``centre`` (lon, lat; TEST_CENTRE), its
+    edges lines of the frame's lattice: on multiples of ``align`` m when the
+    lattice has such lines (the sites' 10 m lattices: edges on multiples of
+    10 m), else on the lattice; moved inside the frame when it would stick
+    out. A frame too small for it raises ValueError."""
+    from pyproj import CRS, Transformer
+
+    centre = tuple(TEST_CENTRE if centre is None else centre)
+    size = float(TEST_SIZE_M if size is None else size)
+    res = float(frame["res"])
+    if abs(size / res - round(size / res)) > 1e-9:
+        raise ValueError(f"a {size:g} m window is not a whole number of {res:g} m pixels")
+    crs = CRS.from_user_input(frame.get("crs_wkt") or f"EPSG:{frame['epsg']}")
+    cx, cy = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(*centre)
+
+    def snap(v, step, phase, how):
+        q = (v - phase) / step
+        k = (round(q) if how == "round" else math.floor(q + 1e-9) if how == "floor"
+             else math.ceil(q - 1e-9))
+        return phase + k * step
+
+    def place(lo, hi, want_lo, step, phase, down):
+        """The window's lower edge along one axis (``down``: y, the edge
+        given is the upper one), inside [lo, hi], on the lines phase + k step."""
+        if down:                                   # north edge, the window below it
+            e = snap(want_lo, step, phase, "round")
+            if e > hi + 1e-6:
+                e = snap(hi, step, phase, "floor")
+            if e - size < lo - 1e-6:
+                e = snap(lo + size, step, phase, "ceil")
+            return e if (e <= hi + 1e-6 and e - size >= lo - 1e-6) else None
+        e = snap(want_lo, step, phase, "round")    # west edge, the window east of it
+        if e < lo - 1e-6:
+            e = snap(lo, step, phase, "ceil")
+        if e + size > hi + 1e-6:
+            e = snap(hi - size, step, phase, "floor")
+        return e if (e >= lo - 1e-6 and e + size <= hi + 1e-6) else None
+
+    def options(edge):          # the lines the window's edges may sit on, preferred first
+        phase = float(np.mod(edge, res))
+        lat = [(res, phase)]
+        if min(phase, res - phase) < 1e-6 and align % res == 0:
+            return [(float(align), 0.0)] + [(res, 0.0)]
+        return lat
+
+    west = north = None
+    on = []
+    for step, phase in options(frame["west"]):
+        west = place(frame["west"], frame["east"], cx - size / 2.0, step, phase, False)
+        if west is not None:
+            on.append(step)
+            break
+    for step, phase in options(frame["north"]):
+        north = place(frame["south"], frame["north"], cy + size / 2.0, step, phase, True)
+        if north is not None:
+            on.append(step)
+            break
+    if west is None or north is None:
+        raise ValueError(f"a {size:g} x {size:g} m test window does not fit in the frame "
+                         f"{frame_shape(frame)} px ({frame.get('source')})")
+    n = int(round(size / res))
+    where = (f"corners on multiples of {align} m"
+             if all(s == align for s in on) and abs(size % align) < 1e-9 else
+             f"corners on the {res:g} m lattice of the frame")
+    return dict(frame, west=float(west), east=float(west + size), north=float(north),
+                south=float(north - size), kind="test",
+                source=(f"the --test window, {size:g} x {size:g} m ({n} x {n} px) around lon/lat "
+                        f"{centre[0]:g}, {centre[1]:g}, {where}, inside {frame.get('source')}"),
+                origin=f"--test window ({where}) inside the frame of: {frame.get('origin')}")
+
+
+def test_odd_window(frame, shift=TEST_ODD_SHIFT_M, size=TEST_ODD_SIZE_M):
+    """The --test --odd-window window: the --test window's west edge moved
+    ``shift`` m east (a line 10 m past a multiple of 20 m), its north edge
+    kept, ``size`` m (205 px) on each side: the west and south edges are odd
+    10 m lines, the north and east edges multiples of 20 m (the production
+    frames have odd east / south edges; the --test window has none)."""
+    res = float(frame["res"])
+    win = test_window(frame)
+    w, n = float(win["west"]) + shift, float(win["north"])
+    e, so = w + size, n - size
+    if (abs(w / res - round(w / res)) > 1e-9 or abs(size / res - round(size / res)) > 1e-9
+            or e > float(frame["east"]) + 1e-6 or so < float(frame["south"]) - 1e-6):
+        raise ValueError(f"the odd --test window ({w:g}..{e:g} x {so:g}..{n:g}) is not on the "
+                         f"{res:g} m lattice or not inside the frame ({frame.get('source')})")
+    n_px = int(round(size / res))
+    odd = [k for k, v in (("west", w), ("south", so), ("east", e), ("north", n))
+           if abs((v / 20.0) - round(v / 20.0)) > 1e-9]
+    return dict(frame, west=w, east=e, north=n, south=so, kind="test",
+                source=(f"the --test --odd-window window, {size:g} x {size:g} m ({n_px} x {n_px} px, "
+                        f"odd), its {'/'.join(odd) or 'no'} edge(s) 10 m past a multiple of 20 m, "
+                        f"inside {frame.get('source')}"),
+                origin=(f"--test --odd-window ({'/'.join(odd) or 'no'} edge(s) on odd 10 m lines) "
+                        f"inside the frame of: {frame.get('origin')}"))
+
+
+def test_angles_window(root=None, res=ANGLES_RES_M):
+    """The --test frame of the angles job: the --test window snapped outward
+    to the site's ``res`` m cells (the lattice of ``angles_frame``: multiples
+    of 300 m, unless an angles store of the site fixes another phase)."""
+    cells = angles_frame(TEST_SITE, root, res=res)
+    win = test_window(site_frame(TEST_SITE, root))
+    fr = snap_frame(win, res, origin_x=cells["west"], origin_y=cells["north"])
+    ny, nx = frame_shape(fr, res)
+    fr.update(res=float(res), kind="test",
+              source=(f"the --test window ({_num(win['west'])}..{_num(win['east'])} x "
+                      f"{_num(win['south'])}..{_num(win['north'])}) snapped outward to the {res} m "
+                      f"cells of the site ({ny} x {nx} cells; {cells['source']})"),
+              origin=f"--test window snapped outward to the {res} m cells of: {cells['origin']}")
+    return fr
+
+
+def request_grid(req):
+    """The grid of a request's UTM extent at its product's resolution, as
+    a reference-grid dict (``kind`` "request"); None for a lon/lat request."""
+    if req.extent is None:
+        return None
+    res = req.spec.resolution
+    x, y = frame_axes(req.extent, res)
+    return {"path": f"the requested extent ({describe_extent(req.extent, res)})", "kind": "request",
+            "x": x, "y": y, "crs_wkt": _wkt_of_epsg(req.extent["crs"]), "res": res}
 
 
 def reference_summary(site):
@@ -1440,7 +1909,89 @@ def read_netcdf(path):
     return RawData(source=str(path), kind="netcdf", ds=ds, info=info, attrs=dict(ds.attrs))
 
 
-def _decode_time(var):
+#: calendars whose dates are the plain proleptic Gregorian ones (decoded by
+#: ``decode_time_values``; any other goes to xarray's CF decoder)
+STANDARD_CALENDARS = ("", "standard", "gregorian", "proleptic_gregorian")
+#: nanoseconds per unit of a ``<unit> since <date>`` time axis
+TIME_UNIT_NS = {}
+for _names, _ns in ((("nanoseconds", "nanosecond", "nsec", "nsecs", "ns"), 1),
+                    (("microseconds", "microsecond", "usec", "usecs", "us"), 10 ** 3),
+                    (("milliseconds", "millisecond", "msec", "msecs", "ms"), 10 ** 6),
+                    (("seconds", "second", "secs", "sec", "s"), 10 ** 9),
+                    (("minutes", "minute", "mins", "min"), 60 * 10 ** 9),
+                    (("hours", "hour", "hrs", "hr", "h"), 3600 * 10 ** 9),
+                    (("days", "day", "d"), 86400 * 10 ** 9)):
+    TIME_UNIT_NS.update({_n: _ns for _n in _names})
+del _names, _ns
+
+
+def parse_time_units(units):
+    """``"<unit> since <reference>"`` -> ``(nanoseconds per unit, reference
+    as datetime64[ns], UTC)``. The reference is ISO (``1970-01-01``,
+    ``1970-01-01 00:00:00``, ``1970-01-01T00:00:00Z``) or slashed as the
+    openEO Zarr writer has it, ``01/01/1970 - 00:00:00`` (time optional):
+    day first, month first only where the day cannot be a month; a slashed
+    date whose day and month cannot be told apart raises ValueError
+    ("ambiguous"), as does any other form."""
+    import pandas as pd
+
+    m = re.fullmatch(r"\s*([A-Za-z]+)\s+since\s+(.+?)\s*", str(units), re.I)
+    if not m:
+        raise ValueError(f"time units {units!r} are not '<unit> since <date>'")
+    unit, ref = m.group(1).lower(), m.group(2).strip()
+    if unit not in TIME_UNIT_NS:
+        raise ValueError(f"time unit {m.group(1)!r} of {units!r} not understood")
+    s = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})(?:\s*(?:-|T|\s)\s*(\d{1,2}):(\d{2})"
+                     r"(?::(\d{2})(?:\.(\d{1,9}))?)?)?\s*(?:Z|UTC|GMT|[+-]00:?00)?", ref, re.I)
+    if s:
+        a, b, year = int(s.group(1)), int(s.group(2)), int(s.group(3))
+        if a == b or (a > 12 >= b):
+            day, month = a, b
+        elif b > 12 >= a:
+            day, month = b, a
+        else:
+            raise ValueError(f"reference date {ref!r} of {units!r} is ambiguous: day and month "
+                             f"cannot be told apart")
+        iso = (f"{year:04d}-{month:02d}-{day:02d}T{int(s.group(4) or 0):02d}:"
+               f"{int(s.group(5) or 0):02d}:{int(s.group(6) or 0):02d}"
+               + (f".{s.group(7)}" if s.group(7) else ""))
+        return TIME_UNIT_NS[unit], np.datetime64(iso, "ns")
+    if not re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}(?:[T\s]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?"
+                        r"\s*(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})?", ref, re.I):
+        raise ValueError(f"reference date {ref!r} of {units!r} not understood")
+    ts = pd.Timestamp(re.sub(r"\s*(UTC|GMT)$", "", ref, flags=re.I))
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("UTC").tz_localize(None)
+    return TIME_UNIT_NS[unit], np.datetime64(ts.to_datetime64(), "ns")
+
+
+def decode_time_values(values, units):
+    """Numeric time values (any byte order) in ``units`` (``parse_time_units``)
+    -> datetime64[ns], exactly for integers; floats are split into their
+    whole units (exact) and the fraction (rounded to the ns), so whole
+    milliseconds as float64 stay exact too."""
+    ns, t0 = parse_time_units(units)
+    v = np.asarray(values)
+    if v.dtype.kind not in "iuf":
+        raise ValueError(f"time values of dtype {v.dtype} are not numbers")
+    v = v.astype(v.dtype.newbyteorder("="))
+    if v.dtype.kind in "iu":
+        v = v.astype("int64")
+        if v.size and int(np.abs(v).max()) > np.iinfo("int64").max // ns:
+            raise ValueError(f"time values up to {int(np.abs(v).max())} {units!r} overflow")
+        off = v * ns
+    else:
+        if not np.all(np.isfinite(v)):
+            raise ValueError("non-finite time values")
+        v = v.astype("float64")
+        whole = np.floor(v)
+        if v.size and float(np.abs(whole).max()) > np.iinfo("int64").max // ns:
+            raise ValueError(f"time values up to {float(np.abs(v).max())} {units!r} overflow")
+        off = whole.astype("int64") * ns + np.round((v - whole) * ns).astype("int64")
+    return t0 + off.astype("timedelta64[ns]")
+
+
+def _decode_time(var, notes=None):
     import pandas as pd
 
     v = np.asarray(var.values)
@@ -1448,9 +1999,36 @@ def _decode_time(var):
         return v.astype("datetime64[ns]")
     if v.dtype.kind in "iuf":
         units = var.attrs.get("units")
-        if not units or "since" not in str(units):
+        if not units or not re.search(r"\bsince\b", str(units), re.I):
             raise FormatError(f"the time coordinate is numeric without CF units "
                               f"(attrs {var.attrs}); cannot tell what {v[:3]} mean")
+        if v.dtype.kind == "f" and v.dtype.itemsize < 8 and v.size:
+            try:
+                unit_ns = parse_time_units(units)[0]
+            except ValueError:
+                unit_ns = None
+            vn = v.astype(v.dtype.newbyteorder("="))
+            if unit_ns and np.all(np.isfinite(vn)):
+                step_s = float(np.spacing(np.abs(vn).max())) * unit_ns / 1e9
+                if step_s > 1.0:
+                    raise FormatError(f"the time coordinate is {v.dtype} in {str(units)!r}: at "
+                                      f"these values one {vn.dtype.name} step is {step_s:g} s, so "
+                                      f"the times are rounded by up to {step_s / 2:g} s; refused "
+                                      f"(times must be int64 or float64)")
+        cal = var.attrs.get("calendar")
+        if cal is None or str(cal).lower() in STANDARD_CALENDARS:
+            try:
+                out = decode_time_values(v, units)
+            except ValueError as exc:
+                if "ambiguous" in str(exc):
+                    raise FormatError(f"the time coordinate: {exc}") from exc
+                out = None                      # another form: xarray's CF decoder below
+            if out is not None:
+                if notes is not None and "/" in str(units):
+                    t0 = parse_time_units(units)[1]
+                    notes.append(f"time units {str(units)!r} decoded explicitly (reference date "
+                                 f"read as {str(t0)[:19]}, {str(var.dtype)} values)")
+                return out
         from xarray.coding.times import decode_cf_datetime
 
         out = decode_cf_datetime(v, str(units), var.attrs.get("calendar", "standard"))
@@ -1498,8 +2076,9 @@ SCALE_ATTRS = ("scale_factor", "add_offset", "scale", "offset")
 
 
 def _wkt_from(attrs):
-    """A CRS from attributes: WKT text, or an EPSG code made into WKT."""
-    for key in ("crs_wkt", "spatial_ref", "proj:wkt2", "wkt", "crs"):
+    """A CRS from attributes: WKT text (``_CRS``: the openEO Zarr writer's),
+    or an EPSG code made into WKT."""
+    for key in ("crs_wkt", "spatial_ref", "proj:wkt2", "wkt", "crs", "_CRS"):
         v = attrs.get(key)
         if isinstance(v, str) and ("PROJCS" in v or "PROJCRS" in v or "GEOGCS" in v
                                    or "GEOGCRS" in v):
@@ -1572,6 +2151,17 @@ class Interpretation:
     zarr_fills: dict = field(default_factory=dict)  # band -> Zarr fill_value as delivered
     nodata_lines: list = field(default_factory=list)  # the no-data decision, for the report
     groups: list = field(default_factory=list)   # bands sharing delivered chunks
+    coord_dtypes: dict = field(default_factory=dict)  # x / y dtype as delivered ('>f4', ...)
+    raw_axes: dict = field(default_factory=dict)  # float32 x / y as delivered (in float64)
+
+
+def _low_precision(dtype):
+    """A float dtype narrower than float64 (the backend's Zarr x/y: '>f4')."""
+    try:
+        dt = np.dtype(dtype)
+    except TypeError:
+        return False
+    return dt.kind == "f" and dt.itemsize < 8
 
 
 def date_from_path(path):
@@ -1684,7 +2274,7 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
             notes.append(f"x/y computed from {src} (pixel centres)")
     if "t" not in ds.coords:
         raise FormatError(f"{raw.source}: the time dimension has no coordinate values")
-    tvals = _decode_time(ds["t"])
+    tvals = _decode_time(ds["t"], notes)
     found, delivered, src_attrs = {}, {}, {}
     groups = None
     wanted = {band_key(b): b for b in bands}
@@ -1760,6 +2350,7 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
     if "x" not in ds.coords or "y" not in ds.coords:
         raise FormatError(f"{raw.source}: no x/y coordinate values (coords {list(ds.coords)}); "
                           f"refusing to place the pixels on a grid by guesswork")
+    cdtypes = {"x": str(ds["x"].dtype), "y": str(ds["y"].dtype)}      # as delivered
     x = np.asarray(ds["x"].values, dtype="float64")
     y = np.asarray(ds["y"].values, dtype="float64")
     order_t = np.argsort(tvals, kind="stable")
@@ -1787,15 +2378,39 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
             a = a.isel(t=order_t)
         found[b] = a
     tvals = tvals[order_t]
+    regular, raw_axes = {}, {}
     for name, v, sign in (("x", x, 1.0), ("y", y, -1.0)):
-        if len(v) > 1:
+        if len(v) > 1 and _low_precision(cdtypes[name]):
+            # float32 (the backend's Zarr writer): up to half a float32 step
+            # of rounding per value; regular within F32_TOL_M, then exact
+            k = np.arange(len(v), dtype="float64")
+            reg = float(np.median(v - sign * resolution * k)) + sign * resolution * k
+            dev = float(np.max(np.abs(v - reg)))
+            if dev > F32_TOL_M + 1e-9:
+                raise FormatError(f"{raw.source}: {name} (delivered as {cdtypes[name]}) is not the "
+                                  f"{resolution} m grid: up to {dev:.3f} m from a regular axis (float32 "
+                                  f"rounding allows {F32_TOL_M:g} m); spacing "
+                                  f"{np.unique(np.round(np.diff(v), 6))[:5]}")
+            notes.append(f"{name} delivered as {cdtypes[name]} (float32): "
+                         + (f"within {dev:.3f} m of a regular {resolution:g} m axis; regularised "
+                            f"in float64" if dev > 0 else f"a regular {resolution:g} m axis"))
+            raw_axes[name] = v.copy()       # snap_to_lattice measures the rounding on these
+            v = reg
+        elif len(v) > 1:
             d = np.diff(v)
             if not np.allclose(d, sign * resolution, rtol=0, atol=1e-6 * resolution):
                 raise FormatError(f"{raw.source}: {name} spacing {np.unique(np.round(d, 6))[:5]} "
                                   f"is not the {resolution} m grid")
+        regular[name] = v
+    x, y = regular["x"], regular["y"]
     half = resolution / 2.0
-    if len(x) and (abs(((x[0] - half) / resolution) - round((x[0] - half) / resolution)) > 1e-6
-                   or abs(((y[0] - half) / resolution) - round((y[0] - half) / resolution)) > 1e-6):
+
+    def off_half(v0, name):
+        tol = (F32_TOL_M / resolution) if _low_precision(cdtypes[name]) else 1e-6
+        q = (v0 - half) / resolution
+        return abs(q - round(q)) > tol
+
+    if len(x) and (off_half(x[0], "x") or off_half(y[0], "y")):
         warns.append(f"pixel centres x0={x[0]} y0={y[0]} are not at half-pixel positions of the "
                      f"{resolution} m lattice (the netCDF cubes' are): corners instead of centres?")
     # CRS
@@ -1825,12 +2440,22 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
                 wkt, csrc = w, f"{label} ({key})"
                 break
     if wkt is None and ref_grid is not None:
-        ox = zc._overlap(x, ref_grid["x"])
-        oy = zc._overlap(y, ref_grid["y"])
+        def overlap(v, r, name):            # float32 axes: within their rounding of the lattice
+            r = np.asarray(r, dtype="float64")
+            if _low_precision(cdtypes[name]) and len(r) > 1 and len(v):
+                step = r[1] - r[0]
+                on = r[0] + np.round((v - r[0]) / step) * step
+                if np.max(np.abs(v - on)) <= F32_TOL_M + 1e-9:
+                    v = on
+            return zc._overlap(v, r)
+
+        ox = overlap(x, ref_grid["x"], "x")
+        oy = overlap(y, ref_grid["y"], "y")
         if ox is not None and oy is not None and ref_grid.get("crs_wkt"):
             wkt = ref_grid["crs_wkt"]
-            label = {"store": "reference store", "predicted": "reference grid"}.get(
-                ref_grid.get("kind"), "reference netCDF cube")
+            label = {"store": "reference store", "predicted": "reference grid",
+                     "request": "requested extent"}.get(ref_grid.get("kind"),
+                                                        "reference netCDF cube")
             csrc = (f"{label} {ref_grid['path']} (the delivered coordinates lie on its grid; the "
                     f"delivered data carry no CRS)")
             warns.append(f"CRS not in the delivered data: taken from the {label}")
@@ -1936,7 +2561,8 @@ def interpret(raw, bands, resolution=RESOLUTION_M, crs_hints=(), ref_grid=None,
     return Interpretation(bands=found, t=tvals, y=y, x=x, crs_wkt=wkt, crs_source=csrc,
                           fills=fills, fill_sources=fsrc, delivered=delivered, notes=notes,
                           warnings=warns, source=raw.source, attrs=dict(raw.attrs),
-                          zarr_fills=zfills, nodata_lines=nlines, groups=groups)
+                          zarr_fills=zfills, nodata_lines=nlines, groups=groups,
+                          coord_dtypes=cdtypes, raw_axes=raw_axes)
 
 
 def combine(parts):
@@ -1971,7 +2597,8 @@ def combine(parts):
             notes=notes + ["assets hold different bands: merged"], warnings=warns,
             source="; ".join(p.source for p in parts), attrs=p0.attrs,
             zarr_fills={b: f for p in parts for b, f in p.zarr_fills.items()},
-            nodata_lines=nlines, groups=[g for p in parts for g in p.groups])
+            nodata_lines=nlines, groups=[g for p in parts for g in p.groups],
+            coord_dtypes=p0.coord_dtypes, raw_axes=p0.raw_axes)
     if all(s == band_sets[0] for s in band_sets):
         allt = np.concatenate([p.t for p in parts])
         if len(np.unique(allt)) != len(allt):
@@ -1992,7 +2619,8 @@ def combine(parts):
             crs_source=p0.crs_source, fills=fills, fill_sources=p0.fill_sources,
             delivered=p0.delivered, notes=notes + ["assets hold different dates: concatenated"],
             warnings=warns, source="; ".join(p.source for p in parts), attrs=p0.attrs,
-            zarr_fills=p0.zarr_fills, nodata_lines=nlines, groups=p0.groups)
+            zarr_fills=p0.zarr_fills, nodata_lines=nlines, groups=p0.groups,
+            coord_dtypes=p0.coord_dtypes, raw_axes=p0.raw_axes)
     raise FormatError(f"{len(parts)} assets that neither split the bands nor the dates: "
                       f"{[sorted(s) for s in band_sets]}")
 
@@ -2024,10 +2652,97 @@ def _pad_tyx(arr, top, bottom, left, right, fill):
     return da.concatenate(col, axis=1) if len(col) > 1 else mid
 
 
+def margin_summary(interp, r0, r1, c0, c1, max_dates=REPORT_CANDIDATES):
+    """What the delivered rows / columns outside rows ``r0:r1`` and columns
+    ``c0:c1`` hold (the part an alignment crops away: the Zarr writer pads
+    its arrays to whole chunks), per band, over up to ``max_dates`` dates
+    spread over the axis, counted chunk by chunk (dask): ``{"shape",
+    "rows", "cols", "dates", "of", "bands": {band: {"cells", "fill", "nan",
+    "zero", "other", "min", "max"}}, "other"}``; ``other`` = values that are
+    neither the band's fill, NaN nor 0. None when nothing is cropped."""
+    import dask
+    import dask.array as da
+
+    if not interp.bands:
+        return None
+    T, H, W = next(iter(interp.bands.values())).shape
+    regions = [(slice(0, r0), slice(0, W)), (slice(r1, H), slice(0, W)),
+               (slice(r0, r1), slice(0, c0)), (slice(r0, r1), slice(c1, W))]
+    regions = [(ys, xs) for ys, xs in regions if ys.stop > ys.start and xs.stop > xs.start]
+    if not regions or not T:
+        return None
+    idx = [int(i) for i in np.unique(np.linspace(0, T - 1, min(T, max_dates)).round())]
+    lazy, cells = {}, {}
+    for b, a in interp.bands.items():
+        d = a.data if hasattr(a.data, "dask") else da.from_array(np.asarray(a.data), chunks=-1)
+        d = d[idx]
+        fill = interp.fills.get(b)
+        real_fill = fill is not None and not (isinstance(fill, float) and np.isnan(fill))
+        per = []
+        cells[b] = 0
+        for ys, xs in regions:
+            r = d[:, ys, xs]
+            cells[b] += int(np.prod(r.shape))
+            # dtype by keyword: dask 2026 takes a positional one as float64
+            none = da.zeros(r.shape, dtype=bool, chunks=r.chunks)
+            nan = da.isnan(r) if r.dtype.kind == "f" else none
+            fil = ((r == fill) & ~nan) if real_fill else none
+            zero = (r == 0) & ~fil & ~nan
+            other = ~(fil | nan | zero)
+            v = r.astype("float64")
+            per.append([fil.sum(), nan.sum(), zero.sum(), other.sum(),
+                        da.where(other, v, np.inf).min(), da.where(other, v, -np.inf).max()])
+        lazy[b] = per
+    (got,) = dask.compute(lazy)
+    out = {"shape": [int(H), int(W)], "rows": [int(r0), int(r1)], "cols": [int(c0), int(c1)],
+           "dates": len(idx), "of": int(T), "bands": {}, "other": 0, "zero": 0}
+    for b, per in got.items():
+        s = {"cells": cells[b], "fill": int(sum(p[0] for p in per)),
+             "nan": int(sum(p[1] for p in per)), "zero": int(sum(p[2] for p in per)),
+             "other": int(sum(p[3] for p in per))}
+        lo, hi = min(float(p[4]) for p in per), max(float(p[5]) for p in per)
+        s["min"], s["max"] = (lo, hi) if s["other"] else (None, None)
+        out["bands"][b] = s
+        out["other"] += s["other"]
+        out["zero"] += s["zero"]
+    return out
+
+
+def format_margin(m, fills=None):
+    """``(line, clean)`` of a ``margin_summary``: ``clean`` when the margin
+    held nothing but the fill / NaN. Either way the line is a NOTE: the
+    margin lies outside the frame (cropped by coordinates on the checked
+    lattice), so data there are pixels the request did not ask for, not
+    pixels lost from the store. On a sample of the dates, the line says so."""
+    nb = next(iter(m["bands"].values()))["cells"] // max(1, m["dates"])
+    sampled = m["dates"] < m["of"]
+    head = (f"cropped-away margin: the delivered rows / columns outside rows {m['rows'][0]}:"
+            f"{m['rows'][1]}, columns {m['cols'][0]}:{m['cols'][1]} of {m['shape'][0]} x "
+            f"{m['shape'][1]} ({nb} values per band and date; {m['dates']} of {m['of']} dates"
+            + (" sampled" if sampled else "") + ")")
+    on = " on the sampled dates" if sampled else ""
+    if not m["other"] and not m["zero"]:
+        what = sorted({repr(f) for f in (fills or {}).values()}) if fills else []
+        return (head + ": only the fill" + (f" ({', '.join(what)})" if what else "") + " / NaN"
+                + on), True
+    parts = []
+    for b, s in m["bands"].items():
+        n = max(1, s["cells"])
+        bits = [f"{k} {s[k] / n * 100:.1f} %" for k in ("fill", "nan", "zero", "other") if s[k]]
+        if s["other"]:
+            bits.append(f"(values {s['min']:g}..{s['max']:g})")
+        parts.append(f"{b} " + " ".join(bits))
+    return (head + f" holds data{on}, not only the fill: " + "; ".join(parts)
+            + " - pixels OUTSIDE the requested frame, cut off by coordinates (not in the store; "
+            "nothing inside the frame is lost)"), False
+
+
 def align_to_grid(interp, ref_x, ref_y, res=RESOLUTION_M):
     """Crop / pad the bands of ``interp`` (same 10 m lattice, another
     extent) onto the reference axes, padding with each band's fill: an exact
-    index shift, values untouched. Returns a note of what was done."""
+    index shift, values untouched. Returns ``(note, padded, margin)``: what
+    was done, whether anything was padded, and what the cropped-away rows /
+    columns held (``margin_summary``; None when nothing was cut)."""
     import xarray as xr
 
     rx = np.asarray(ref_x, dtype="float64")
@@ -2043,6 +2758,7 @@ def align_to_grid(interp, ref_x, ref_y, res=RESOLUTION_M):
                           f"({rx[0]}, {ry[0]}))")
     left, top = ox + c0, oy + r0
     right, bottom = len(rx) - left - (c1 - c0), len(ry) - top - (r1 - r0)
+    margin = margin_summary(interp, r0, r1, c0, c1)
     for b, a in list(interp.bands.items()):
         a = a.isel(y=slice(r0, r1), x=slice(c0, c1))
         if top or bottom or left or right:
@@ -2055,9 +2771,10 @@ def align_to_grid(interp, ref_x, ref_y, res=RESOLUTION_M):
                              attrs=a.attrs, name=a.name)
         interp.bands[b] = a
     interp.x, interp.y = rx.copy(), ry.copy()
-    return (f"delivered grid {len(y)} x {len(x)} px from ({x[0]}, {y[0]}) put on the reference grid "
+    note = (f"delivered grid {len(y)} x {len(x)} px from ({x[0]}, {y[0]}) put on the reference grid "
             f"{len(ry)} x {len(rx)} px from ({rx[0]}, {ry[0]}): cropped rows {r0}:{r1} cols "
             f"{c0}:{c1}, padded with the fill top {top} bottom {bottom} left {left} right {right}")
+    return note, bool(top or bottom or left or right), margin
 
 
 def canonical_dataset(interp, bands, product=None):
@@ -2985,9 +3702,12 @@ def reference_grid(site, root=None, log=None):
     """The 10 m grid a store of ``site`` must be on, with where it came from
     (``kind``): the site's netCDF cube when it is on this machine and on a
     10 m grid; else a complete store of the site under ``root`` (a year
-    already downloaded); else the grid predicted from the site's bbox
-    (``predict_grid``, which matches the existing cubes). ``log`` gets a
-    line saying which, louder when it is not the netCDF cube."""
+    already downloaded); else the site's lon/lat box projected to UTM and
+    snapped OUTWARD to multiples of FRAME_SNAP_M m (``snapped_bbox_frame``:
+    what is requested then; the netCDF cubes are its 10 m-snapped
+    ``predict_grid``, with the same lattice). Its frame is also the
+    extent the main jobs request (``site_frame``). ``log`` gets a line
+    saying which, louder when it is not the netCDF cube."""
     say = log or (lambda m: None)
     import xarray as xr
 
@@ -3010,26 +3730,22 @@ def reference_grid(site, root=None, log=None):
             say(f"grid guard: {why}; reference grid = the complete store {sp} ({g['shape'][0]} x "
                 f"{g['shape'][1]} px, EPSG {g['epsg']}) - weaker than the netCDF cube")
             return {"path": str(sp), "kind": "store", "x": np.asarray(ds["x"].values),
-                    "y": np.asarray(ds["y"].values), "crs_wkt": g["crs_wkt"]}
+                    "y": np.asarray(ds["y"].values), "crs_wkt": g["crs_wkt"], "why": why}
         finally:
             ds.close()
     try:
-        g = predict_grid(site_bbox(site))
-        from pyproj import CRS
-
-        wkt = CRS.from_epsg(g["epsg"]).to_wkt("WKT1_GDAL")
+        fr = snapped_bbox_frame(site_bbox(site))
     except Exception as exc:
         say(f"GRID GUARD OFF: {why}, no complete store of {site} and no predicted grid "
             f"({type(exc).__name__}: {exc}): the CRS and lattice of the delivered grid are NOT "
             f"checked")
         return None
-    (x0, x1), (y0, y1) = g["x_edges"], g["y_edges"]
-    x = x0 + RESOLUTION_M / 2.0 + RESOLUTION_M * np.arange(g["shape"][1])
-    y = y1 - RESOLUTION_M / 2.0 - RESOLUTION_M * np.arange(g["shape"][0])
-    say(f"GRID GUARD WEAKER: {why} and no complete store of {site}: reference grid = the grid "
-        f"predicted from the bbox ({g['shape'][0]} x {g['shape'][1]} px, EPSG {g['epsg']})")
+    x, y = frame_axes(fr)
+    say(f"GRID GUARD WEAKER: {why} and no complete store of {site}: reference grid = the bbox "
+        f"projected and snapped outward to multiples of {FRAME_SNAP_M} m ({len(y)} x {len(x)} px, "
+        f"EPSG {fr['epsg']})")
     return {"path": f"grid predicted from the {site} bbox", "kind": "predicted", "x": x, "y": y,
-            "crs_wkt": wkt}
+            "crs_wkt": fr["crs_wkt"], "why": why}
 
 
 def angles_reference_grid(site, root=None, log=None, res=ANGLES_RES_M):
@@ -3256,6 +3972,8 @@ class Context:
         self.max_wait_s = float(getattr(a, "max_wait_hours", 24.0)) * 3600.0
         self.keep_raw = bool(getattr(a, "keep_raw", False))
         self.allow_offset = bool(getattr(a, "allow_grid_offset", False))
+        self.allow_padding = bool(getattr(a, "allow_padding", False))
+        self.allow_snapped = bool(getattr(a, "allow_snapped_frame", False))
         self.nodata = getattr(a, "nodata", None)
         self.new_job = bool(getattr(a, "new_job", False))
         self.network = True
@@ -3274,6 +3992,53 @@ class Context:
                 pit.net.use_system_certificates()
                 self._conn = pit.scenes.connect(interactive=False)
         return self._conn
+
+
+def snap_to_lattice(interp, ref, step=RESOLUTION_M):
+    """Undo the float32 rounding of delivered x/y: an axis delivered as
+    float32 whose values are ALL the float32 rounding of lines ``ref[axis][0]
+    + k * step`` (the reference's 10 m lattice; the angles' cell centres lie
+    on lines of it too) takes those lines' exact float64 values. Pixel
+    centres in whole metres are exact in float32, so a delivery on the
+    lattice deviates by 0 here; a value farther than half a float32 step
+    from the lattice (0.016-0.03 m at eastings, 0.25 m at northings of
+    4-8e6 m) is not rounding: the axis is left as ``interpret`` regularised
+    it (through the median of the delivered values) for the lattice check,
+    which refuses any offset of it (1e-3 px). float64 axes are never
+    touched. Returns the notes."""
+    if ref is None:
+        return []
+    name = Path(str(ref["path"])).name if ref.get("kind") in ("netcdf", "store") else ref["path"]
+    notes = []
+    for axis in ("x", "y"):
+        dt = interp.coord_dtypes.get(axis)
+        if not dt or not _low_precision(dt):
+            continue
+        native = np.dtype(dt).newbyteorder("=")
+        # the values as delivered (interpret regularised the axis around their median)
+        v = np.asarray(interp.raw_axes.get(axis, getattr(interp, axis)), dtype="float64")
+        r = np.asarray(ref[axis], dtype="float64")
+        if not len(v) or not len(r):
+            continue
+        exact = r[0] + np.round((v - r[0]) / step) * step
+        dev = float(np.max(np.abs(v - exact)))
+        image = exact.astype(native).astype("float64")
+        off = np.flatnonzero(image != v.astype(native).astype("float64"))
+        half = 0.5 * float(np.spacing(np.abs(v).max().astype(native)))
+        if not len(off):
+            setattr(interp, axis, exact)
+            notes.append(f"{axis} (delivered as {dt}) {dev:.3f} m ({dev / RESOLUTION_M:.3f} px) from "
+                         f"the {step:g} m lattice of {name}: "
+                         + ("exactly its float32 values" if dev == 0 else
+                            f"float32 rounding (at most half a float32 step, {half:.3f} m here)")
+                         + "; the lattice's exact float64 values are used")
+        else:
+            notes.append(f"{axis} (delivered as {dt}): {len(off)} of {len(v)} values are not the "
+                         f"float32 rounding of the {step:g} m lattice of {name} (up to {dev:.3f} m "
+                         f"= {dev / RESOLUTION_M:.3f} px off; half a float32 step here is "
+                         f"{half:.3f} m): not rounding, so the lattice check decides on the regular "
+                         f"axis through their median")
+    return notes
 
 
 def lattice_check(interp, ref_grid, whole=True):
@@ -3301,8 +4066,11 @@ def lattice_check(interp, ref_grid, whole=True):
     fy = ((float(interp.y[0]) - ry[0]) / dyr) % 1.0
     fx, fy = min(fx, 1.0 - fx), min(fy, 1.0 - fy)
     if fx > 1e-3 or fy > 1e-3:
+        f32 = [a for a in ("x", "y") if _low_precision(interp.coord_dtypes.get(a))]
         return (f"the delivered pixel centres are offset by ({fx:.3f}, {fy:.3f}) px from the grid "
-                f"of {ref_grid['path']} (0.5 = pixel corners delivered as centres?)"), None
+                f"of {ref_grid['path']} (0.5 = pixel corners delivered as centres?)"
+                + (f"; {'/'.join(f32)} delivered as float32, whose rounding (half a float32 "
+                   f"step) is absorbed: this is a real offset" if f32 else "")), None
     if whole and (len(interp.x) != len(rx) or len(interp.y) != len(ry)
                   or not np.isclose(interp.x[0], rx[0], atol=1e-3)
                   or not np.isclose(interp.y[0], ry[0], atol=1e-3)):
@@ -3375,6 +4143,94 @@ def angles_grid_check(interp, ref, whole=True, res=ANGLES_RES_M):
     return None, extent, warn
 
 
+def _same_axes(x, y, grid):
+    """Axes ``x``, ``y`` with the extent of ``grid`` (lengths, first centres to 1 mm)?"""
+    gx, gy = np.asarray(grid["x"], dtype="float64"), np.asarray(grid["y"], dtype="float64")
+    return bool(len(x) == len(gx) and len(y) == len(gy) and len(gx) and len(gy)
+                and np.isclose(x[0], gx[0], rtol=0, atol=1e-3)
+                and np.isclose(y[0], gy[0], rtol=0, atol=1e-3))
+
+
+def _same_extent(interp, grid):
+    return _same_axes(interp.x, interp.y, grid)
+
+
+def _on_lattice_of(xs, ys, grid, step):
+    """Do axes starting at ``xs``, ``ys`` lie on the ``step`` lattice of ``grid``?"""
+    gx, gy = np.asarray(grid["x"], dtype="float64"), np.asarray(grid["y"], dtype="float64")
+    return _phase(xs, gx[0], step) <= 1e-6 and _phase(ys, gy[0], step) <= 1e-6
+
+
+def delivered_extent_note(attrs, req):
+    """The delivered ``extent`` attribute (the openEO Zarr writer's [west,
+    south, east, north]) against the UTM extent requested, or None."""
+    v = (attrs or {}).get("extent")
+    if req.extent is None or not isinstance(v, (list, tuple)) or len(v) != 4:
+        return None
+    try:
+        got = [float(a) for a in v]
+    except (TypeError, ValueError):
+        return None
+    want = [float(req.extent[k]) for k in ("west", "south", "east", "north")]
+    d = max(abs(a - b) for a, b in zip(got, want))
+    if d <= 0.01:
+        return f"the delivered 'extent' attribute {list(v)} is the requested extent"
+    return (f"the delivered 'extent' attribute {list(v)} is NOT the requested extent {want} (up to "
+            f"{d:.2f} m off); the coordinates place the pixels, not this attribute")
+
+
+def put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=False):
+    """After the lattice check passed: crop / pad the delivery onto the grid
+    the store must have. Production: the reference grid (``extent``, the
+    lattice check's message, says the delivery has another extent). --test
+    with a UTM extent: the requested window (``rgrid``), which must lie on
+    the reference lattice. An alignment that only crops is a note, and so is
+    what the cropped-away margin held (``format_margin``: the Zarr writer's
+    padding to whole chunks, or pixels outside the frame). PADDING (the
+    delivery does not cover the target: rows / columns inside the frame
+    would be the fill, which reads as no-data) stops a production year
+    (FormatError, nothing written) unless ``allow_padding``
+    (--allow-padding), and is a warning otherwise. A production extent that
+    is not the reference frame is a warning too."""
+    res = req.spec.resolution
+    target, why = None, None
+    if req.test and rgrid is not None:
+        if guard is not rgrid:
+            if guard.get("crs_wkt") and not zc.crs_equal(rgrid["crs_wkt"], guard["crs_wkt"]):
+                raise FormatError(f"the requested window is in EPSG:{req.extent['crs']}, the reference "
+                                  f"grid {guard['path']} in EPSG {zc._epsg_from_wkt(guard['crs_wkt'])}")
+            gx = np.asarray(guard["x"], dtype="float64")
+            step = abs(float(gx[1] - gx[0])) if len(gx) > 1 else float(res)
+            if not _on_lattice_of(rgrid["x"][0], rgrid["y"][0], guard, step):
+                raise FormatError(f"the requested window ({rgrid['path']}) is not on the lattice of "
+                                  f"{guard['path']}")
+        if not _same_extent(interp, rgrid):
+            target, why = rgrid, (f"the delivered grid ({len(interp.y)} x {len(interp.x)} from "
+                                  f"({interp.x[0]}, {interp.y[0]})) is not the --test window, "
+                                  f"{rgrid['path']}")
+    elif extent:
+        target, why = guard, extent
+    if (not req.test and rgrid is not None and ref_grid is not None
+            and not _same_axes(rgrid["x"], rgrid["y"], ref_grid)):
+        interp.warnings.append(f"{rgrid['path']} is not the frame of {ref_grid['path']}: the store "
+                               f"follows the reference grid")
+    if target is None:
+        return
+    if not _on_lattice_of(interp.x[0], interp.y[0], target, float(res)):
+        interp.warnings.append(f"{why}; but the delivered grid is not on its lattice: kept as "
+                               f"delivered")
+        return
+    note, padded, margin = align_to_grid(interp, target["x"], target["y"], res=res)
+    if padded and not req.test and not allow_padding:
+        raise FormatError(f"{why}; {note}: the delivery does not cover the whole reference grid, "
+                          f"so rows / columns INSIDE the frame would be the fill, which reads as "
+                          f"no-data (a request or backend problem, not a scene without data); "
+                          f"nothing written (run again with --allow-padding to write it padded)")
+    (interp.warnings if padded else interp.notes).append(f"{why}; {note}")
+    if margin:
+        interp.notes.append(format_margin(margin, interp.fills)[0])
+
+
 def _store_date_hint(part, store_path, files):
     """The one datetime the assets of a delivered store declare (STAC), or
     None: the date of a store without a time dimension."""
@@ -3418,7 +4274,8 @@ def largest_chunk(raws):
 
 
 def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_all=False,
-              backend_format=BACKEND_FORMAT, allow_offset=False, nodata=None):
+              backend_format=BACKEND_FORMAT, allow_offset=False, nodata=None,
+              allow_padding=False):
     """Everything between the download and the store: extract, find, read,
     report, interpret. Returns ``(canonical dataset, interpretation, report
     lines)``; the report is also written to ``<year>.format.txt``.
@@ -3426,22 +4283,31 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
     Whatever goes wrong (an unknown codec, an unreadable time coordinate, a
     bad zip, a layout the interpreter does not know), the report gathered
     so far is written and logged with the reason (and the traceback when it
-    is not a FormatError), and a FormatError is raised. A grid off the
-    reference lattice (``lattice_check``) stops here unless
-    ``allow_offset``; the same lattice with another extent is cropped /
-    padded onto the reference grid (not for --test). ``nodata``: the
-    no-data of bands that declare none (``--nodata``); without it an
-    undecidable no-data stops a production year (AMBIGUOUS NO-DATA) and is
-    only reported by --test."""
+    is not a FormatError), and a FormatError is raised. x/y delivered as
+    float32 are put on the reference lattice when every value is the float32
+    rounding of a lattice value (``snap_to_lattice``: the lattice's exact
+    float64 values). A grid off the reference lattice (``lattice_check``)
+    stops here unless ``allow_offset``; the same lattice with another extent
+    (the Zarr writer pads its arrays to whole chunks) is cropped onto the
+    reference grid, or for --test onto the requested window
+    (``put_on_target``), and the report says what the cropped-away margin
+    held (``margin_summary``); a delivery that does not cover the reference
+    grid of a production year stops unless ``allow_padding``.
+    A --test of the lon/lat box (``--lonlat-extent``) keeps the delivered
+    window. ``nodata``: the no-data of bands that declare none
+    (``--nodata``); without it an undecidable no-data stops a production
+    year (AMBIGUOUS NO-DATA) and is only reported by --test."""
     from collections import Counter
 
     spec = req.spec
     main = not req.is_angles
     part = Path(req.part)
+    where = (f"extent {describe_extent(req.extent, spec.resolution)} ({req.extent_source}); "
+             f"lon/lat box {req.bbox}" if req.extent is not None else
+             f"bbox {req.bbox}" + (" (--lonlat-extent)" if req.extent_source else ""))
     lines = ["=" * 30 + f" FORMAT REPORT {req.tag} " + "=" * 30,
-             f"request: {COLLECTION} bands {list(req.bands)} window [{req.start}, {req.end}) bbox "
-             f"{req.bbox}" + ("" if main else f"; resample_spatial({spec.resolution} m, "
-                                               f"{spec.method!r})")]
+             f"request: {COLLECTION} bands {list(req.bands)} window [{req.start}, {req.end}) {where}"
+             + ("" if main else f"; resample_spatial({spec.resolution} m, {spec.method!r})")]
     files = {}
     found = {"stores": [], "netcdf": [], "geotiff": [], "other": []}
     raws, problems = [], []
@@ -3511,8 +4377,9 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
                         "--format-options.")
             raise FormatError(f"nothing readable among the results: {found['geotiff'][:3]} "
                               f"{found['other'][:5]} {problems}.{hint}")
-        kw = dict(crs_hints=crs_hints, ref_grid=ref_grid, nodata=nodata,
-                  strict_nodata=not req.test, count_nodata=req.test)
+        kw = dict(crs_hints=crs_hints, nodata=nodata, strict_nodata=not req.test,
+                  count_nodata=req.test,
+                  ref_grid=ref_grid if ref_grid is not None else request_grid(req))
         if not main:                # --nodata is the main bands'; the angles' grid is 300 m
             kw.update(nodata=None, resolution=spec.resolution, product=spec)
         if len(raws) == 1:
@@ -3538,12 +4405,21 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
             raise FormatError(f"requested bands {missing} not found in any of the {len(raws)} "
                               f"delivered stores/files (found {sorted(interp.bands)}); "
                               f"skipped: {problems}")
-        if ref_grid is None:
+        rgrid = request_grid(req)               # the UTM extent asked for (None: lon/lat)
+        guard = ref_grid if ref_grid is not None else rgrid
+        if guard is None:
             interp.warnings.append("no reference grid: CRS and 10 m lattice NOT checked")
+        elif ref_grid is None:
+            interp.warnings.append("no reference grid: CRS and lattice checked against the "
+                                   "requested extent only")
+        ext_note = delivered_extent_note(interp.attrs, req)
+        if ext_note:
+            interp.notes.append(ext_note)
+        interp.notes.extend(snap_to_lattice(interp, guard))
         if main:
-            err, extent = lattice_check(interp, ref_grid, whole=not req.test)
+            err, extent = lattice_check(interp, guard, whole=not req.test)
         else:
-            err, extent, note = angles_grid_check(interp, ref_grid, whole=not req.test)
+            err, extent, note = angles_grid_check(interp, guard, whole=not req.test)
             if note:
                 interp.warnings.append(note)
         if err and allow_offset:
@@ -3551,9 +4427,8 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
         elif err:
             raise FormatError(err + "; nothing written (run again with --allow-grid-offset to "
                               "write the store anyway)")
-        elif extent:
-            note = align_to_grid(interp, ref_grid["x"], ref_grid["y"], res=spec.resolution)
-            interp.warnings.append(f"{extent}; {note}")
+        else:
+            put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=allow_padding)
         if main:
             ds = canonical_dataset(interp, req.bands)
             lines += report_interp(interp, ds)
@@ -3628,7 +4503,7 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
         "site": req.site, "year": int(req.year),
         "temporal_extent": json.dumps([req.start, req.end]),
         "temporal_extent_note": "end-exclusive, as openEO",
-        "spatial_extent": json.dumps(req.bbox),
+        "spatial_extent": json.dumps(req.spatial_extent),
         "collection": COLLECTION, "backend": f"https://{BACKEND}",
         "job_id": (job_info or {}).get("id", ""), "job_title": (job_info or {}).get("title", ""),
         "job_created": str((job_info or {}).get("created", "")),
@@ -3658,6 +4533,10 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
                                 "openeo": openeo.__version__}),
         "written_by": "experiments/download_cube_zarr.py",
     }
+    if req.extent is not None:      # the UTM extent sent; the old lon/lat box kept beside it
+        attrs["spatial_extent_lonlat"] = json.dumps(req.bbox)
+    if req.extent_source:
+        attrs["spatial_extent_source"] = req.extent_source
     if req.is_angles:
         attrs.update({
             "title": (f"Sentinel-2 L2A sun and view angles, {req.site} {req.year}"
@@ -3687,22 +4566,64 @@ def recorded_title(part):
         return None
 
 
-def set_aside(part, why, log):
-    """Move a part folder out of the way (kept: the user deletes it)."""
+def set_aside(part, why, log, test=False):
+    """Move a part folder out of the way, never deleting it here: a
+    production run removes it once the year's store is complete (unless
+    --keep-raw); ``test`` (--test) never removes it."""
     part = Path(part)
     stamp = f"{part.name}.superseded-{utcnow():%Y%m%dT%H%M%S}"
     dest, k = part.with_name(stamp), 1
     while dest.exists():                      # two in the same second
         dest, k = part.with_name(f"{stamp}-{k}"), k + 1
     os.replace(part, dest)
-    log(f"{why}: the previous job and download folder moved to {dest} (deleted after this year's "
-        f"store is complete, unless --keep-raw); a new job will be made")
+    log(f"{why}: the previous job and download folder moved to {dest} ("
+        + ("kept: --test never deletes it" if test else
+           "deleted after this year's store is complete, unless --keep-raw")
+        + "); the job of the current request is made (or reattached by its title)")
     return dest
 
 
 def superseded_parts(req):
     part = Path(req.part)
     return sorted(part.parent.glob(f"{part.name}.superseded-*")) if part.parent.is_dir() else []
+
+
+def seed_lonlat_part(req, title, log):
+    """--test --lonlat-extent: when its part folder (under <root>/_test_lonlat)
+    does not exist, copy into it the newest folder under <root>/_test made for
+    the same job title (the download of 2026-10-13, which the first --test
+    of the UTM extent set aside as ``<year>.part.superseded-<time>``), so the
+    old job's results are neither downloaded again nor, if they expired on
+    the backend, paid for again. The source is kept. Returns it, or None."""
+    part = Path(req.part)
+    if not req.test or req.extent is not None or part.exists():
+        return None
+    base = zc.site_dir(req.site, Path(req.root).parent / TEST_ROOT)
+    if not base.is_dir():
+        return None
+    cands = [base / part.name] + sorted(base.glob(f"{part.name}.superseded-*"), reverse=True)
+    for src in cands:
+        if src.is_dir() and recorded_title(src) == title:
+            part.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, part)
+            log(f"{part.name}: copied from {src} (made for the same job title {title!r}; the "
+                f"source is kept): its job is reattached and its download reused, no new job")
+            return src
+    return None
+
+
+def refuse_snapped(req):
+    """The message refusing a production request whose frame is the snapped
+    lon/lat box (``snapped``), or None."""
+    if req.test or not snapped(req):
+        return None
+    ref = ROOT / SITE_CONFIG[req.site]["reference"]
+    return (f"{req.tag}: the extent {describe_extent(req.extent, req.spec.resolution)} is the "
+            f"lon/lat box snapped outward to {FRAME_SNAP_M} m ({req.extent_origin}), not the frame "
+            f"of the site's reference netCDF {ref} (missing or not a {RESOLUTION_M} m grid) nor of "
+            f"a complete store: the store would not be on that frame, and would become the "
+            f"reference of the site's other years. Put the netCDF there, or pass "
+            f"--allow-snapped-frame to accept the snapped frame")
 
 
 def run_request(ctx, req, log):
@@ -3722,19 +4643,31 @@ def run_request(ctx, req, log):
             verify_request(req, log)
         still = update_overpass(req, dates, log, network=ctx.network)
         return {"status": "skipped", "dates": len(dates), "missing_overpass": still}
+    why = refuse_snapped(req)
+    if why and not ctx.allow_snapped:
+        raise FrameRefused(why)
     part = Path(req.part)
     flat = build_process(req, None, ctx.backend_format, ctx.format_options).flat_graph()
     title = job_title(req, graph_hash(flat))
+    if not ctx.new_job:
+        seed_lonlat_part(req, title, log)
     if part.exists():
         old = recorded_title(part)
         if ctx.new_job:
-            set_aside(part, "--new-job", log)
+            set_aside(part, "--new-job", log, test=req.test)
         elif old and old != title:
             set_aside(part, f"the request changed since {part.name} was made (job title {old!r}, "
-                            f"now {title!r}: other format, format options or bands)", log)
+                            f"now {title!r}: other extent, format, format options or bands)", log,
+                      test=req.test)
+        elif not old and any((part / n).exists() for n in (ASSETS_DONE, "assets", DOWNLOAD_MARKER)):
+            set_aside(part, f"{part.name} holds a download but no job ledger, so its request is "
+                            f"unknown", log, test=req.test)
     part.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(part).free
-    log(f"start: window [{req.start}, {req.end}) bbox {req.bbox}; {free / 1e9:.0f} GB free")
+    log(f"start: window [{req.start}, {req.end}) "
+        + (f"extent {describe_extent(req.extent, req.spec.resolution)} ({req.extent_source})"
+           if req.extent is not None else f"bbox {req.bbox} (lon/lat)")
+        + f"; job '{title}'; {free / 1e9:.0f} GB free")
     led_path = part / LEDGER
     if (part / ASSETS_DONE).is_file():
         led = Ledger(part)
@@ -3769,6 +4702,7 @@ def run_request(ctx, req, log):
            reference_grid(req.site, root=ref_root, log=log))
     ds, interp, lines = normalise(req, log, job_info=info, results_meta=meta, ref_grid=ref,
                                   allow_offset=ctx.allow_offset, nodata=ctx.nodata,
+                                  allow_padding=ctx.allow_padding,
                                   report_all=req.test, backend_format=ctx.backend_format)
     if req.test:
         for ln in lines:
@@ -3859,12 +4793,22 @@ def _size_small(nbytes):
     return _size(nbytes) if nbytes >= 1e6 else f"{nbytes / 1e3:.1f} kB"
 
 
+def extent_line(req):
+    """``<EPSG, edges, size>  <- <origin>`` of a request (the dry run)."""
+    if req.extent is None:
+        return f"lon/lat box {req.bbox} (EPSG:4326)  <- {req.extent_origin or 'the lon/lat box'}"
+    return f"{describe_extent(req.extent, req.spec.resolution)}  <- {req.extent_origin}"
+
+
 def dry_run(reqs, ctx):
     """Process graphs, outputs, their state and a size estimate per
-    product; no network."""
+    product, and the spatial extent each job requests (EPSG, edges, size,
+    and whether it is the frame of a reference netCDF or comes from
+    SNAPPING the lon/lat box); no network."""
     totals = {}
     shown, guarded = set(), set()
     refs, angle_refs = {}, {}
+    ext_seen = {}
 
     def say(m):
         print(f"   {m}", flush=True)
@@ -3874,7 +4818,18 @@ def dry_run(reqs, ctx):
         sr = build_process(req, None, ctx.backend_format, ctx.format_options)
         flat = sr.flat_graph()
         title = job_title(req, graph_hash(flat))
-        print(f"\n== {req.tag}: window [{req.start}, {req.end}) bbox {req.bbox}", flush=True)
+        first = (req.site, spec.name) not in shown
+        print(f"\n== {req.tag}: window [{req.start}, {req.end})", flush=True)
+        if req.extent is not None:
+            print(f"   spatial extent: {describe_extent(req.extent, spec.resolution)}", flush=True)
+            print(f"     origin: {req.extent_origin}", flush=True)
+            if first:
+                print(f"     source: {req.extent_source}", flush=True)
+            print(f"     lon/lat box (kept in the provenance, not requested): {req.bbox}", flush=True)
+        else:
+            print(f"   spatial extent: the lon/lat box {req.bbox} (EPSG:4326)", flush=True)
+            print(f"     origin: {req.extent_origin or 'the lon/lat box'}", flush=True)
+        ext_seen.setdefault((req.site, spec.name), req)
         print(f"   job '{title}', format {ctx.backend_format} {ctx.format_options or {}}, "
               f"job options {ctx.job_options}", flush=True)
         if (req.site, spec.name) not in shown:
@@ -3908,7 +4863,9 @@ def dry_run(reqs, ctx):
             except Exception as exc:          # informative only
                 print(f"   grid guard: could not prepare the reference grid ({exc})", flush=True)
         ref = refs[req.site]
-        if angles:
+        if req.extent is not None:         # the store is the requested extent (cropped to it)
+            shape, gsrc = frame_shape(req.extent, spec.resolution), "the requested extent"
+        elif angles:
             ag = angle_refs.get(req.site)
             if ag is not None and not req.test:
                 shape, gsrc = [len(ag["y"]), len(ag["x"])], ag["path"]
@@ -3956,6 +4913,23 @@ def dry_run(reqs, ctx):
         probe = probe.parent
     free = shutil.disk_usage(probe).free
     print("", flush=True)
+    if ext_seen:
+        print("SPATIAL EXTENTS requested (spatial_extent of load_collection; west south east north "
+              "in the CRS given; origin):", flush=True)
+        refused = []
+        for (site, pname), r in ext_seen.items():
+            no = refuse_snapped(r) is not None and not ctx.allow_snapped
+            if no:
+                refused.append(r)
+            print(f"  {site:<12} {pname:<6}{' TEST' if r.test else ''}  {extent_line(r)}"
+                  + ("  [REFUSED: no reference netCDF; --allow-snapped-frame]" if no else ""),
+                  flush=True)
+        if refused:
+            print("REFUSED before any job (production lands only on a reference frame): "
+                  + ", ".join(f"{r.site} {r.product}" for r in refused) + ". Missing here: "
+                  + ", ".join(sorted({str(ROOT / SITE_CONFIG[r.site]['reference'])
+                                      for r in refused}))
+                  + " (or pass --allow-snapped-frame)", flush=True)
     for name, t in totals.items():
         if name == MAIN.name:
             print(f"TOTAL main: {t['todo']} store(s) to make (of {t['of']}): "
@@ -4009,9 +4983,21 @@ def parse_args(argv=None):
                     help="years or ranges: 2023-2025 | 2017-2022 2025 | 2023,2025 "
                          "(default 2023-2025)")
     ap.add_argument("--test", action="store_true",
-                    help="format test: 2 km x 2 km in Villaviciosa, 2025-06-01..15, all bands "
-                         "and the angles (the --products), into <root>/_test; prints a FORMAT "
-                         "REPORT per product")
+                    help=f"format test: a {TEST_SIZE_M} x {TEST_SIZE_M} m window "
+                         f"({TEST_SIZE_M // RESOLUTION_M} x {TEST_SIZE_M // RESOLUTION_M} px) on the "
+                         "Villaviciosa lattice, 2025-06-01..15, all bands and the angles (the "
+                         "--products), into <root>/_test; prints a FORMAT REPORT per product")
+    ap.add_argument("--odd-window", action="store_true",
+                    help=f"with --test: the main product only, on a {TEST_ODD_SIZE_M} x "
+                         f"{TEST_ODD_SIZE_M} m window ({TEST_ODD_SIZE_M // RESOLUTION_M} x "
+                         f"{TEST_ODD_SIZE_M // RESOLUTION_M} px, odd) whose west and south edges "
+                         "are lines 10 m past a multiple of 20 m (as the production frames' "
+                         "east / south edges), under <root>/_test_odd: one more small job")
+    ap.add_argument("--lonlat-extent", action="store_true",
+                    help="request the site's (or the --test) lon/lat box as before 2026-10-13, "
+                         "instead of the UTM extent on the reference lattice: for diagnosis only "
+                         "(its grid is off the lattice and is refused unless --allow-grid-offset); "
+                         "with --test it works under <root>/_test_lonlat")
     ap.add_argument("--products", default=",".join(PRODUCTS),
                     help="the stores to make, comma-separated: main (<year>.zarr: the nine bands "
                          f"at {RESOLUTION_M} m, int16) and/or angles (<year>.angles.zarr: sun and "
@@ -4029,6 +5015,13 @@ def parse_args(argv=None):
     ap.add_argument("--allow-grid-offset", action="store_true",
                     help="write a store whose grid is off the existing cube's 10 m lattice or in "
                          "another CRS (default: stop with an error)")
+    ap.add_argument("--allow-padding", action="store_true",
+                    help="write a production store whose delivery does not cover the whole "
+                         "reference grid, padded with the fill (default: stop with an error)")
+    ap.add_argument("--allow-snapped-frame", action="store_true",
+                    help="download a site whose reference netCDF is not on this machine, on its "
+                         f"lon/lat box snapped outward to {FRAME_SNAP_M} m (default: refused "
+                         "before any job, since the store would not be on the netCDF frame)")
     ap.add_argument("--keep-raw", action="store_true",
                     help="keep <year>.part (the backend's files) after a store is complete")
     ap.add_argument("--nodata", type=int, default=None,
@@ -4074,6 +5067,8 @@ def parse_args(argv=None):
                 ap.error(f"--{opt.replace('_', '-')} is not JSON: {exc}")
     if sum([a.test, a.verify_only, a.login]) > 1:
         ap.error("--test, --verify-only and --login exclude each other")
+    if a.odd_window and (not a.test or a.lonlat_extent):
+        ap.error("--odd-window goes with --test (the UTM extent), not with --lonlat-extent")
     return a
 
 
@@ -4088,12 +5083,19 @@ def main(argv=None):
         return 0
     root = zc.cubes_root(a.root)
     ctx = Context(a)
-    reqs = (test_requests(root, a.products) if a.test else
-            year_requests(a.sites, a.years, root, a.products))
+    reqs = (test_requests(root, a.products, lonlat=a.lonlat_extent, odd=a.odd_window) if a.test
+            else year_requests(a.sites, a.years, root, a.products, lonlat=a.lonlat_extent,
+                               extents=not a.verify_only))
     if a.dry_run:
         return dry_run(reqs, ctx)
     if a.verify_only:
         return verify_only(reqs)
+    refused = [m for m in (refuse_snapped(r) for r in reqs if not r.complete()) if m]
+    if refused and not ctx.allow_snapped:
+        print("REFUSED, nothing started (no job, no download):", flush=True)
+        for m in refused:
+            print(f"  {m}", flush=True)
+        return 2
     ensure_gitignore(root)
     results, failed = {}, {}
     by_site = {}
