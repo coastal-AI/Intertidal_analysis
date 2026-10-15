@@ -47,3 +47,28 @@ pytest==9.1.1
 # Zarr validation cubes (experiments/download_cube_zarr.py, experiments/zarr_cubes.py)
 zarr==3.2.1
 numcodecs==0.16.5
+
+# Validation v2, cloud setting C11 (experiments/benchmark/obs.py ocm_classes):
+# OmniCloudMask (Wright et al. 2025, RSE 322:114694), MIT licence (PyPI
+# license_expression, checked 2026-10-14). Its models are built with timm and
+# segmentation-models-pytorch, which both need torchvision; the weights (model
+# version 4.0, pinned in settings.CLOUD["C11"]) are downloaded from Hugging Face
+# into data_v4/omnicloudmask/ (OCM_MODEL_DIR) and their sha256 is recorded.
+# CPU PyTorch: install torch AND torchvision from the CPU index FIRST (both
+# +cpu wheels exist for cp312/cp313 manylinux_2_28 x86_64):
+#   uv pip install --python $PY torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cpu
+# then this file: the pins below are satisfied by 2.14.0+cpu / 0.29.0+cpu and
+# are not replaced (PyPI's torchvision is the CUDA build and fails at run time
+# with "operator torchvision::nms does not exist" against a CPU torch).
+# Never install this file first: PyPI's torch is the CUDA build.
+# The OCM dependency pins (PyPI, 2026-10-14) fix the C11 numerics, which enter
+# the cloud bits and every shard package_key; check after the install with
+#   uv pip freeze --python $PY | grep -Ei "torch|timm|segmentation|huggingface|safetensors"
+torch==2.14.0
+torchvision==0.29.0
+omnicloudmask==1.7.1
+timm==1.0.30
+segmentation-models-pytorch==0.5.0
+huggingface-hub==2.2.0
+safetensors==0.8.0
+gdown==6.4.2

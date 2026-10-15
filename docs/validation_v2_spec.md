@@ -1,10 +1,16 @@
 # Validation v2: factorial validation of MAREA against state-of-the-art tidal-lag and intertidal-elevation methods (specification, revision 2)
 
+> **USER DECISIONS (2026-10-14), overriding the 2026-10-13 decisions and everything below where they differ.**
+> - **Sensing time: the catalogue time, no G-time gate.** The user judges the solar-angle sensing-time correction to be over-engineering for now and wants no detour from the validation. The sensing instant used everywhere is the catalogue / product-name time (the datatake start), as in every existing production result. `experiments/benchmark/sensing_time.py` stays as an optional diagnostic (`diag time`): it is not a gate, not a setting and not a design row, and it is used only when a sensing-times file is passed explicitly. For the record, at the Ems the tile passes 0-10.6 min after the datatake start (median 6.5 min, 1000 tile-dates, 2023-2025).
+> - **If errors turn out large, attribute them before correcting anything:** first decide whether the difference is noise (paired block-bootstrap CIs), then whether it comes from the lag or from the elevation estimation, by comparing on the same pixels, scenes and settings the no-lag level (τ = 0), MAREA's band lags and the measured gauge level (LG, upper bound). The sensing-time diagnostic is reconsidered only if that attribution points to the timing.
+> - **Gauge-lag row (approved 2026-10-15).** At every site with in-estuary gauges (Escalda, Wadden, Ems), add one elevation row on the same pixels, scenes and settings as the base pair: MAREA's inversion with the band lags taken from the gauges' measured lags (interpolated along the channel coordinate, τ(0) = 0, monotone) instead of the archive estimate. Read together, the four rows split the error. τ = 0 vs gauge lag is the cost of ignoring the lag. MAREA lag vs gauge lag is the cost of estimating the lag from the archive. Gauge lag vs measured level (LG) is the cost of the one-lag-per-band model. What remains at LG is the elevation-estimation error.
+> - **Naming:** the two campaigns are **Campaign 1** (2023-2025, run now; formerly "Tier 1A'") and **Campaign 2** (adds 2017-2022; formerly "Tier 1B"). Both use Sentinel-2 L2A at 10 m (S2A/B/C). "Tier 2/3" elsewhere in this document are method and setting priority tiers, not campaigns.
+>
 > **USER DECISIONS (2026-10-13), overriding the defaults below where they differ.**
-> - **V21 G-time: APPROVED, via the solar angles.** The Zarr downloader fetches sunZenithAngles, sunAzimuthAngles, viewZenithMean and viewAzimuthMean as a separate small float product per site-year (`cubes/<site>/<year>.angles.zarr`, read with `zarr_cubes.open_angles` / `angles_at`); the per-site sensing time is the solar-ephemeris inversion of those angles. A Space-Track TLE cross-check is optional, not required.
+> - **V21 G-time: APPROVED, via the solar angles** (superseded on 2026-10-14, see above). The Zarr downloader fetches sunZenithAngles, sunAzimuthAngles, viewZenithMean and viewAzimuthMean as a separate small float product per site-year (`cubes/<site>/<year>.angles.zarr`, read with `zarr_cubes.open_angles` / `angles_at`); the per-site sensing time is the solar-ephemeris inversion of those angles. A Space-Track TLE cross-check is optional, not required.
 > - **V22 water-level sources: ALL FOUR NOW** (LB boundary, LT global model per pixel, LM regional CMEMS AMM15/IBI, LG gauge network as a labelled upper bound), with family P3. The user creates a Copernicus Marine account; credentials and the `copernicusmarine` toolbox live inside the project folder/venv on the server.
 > - **V1/V2 cloud grid: OmniCloudMask (C11) INCLUDED** as a setting (Wright et al. 2025, RSE 322:114694, doi:10.1016/j.rse.2025.114694; PyPI `omnicloudmask`), installed with CPU PyTorch inside the project venv; its licence is checked before use; C3 (CLD + buffer) stays as an OFAT cell and the fallback.
-> - **V24 scope: Tier 1A' now (2023-2025), Tier 1B later** as a separate campaign after the 2017-2022 download.
+> - **V24 scope: Campaign 1 now (2023-2025), Campaign 2 later** as a separate campaign after the 2017-2022 download.
 > - Every other decision V1-V30: the recommended default of §17.
 
 - **Date:** 2026-10-09. **Branch:** `validacion-10m`. **Status:** revised after three adversarial reviews: statistics and design, remote sensing, and compute. This is a design for review and is not locked. No code in this document has been run on real 10 m data.
@@ -80,7 +86,7 @@ Proposed in this revision, each pending the user's confirmation (§17):
 
 14. **Scene instants** come from the site sensing-time gate G-time (§1.3), not from the datatake start in the product name [V21].
 15. **Water-level source** is a factor for elevation units only: LB (boundary, base), LT (per-pixel global tide model), LM (regional hydrodynamic model), LG (gauge network, labelled upper bound) [V22].
-16. **Two campaigns.** Tier 1A' must fit two calendar weeks on the server and needs only the 2023-2025 stores (§5.14, §14). Tier 1B is a separate later campaign that needs the 2017-2022 batch [V24].
+16. **Two campaigns.** Campaign 1 must fit two calendar weeks on the server and needs only the 2023-2025 stores (§5.14, §14). Campaign 2 is a separate later campaign that needs the 2017-2022 batch [V24].
 
 ### 0.4 What changes relative to v13
 
@@ -284,7 +290,7 @@ Rules:
 - The IOC chunk hashes enter `package_key` (v13 §2.11).
 - Where a member has a gap, the level is EOT20-only there. The share of such instants is reported per window.
 - Declared sensitivities:
-  - "boundary = EOT20 only", run on the base cell at W3 (Tier 1A') and at W9 (Tier 1B) [V5];
+  - "boundary = EOT20 only", run on the base cell at W3 (Campaign 1) and at W9 (Campaign 2) [V5];
   - at Villaviciosa, "boundary = EOT20 + Gijón residual" and the Cantabrian consensus of `experiments/c2_boundary_variants.py`. This covers the non-tidal residual (surge, inverse barometer, seasonal mean sea level), which clear-sky sampling biases toward anticyclonic weather.
 - `levels.boundary_series_1min` drops its assertion on v8's `TIME_EXTENT`. It takes the period as an argument and keeps v8's cache tag format.
 
@@ -427,7 +433,7 @@ Each registry is hashed **per entry** (the source of the level and its helpers) 
 
 ### 2.1 Factor overview
 
-| Factor | Base (P0) | Tier 1A' levels | In the combination grid G1' | Tier 1B | Tier 2 |
+| Factor | Base (P0) | Campaign 1 levels | In the combination grid G1' | Campaign 2 | Tier 2 |
 |---|---|---|---|---|---|
 | Cloud handling C | C1 | C0 (on S0), C1, C1d, C2, C3, C4, C6, C8, C11 | C1, C2, C4, C11 (C3 if C11 is unavailable) | C5, C7; class-11-blocked sensitivity | C1s, C3 with p ∈ {10, 35, 50}, buffers ×0.5 and ×2, C9 tile rule, C10 anchor QA, C12 s2cloudless (only if CDSE exposes it), buffered C11 |
 | Band preprocessing | floor0 | floor0, raw | – | – | – |
@@ -453,10 +459,10 @@ In every level:
 | C1d allowlist + dark area | pixel | V = SCL ∈ {2, 4, 5, 6, 7} | this study | MNAR check: freshly exposed wet mud is dark and is often labelled class 2 or 3 |
 | **C2** transition-zone rule | scene + C1 | Keep a date iff its SCL{3,8,9,10} share inside the transition zone is ≤ 10 %, or the whole-frame share when the frame is ≤ 5 % bad (`stability.reference_and_clouds`, `filter_dates(·, 0.10)`) | v12; `results/scene_rule_study_2026-09-30/` | MAREA's as-published record; the user's "transition-zone rule" |
 | **C3** CLD probability + buffer | pixel | bad = (CLD ≥ p) \| SCL = 10; bad_o = binary opening with a disk of 2 px; masked = EDT(¬bad_o) ≤ 8 px (80 m) \| EDT(¬(SCL = 3)) ≤ 4 px (40 m) \| SCL ∈ {0, 1} \| CLD fill | Sen2Cor ATBD 2.10 §3.8-3.9; sen2chain CM001; DEA `load_ard` mask_filters | A Sen2Cor-based "other filtering method". p frozen by the cross-tab [V1]. |
-| **C4** ITEM-PQ blocklist | pixel | V = SCL present & SCL ∉ {0, 1, 3, 8, 9, 10} | Sagar et al. 2017; `waterline_contour.ITEM_PQ_MASKED_SCL` | NIDEM native (competitor-native level in G1'). Keeps SCL 11; a class-11-blocked sensitivity is Tier 1B. |
-| C5 blocklist + buffer | pixel | C4, plus SCL{8,9,10} opened with a disk of 2 px and dilated 80 m, and SCL 3 dilated 40 m | DEA `load_ard` mask_filters | DEA-style mask (Tier 1B) |
+| **C4** ITEM-PQ blocklist | pixel | V = SCL present & SCL ∉ {0, 1, 3, 8, 9, 10} | Sagar et al. 2017; `waterline_contour.ITEM_PQ_MASKED_SCL` | NIDEM native (competitor-native level in G1'). Keeps SCL 11; a class-11-blocked sensitivity is Campaign 2. |
+| C5 blocklist + buffer | pixel | C4, plus SCL{8,9,10} opened with a disk of 2 px and dilated 80 m, and SCL 3 dilated 40 m | DEA `load_ard` mask_filters | DEA-style mask (Campaign 2) |
 | **C6** g21 frame rule | scene + C1 | Frame SCL{3,8,9,10} share < 0.10 and no-data share ≤ 0.02 | Granadeiro et al. 2021; `granadeiro2021.scene_rule` | Granadeiro native |
-| C7 ard rule | scene + C1 | `load_ard` good fraction (SCL ∉ {1,3,8,9,10}, no data counted good) ≥ 0.5 | DE Africa/DEA `load_ard`; `waterline_contour.s2_scene_rule` | NIDEM-S2 native (Tier 1B; used in the as-published NIDEM-S2 variant) |
+| C7 ard rule | scene + C1 | `load_ard` good fraction (SCL ∉ {1,3,8,9,10}, no data counted good) ≥ 0.5 | DE Africa/DEA `load_ard`; `waterline_contour.s2_scene_rule` | NIDEM-S2 native (Campaign 2; used in the as-published NIDEM-S2 variant) |
 | **C8** domain rule | scene + C1 | Share of keep_full(P0) valid under C1 ≥ 0.5 | CoastSat-style rule on the region of interest (Vos et al. 2019) | Comparable across sites, unlike frame rules |
 | **C11** OmniCloudMask | pixel | V = bands present & SCL ≠ 0 & OmniCloudMask class = clear. The inputs are the red, green and NIR bands the package documents for Sentinel-2; the band choice (B08 or B8A), the inference resolution and the patch settings are fixed in the card from the package documentation before lock-A. CPU inference with a pinned version and deterministic kernels. | Wright et al. 2025, doi:10.1016/j.rse.2025.114694 | Independent, non-Sen2Cor mask (the reviewers' state-of-the-art "other filtering method"). In G1' [V1]. |
 
@@ -481,7 +487,7 @@ For every site, window and Tier-1 cloud level, pass 1 therefore stores the maske
 
 **Transition zone for C2:** computed once per site and window under the production observation (NDWI > 0, clear classes {4, 5, 6}). The scene rule therefore does not change with the index or detector factor (declared).
 
-**Matched-N controls for scene rules.** C2, C6 and C8 (and C7 in Tier 1B) change both the quality and the number of scenes. Each scene-rule cell is paired with a **C1 cell at the same N**, where N_rule is the rule's kept count:
+**Matched-N controls for scene rules.** C2, C6 and C8 (and C7 in Campaign 2) change both the quality and the number of scenes. Each scene-rule cell is paired with a **C1 cell at the same N**, where N_rule is the rule's kept count:
 - the cheap per-pixel methods and the MAREA pair get 3 random draws of N_rule scenes from the C1 record;
 - frame methods get 1 draw.
 
@@ -524,8 +530,8 @@ Reflectances ρ come from §2.3 with a fixed 1/10000 scaling. The data-dependent
 | I2 MNDWI | (ρ3 − ρ11)/(ρ3 + ρ11) | B03 (2 × 2 mean), B11 | 20 m | 0 | Xu 2006, doi:10.1080/01431160600589179 |
 | I3 NIR | −ρ8 | B08 | 10 m | −t_NIR, where t_NIR = the pooled Otsu of ρ8 over the clear observations of keep_full(P0, W3) per site, from per-year histograms, frozen | Granadeiro et al. 2021; Bué et al. 2020 |
 | I4 AWEI_sh | ρ2 + 2.5 ρ3 − 1.5 (ρ8 + ρ11) − 0.25 ρ12 | B02, B03, B08 (2 × 2 means), B11, B12 | 20 m | 0 | Feyisa et al. 2014, doi:10.1016/j.rse.2013.08.029 |
-| I5 AWEI_nsh (Tier 1B) | 4 (ρ3 − ρ11) − (0.25 ρ8 + 2.75 ρ12) | B03, B08 (2 × 2 means), B11, B12 | 20 m | 0 | Feyisa et al. 2014 |
-| I6 WRI (Tier 1B) | (ρ3 + ρ4)/(ρ8 + ρ11), clipped to [0, 10]; histogram detectors use log(WRI) | B03, B04, B08 (2 × 2 means), B11 | 20 m | 1 | Shen & Li 2010, doi:10.1109/GEOINFORMATICS.2010.5567762 |
+| I5 AWEI_nsh (Campaign 2) | 4 (ρ3 − ρ11) − (0.25 ρ8 + 2.75 ρ12) | B03, B08 (2 × 2 means), B11, B12 | 20 m | 0 | Feyisa et al. 2014 |
+| I6 WRI (Campaign 2) | (ρ3 + ρ4)/(ρ8 + ρ11), clipped to [0, 10]; histogram detectors use log(WRI) | B03, B04, B08 (2 × 2 means), B11 | 20 m | 1 | Shen & Li 2010, doi:10.1109/GEOINFORMATICS.2010.5567762 |
 | I7 NDWI@20 | (ρ3 − ρ8A)/(ρ3 + ρ8A) | B03 (2 × 2 mean), B8A | 20 m | 0 | resolution-matched control |
 
 Notes:
@@ -575,7 +581,7 @@ Rules:
 | **D1** fixed (base) | W = V & (x > t_k), with t_k from §2.4 | Sagar et al. 2017; `marea.extract` | Base |
 | D2 guarded per-scene Otsu | The domain is fixed for every cell and window: Ω = keep_full(P0, W3) ∪ a 300 m ring of P0 permanent water (full-record water frequency ≥ 0.98) and stable land (≤ 0.02), so both classes are always present (the Bmax idea). For each scene with ≥ 1,000 valid pixels in Ω: t_s = Otsu(values), η = between-class / total variance, and m = the minority share at t_s. Use t_s if η ≥ 0.75 and m ≥ 0.15; otherwise use t_k. | Otsu 1979; Cao et al. 2019 (Bmax Otsu), doi:10.3390/w11040786; hydrafloods `bmax_otsu` | 256 bins over the scene's valid range in Ω. Ω does not depend on N, the cell or the window, so thresholds are computed once per scene. |
 | D3 edge-Otsu | b = x > t_k on V; Canny (σ = 1 px, thresholds 0.05) on b, restricted to V eroded by 2 px and to the bounding box of dom plus 1 km; keep 8-connected edges of ≥ 50 px; buffer = the edges dilated by 5 px (50 m), within V. If the buffer holds ≥ 500 pixels, t_s = Otsu(x[buffer]); else t_k. A scene whose valid share is < 20 % is skipped. | Donchyts et al. 2016, doi:10.3390/rs8050386; Markert et al. 2020, doi:10.3390/rs12152469 | Best in the Villaviciosa light check (NDWI step error 0.067 against 0.076 for fixed) |
-| D4 SCL water (Tier 1B) | W = V & SCL = 6 | Sen2Cor ATBD 2.10 §3.8; `water.py` 'scl' | **Naive baseline.** Index-free, 20 m, and it reads the same layer as the C factor, so C and D are not independent under D4. The light check found 48 % of flat pixels degenerate. Excluded from every headline robustness set. |
+| D4 SCL water (Campaign 2) | W = V & SCL = 6 | Sen2Cor ATBD 2.10 §3.8; `water.py` 'scl' | **Naive baseline.** Index-free, 20 m, and it reads the same layer as the C factor, so C and D are not independent under D4. The light check found 48 % of flat pixels degenerate. Excluded from every headline robustness set. |
 | D5 majority vote | W = V & [(NDWI > 0) + (MNDWI > 0) + (AWEI_nsh > 0) ≥ 2] | in-house (F4); no published rule is claimed | Index-independent for W; effective resolution 20 m |
 
 Implementation rules:
@@ -596,11 +602,11 @@ Implementation rules:
 
 | Id | Window | Expected scenes T | Expected n_clear per intertidal pixel (C1) | Campaign |
 |---|---|---|---|---|
-| W1 | 2025 | ~172 | ~50 | 1A' (native cells), 1B |
-| W2 | 2024-2025 | ~317 | ~95 | 1B |
-| **W3** (base) | 2023-2025 | 461-465 | ~140 | 1A' |
-| W5 | 2021-2025 | ~750 | ~230 | 1B |
-| W9 | 2017-2025 | ~1,290-1,390 | ~400 | 1B |
+| W1 | 2025 | ~172 | ~50 | Campaign 1 (native cells), Campaign 2 |
+| W2 | 2024-2025 | ~317 | ~95 | Campaign 2 |
+| **W3** (base) | 2023-2025 | 461-465 | ~140 | Campaign 1 |
+| W5 | 2021-2025 | ~750 | ~230 | Campaign 2 |
+| W9 | 2017-2025 | ~1,290-1,390 | ~400 | Campaign 2 |
 
 W1 (2025) holds about 19 % more dates than the other years (Sentinel-2C), so it is not representative of a generic year. The report says so.
 
@@ -610,8 +616,8 @@ W1 (2025) holds about 19 % more dates than the other years (Sentinel-2C), so it 
 - only W5 and W9 contain scenes on both sides of any processing-baseline change (§1.10), so the per-scene baseline is a covariate in every window comparison.
 
 **Calendar-year replicate windows** `Y2017`..`Y2025`: one per calendar year, scored on the survey-matched truth. They are nearly disjoint archives (they share no scenes, though they share the site and the climate), so they give the between-archive replication that nested subsets cannot (§9.1, §9.7).
-- Tier 1A': Y2023, Y2024 and Y2025 (Y2025 = W1).
-- Tier 1B: Y2017-Y2022.
+- Campaign 1: Y2023, Y2024 and Y2025 (Y2025 = W1).
+- Campaign 2: Y2017-Y2022.
 
 **Survey-centred windows** (§5.9) are named `V<epoch>L<length>`, with the epoch at mid-year:
 
@@ -639,7 +645,7 @@ N counts **archive scenes inside the window**, drawn **before** any cloud handli
 |---|---|
 | `rand` | perm_r = `default_rng([SEEDS['subsets'], SITE_ID, WINDOW_ID, r]).permutation(T_window)`. A curve point with R ≤ floor(T/N) uses **disjoint batches** only: batch r = perm_0[r·N:(r + 1)·N]. A point with R > floor(T/N) uses **nested random subsets** only, sel = sort(perm_r[:N]), and is labelled "nested". The two kinds are never mixed in one point. |
 | `win` | Contiguous sub-windows of N scenes (v13 sensitivity; Tier 2) |
-| `rule-<C>` | Records passing a scene rule (C2, C6, C8, and C7 in Tier 1B), applied after the draw |
+| `rule-<C>` | Records passing a scene rule (C2, C6, C8, and C7 in Campaign 2), applied after the draw |
 | `matched-<C>` | C1-record subsets of size N_rule: 3 draws for per-pixel methods, 1 for frame methods (§2.2) |
 | `summer` (Tier 2) | The May-September scenes of the window, the subset common in published waterline work; compared with a matched-N random draw |
 
@@ -649,13 +655,13 @@ Disjoint batches from one record share its tides, seasons and morphology. They a
 
 | Window | N grid | Replicates R (d = disjoint, n = nested) | Campaign |
 |---|---|---|---|
-| W3 (K1') | {20, 45, 90, 180, 330, all} | 5d, 5d, 3d, 2d, 2n, 1 | 1A' |
-| W9 (K4) | {90, 180, 330, 465, 900, all} | 3d, 3d, 3d, 2d, 2n, 1 | 1B |
-| W1 (K5) | {45, 86} | 3d, 2d | 1B |
-| W2 (K5) | {45, 90, 158} | 5d, 3d, 2d | 1B |
-| W5 (K5) | {45, 90, 172, 465} | 5d, 5d, 4d, 2n | 1B |
-| W9 cross-window (K5) | {45, 172} | 5d, 5d | 1B |
-| Granadeiro W3 (K6) | {45, 90, 180} | 3d, 3d, 2d | 1B |
+| W3 (K1') | {20, 45, 90, 180, 330, all} | 5d, 5d, 3d, 2d, 2n, 1 | Campaign 1 |
+| W9 (K4) | {90, 180, 330, 465, 900, all} | 3d, 3d, 3d, 2d, 2n, 1 | Campaign 2 |
+| W1 (K5) | {45, 86} | 3d, 2d | Campaign 2 |
+| W2 (K5) | {45, 90, 158} | 5d, 3d, 2d | Campaign 2 |
+| W5 (K5) | {45, 90, 172, 465} | 5d, 5d, 4d, 2n | Campaign 2 |
+| W9 cross-window (K5) | {45, 172} | 5d, 5d | Campaign 2 |
+| Granadeiro W3 (K6) | {45, 90, 180} | 3d, 3d, 2d | Campaign 2 |
 
 Shared N values across windows (45, 90, 172 = |W1|, 465 = |W3|) give **span contrasts at equal count**. They are scored only on survey-matched or stable views, with the per-scene processing baseline as a covariate (§2.7).
 
@@ -704,7 +710,7 @@ dom = S0 ∪ dilate(U_rec over the A-mode curve settings of 2023-2025 {P0, C2, C
 
 - dom is frozen at lock-A with a `dom_version`, which enters each year shard's key. New years add shards for the same dom, and no 2023-2025 shard is rewritten.
 - The `pilot dom` step prints |S0|, |dom|, |U_rec| and |keep_full| per setting and window. It refuses pass 2 if |dom| > 1.5 × |S0| at any site, or if the package projected at W9 exceeds the disk budget (§14.4).
-- In Tier 1B, the share of W5/W9 A-mode keep pixels outside dom is measured and declared. Those pixels are outside the scoring domain anyway, because D_truth ⊂ S0.
+- In Campaign 2, the share of W5/W9 A-mode keep pixels outside dom is measured and declared. Those pixels are outside the scoring domain anyway, because D_truth ⊂ S0.
 
 **Harness domain per setting.** The extraction rule's counts come from full-frame per-year counters (uint8; no year exceeds 255 dates). Hence keep(setting) is exact on the full frame at N = all. The observations it needs exist only on dom, so the domain-consuming methods run on keep(setting) ∩ dom (declared).
 - Under **C0**, keep(C0) ∩ dom is used, every product is evaluated on S0, and C0 never enters dom.
@@ -819,8 +825,8 @@ Not run as rows:
 - An empty interval, or fewer than 1 % of pixels valid, stops the run (NOT COMPUTABLE).
 - Adapter: v13 §3.3. The composite reader is fed by `obs` under the cell's setting through `_composite_rows`' read callback, on the package-backed frame view.
 - Polygons: under LB, one polygon per site. Under LT, LM and LG, one polygon per 3-km band, mosaicked (§1.6).
-- **As published:** C4 (ITEM PQ mask), NDWI, threshold 0, filtered product; tide LT from TPXO9 (OTPS reader in pyTMD) at one ITEM-style offshore tide point if the atlas is installed, else EOT20 (declared). Window W9 in Tier 1B (the published epoch is 28 years); W3 until then (declared). The S2 variant uses C7 (Tier 1B).
-- Native cell: C4.floor0.ndwi.D1 (W3; W9 in Tier 1B).
+- **As published:** C4 (ITEM PQ mask), NDWI, threshold 0, filtered product; tide LT from TPXO9 (OTPS reader in pyTMD) at one ITEM-style offshore tide point if the atlas is installed, else EOT20 (declared). Window W9 in Campaign 2 (the published epoch is 28 years); W3 until then (declared). The S2 variant uses C7 (Campaign 2).
+- Native cell: C4.floor0.ndwi.D1 (W3; W9 in Campaign 2).
 - Detector: D1 at t_k. D2 and D3 become a per-composite Otsu analog. D4 and D5 become the majority vote of W per interval. All are declared.
 - Validation:
   - v7 product reproduction (G-nidem);
@@ -919,8 +925,8 @@ Configurations:
   - water where the composite > 0.2 (on Y);
   - elevation = the per-pixel minimum, over the composites where the pixel is water, of the mean tide of that bin's images.
 - Sensitivity: stage = (TE − MLWS)/(MHWS − MLWS).
-- **As published:** C1 plus a coverage rule (keep images covering ≥ 99 % of the AOI, relaxed to keep ≥ 30 images, never below 90 %), NDWI 0.2, LT (FES2022 if installed, else EOT20; the paper used FES2014; declared), W5 in Tier 1B (W3 until then, declared). QA60 is mapped to SCL {8, 9, 10} (declared).
-- Native cell: P0 at W3 (W5 in Tier 1B).
+- **As published:** C1 plus a coverage rule (keep images covering ≥ 99 % of the AOI, relaxed to keep ≥ 30 images, never below 90 %), NDWI 0.2, LT (FES2022 if installed, else EOT20; the paper used FES2014; declared), W5 in Campaign 2 (W3 until then, declared). QA60 is mapped to SCL {8, 9, 10} (declared).
+- Native cell: P0 at W3 (W5 in Campaign 2).
 - Validation: unit tests of Eq. 1, the ≥ 3-image rule and the minimum reducer; positive control, with the expected upward offset of the minimum reducer (up to one bin, about half a bin on average) pre-registered in the card.
 
 **E8 Bué et al. 2020.**
@@ -1152,8 +1158,8 @@ Design families considered, and the verdicts:
 |---|---|
 | Full factorial of every factor, N and window | Infeasible: about 70,000 maps per method, and Granadeiro takes hours per map. Not needed. |
 | Base + one-factor-at-a-time (OFAT) | Used for every Tier-1 factor at N = all. It gives method × factor effects at the base, but not factor × factor interactions. |
-| Full factorial of a few levels | G1' = C × I × D (24 cells) for the cheap methods; in Tier 1B, G2 = C × T (12 cells) and an I × T check (9 cells at one site). They give exact variance shares per site and test interactions. |
-| Mixed-level orthogonal array L9(3^4) | For Granadeiro only (Tier 1B). It assumes negligible interactions, which the cheap factorials check. |
+| Full factorial of a few levels | G1' = C × I × D (24 cells) for the cheap methods; in Campaign 2, G2 = C × T (12 cells) and an I × T check (9 cells at one site). They give exact variance shares per site and test interactions. |
+| Mixed-level orthogonal array L9(3^4) | For Granadeiro only (Campaign 2). It assumes negligible interactions, which the cheap factorials check. |
 | Plackett-Burman, Taguchi S/N ratios | Rejected: the factors are few, multi-level and categorical, and method × setting interactions are the target. |
 | Latin hypercube | Only in the optional synthetic arm (continuous planted parameters; sliced LHS, Qian 2012). |
 | Sequential / adaptive | Only staged execution with pre-registered or truth-blind rules (cost, computability). Never adaptive on truth metrics. |
@@ -1178,7 +1184,7 @@ One row per competitor with its native settings, in our harness, on our inputs. 
 | Method | Cloud | Prep | Index / detection | Window | Water level and other native choices | Reuse |
 |---|---|---|---|---|---|---|
 | MAREA, no delay | C2 | raw | NDWI, D1 | W3 | LB; production settings, G-time instants | `products_*` kept as the production reference (label instants) |
-| NIDEM | C4 (S2 variant: C7, Tier 1B) | floor0 | NDWI, 0 on composites | W9 in Tier 1B; W3 until then (declared) | LT: TPXO9 (OTPS) at one tide point if installed, else EOT20; filtered product | – |
+| NIDEM | C4 (S2 variant: C7, Campaign 2) | floor0 | NDWI, 0 on composites | W9 in Campaign 2; W3 until then (declared) | LT: TPXO9 (OTPS) at one tide point if installed, else EOT20; filtered product | – |
 | DEA Intertidal | C9 if the sidecar exists, else C1 (declared) | floor0 | NDWI; 0.0 (filters), 0.1 (elevation) | W3 | LT per pixel; locally ranked ensemble once ≥ 3 models are installed | – |
 | Granadeiro | C6 | floor0 | NIR; SD(NDWI) mask | W3 | `paper` variant: Eq. 1, ±90 min, calibration on | v8 10 m runs at Villaviciosa, Escalda, Ems (label instants, declared) |
 | LogiTide2DEM | C1 + frame cloud ≤ 70 % (declared) | floor0 | MNDWI, per-image Otsu over the AOI (unguarded) | W3 | LB (declared); ≥ 27 images | – |
@@ -1186,7 +1192,7 @@ One row per competitor with its native settings, in our harness, on our inputs. 
 | Tseng (E5b) | C1 | floor0 | MNDWI, 0 | W3 | LB min/max | – |
 | Costa (E6a) | domain rule at ≥ 0.95 (declared for "< 5 % cloud over the estuary") | floor0 | NDWI, SD-mask Otsu + per-scene Otsu | W1 | LG (in-estuary gauges) at the judged sites, LB elsewhere | – |
 | Optical S2 waterline (E6b) | per Salameh et al. 2020 | floor0 | per the paper (§3.2.1) | W3, summer subset | LG at the judged sites, LB elsewhere | – |
-| Coast X-Ray | C1 + AOI coverage rule (≥ 99 %, relaxed to keep ≥ 30, floor 90 %) | floor0 | NDWI, 0.2 | W5 in Tier 1B; W3 until then | LT (FES2022 if installed, else EOT20); Eq. 1 as printed | – |
+| Coast X-Ray | C1 + AOI coverage rule (≥ 99 %, relaxed to keep ≥ 30, floor 90 %) | floor0 | NDWI, 0.2 | W5 in Campaign 2; W3 until then | LT (FES2022 if installed, else EOT20); Eq. 1 as printed | – |
 | Bué | C6 (closest to hand-picked clear scenes) | floor0 | NIR; TV valley threshold | W1 | LB (declared); a = −8, sat ≥ 0.3, IDW fill | – |
 | Pool (T2) | C8 | floor0 | AWEI_sh zone, NDWI per-scene Otsu | W1 | LB; local kriging (EBK substitute) | – |
 | Khan (T2) | C6 analog (< 10 % frame cloud) | floor0 | HSV | W3 | LB; published blob sizes | – |
@@ -1209,7 +1215,7 @@ LG rows are labelled "uses in-estuary gauges (upper bound)" in every table. They
 
 A native cell keeps common conditions (LB, floor0, A-mode, N = all) but uses the competitor's native cloud rule, index, detector and window where 2023-2025 allows it. MAREA, no delay and every cheap method run in each native cell. Instance-major scheduling makes the additional methods almost free once the instance exists. The headline rule requires a MAREA-vs-X claim to hold at P0 **and** at X's native cell (§9.7).
 
-| Competitor | Native cell (Tier 1A') | Tier 1B | Already in another design |
+| Competitor | Native cell (Campaign 1) | Campaign 2 | Already in another design |
 |---|---|---|---|
 | E1 NIDEM | C4.floor0.ndwi.D1 @W3 | @W9 | OFAT cloud C4 |
 | E2 DEA | C9.floor0.ndwi.D1 @W3 if the sidecar exists, else P0 | – | – |
@@ -1224,7 +1230,7 @@ A native cell keeps common conditions (LB, floor0, A-mode, N = all) but uses the
 
 Each cell differs from P0 in one factor only.
 
-**Tier 1A' (W3):**
+**Campaign 1 (W3):**
 
 | Factor | Cells |
 |---|---|
@@ -1235,7 +1241,7 @@ Each cell differs from P0 in one factor only.
 | Boundary (1) | "EOT20 only" at W3 (declared) [V5] |
 | Villaviciosa boundary (2) | EOT20 + Gijón residual; the Cantabrian consensus (Villaviciosa only) |
 
-**Tier 1B:**
+**Campaign 2:**
 - cloud C5, C7 and the class-11-blocked C4;
 - index AWEI_nsh, WRI;
 - detection D4 (naive baseline);
@@ -1244,13 +1250,13 @@ Each cell differs from P0 in one factor only.
 
 ### 5.7 Combination designs (cheap methods; all Tier-1 methods except Granadeiro)
 
-- **G1', C × I × D at W3, N = all, LB (Tier 1A'):**
+- **G1', C × I × D at W3, N = all, LB (Campaign 1):**
   - C ∈ {C1, C2, C4, C11}: the per-pixel mask, the transition-zone rule, a competitor-native blocklist, and an independent non-Sen2Cor mask. C3 replaces C11 if OmniCloudMask is unavailable.
   - I ∈ {NDWI, MNDWI, NIR}; D ∈ {D1, D3}.
   - 24 cells; 17 are new beyond P0 and the OFAT cells. Methods that do not read D (Granadeiro, Bué, E11) collapse to 12 effective cells (§2.9).
   - C0 and D4 are never in it. Two of its four cloud levels are MAREA's own (C1, C2); one is a competitor's (C4) and one is independent (C11). The report states this.
   - G1' gives the per-site variance shares and the interaction tests of §9.4. It is also the robustness set for the headline rule (§9.7).
-- **Tier 1B:**
+- **Campaign 2:**
   - the NDWI@20 slice of G1' (D1, C ∈ {C2, C4, C11}; 3 new cells);
   - **G2,** C ∈ {C1, C2, C4, C11} × T ∈ {W1, W3, W9} at NDWI and D1: 12 cells, 6 new beyond G1' and the window OFAT. It shows whether cloud handling matters more in short windows;
   - **the I × T check,** I ∈ {NDWI, MNDWI, NIR} × T ∈ {W1, W3, W5} at C1 and D1, at Escalda only: 4 new cells. Until it runs, the Granadeiro L9 main effects may be aliased with I × T, and the report says so.
@@ -1258,13 +1264,13 @@ Each cell differs from P0 in one factor only.
 
 ### 5.8 Archive replicates: calendar-year windows
 
-The calendar-year windows Y2023, Y2024 and Y2025 (Tier 1A') and Y2017-Y2022 (Tier 1B) run at P0 for every Tier-1 cheap method. They are scored on the survey-matched truth. They provide:
+The calendar-year windows Y2023, Y2024 and Y2025 (Campaign 1) and Y2017-Y2022 (Campaign 2) run at P0 for every Tier-1 cheap method. They are scored on the survey-matched truth. They provide:
 - the between-year SD of every P1/P2 contrast, printed next to the block CIs (§9.1);
-- the archive-stability condition of the headline rule. In Tier 1A' it is 3 of 3 years, provisional. In Tier 1B it is at least 7 of 9 years, final (§9.7).
+- the archive-stability condition of the headline rule. In Campaign 1 it is 3 of 3 years, provisional. In Campaign 2 it is at least 7 of 9 years, final (§9.7).
 
 MAREA is expected to be computable at one year (n_clear ≈ 50 > 30, record ≥ 40 scenes). If it is NOT COMPUTABLE in a year, that year counts as a loss for MAREA.
 
-### 5.9 Temporal windows and the epoch-mismatch analysis (mostly Tier 1B)
+### 5.9 Temporal windows and the epoch-mismatch analysis (mostly Campaign 2)
 
 - **Nested windows** (P0 setting): W1, W2, W5 and W9 join the base W3. They are scored on:
   - (i) the survey-matched truth (primary);
@@ -1282,11 +1288,11 @@ MAREA is expected to be computable at one year (n_clear ≈ 50 > 30, record ≥ 
 
 | Set | Setting | Window, N grid, reps | Methods | Campaign |
 |---|---|---|---|---|
-| K1' | P0 | W3: N ∈ {20, 45, 90, 180, 330, all}, R = 5d, 5d, 3d, 2d, 2n, 1 | all Tier-1 elevation and lag methods except Granadeiro | 1A' |
-| K3 | C2 and C11 (C3 if C11 is unavailable) | the K1' grid | all Tier-1 cheap methods | 1B |
-| K4 | P0 | W9 grid of §2.8 | all Tier-1 cheap methods | 1B |
-| K5 | P0 | cross-window equal-N (§2.8); scored on survey-matched or stable views only | all Tier-1 cheap methods | 1B |
-| K6 | P0 | Granadeiro W3 {45, 90, 180} at Villaviciosa and Escalda | E3 (+ L06) | 1B |
+| K1' | P0 | W3: N ∈ {20, 45, 90, 180, 330, all}, R = 5d, 5d, 3d, 2d, 2n, 1 | all Tier-1 elevation and lag methods except Granadeiro | Campaign 1 |
+| K3 | C2 and C11 (C3 if C11 is unavailable) | the K1' grid | all Tier-1 cheap methods | Campaign 2 |
+| K4 | P0 | W9 grid of §2.8 | all Tier-1 cheap methods | Campaign 2 |
+| K5 | P0 | cross-window equal-N (§2.8); scored on survey-matched or stable views only | all Tier-1 cheap methods | Campaign 2 |
+| K6 | P0 | Granadeiro W3 {45, 90, 180} at Villaviciosa and Escalda | E3 (+ L06) | Campaign 2 |
 | K2 | P0, F-mode | W3 grid, 3 reps | methods on the harness domain (E0a, E0b, L01-L04, L07-L12) | 2 |
 | K7 | G3 corners | W3 grid, 5 reps | cheap methods | 2 |
 | K8 | P0 | MAREA floors 80 and 0 (v13 D4), A and F | E0a, E0b | 2 |
@@ -1302,12 +1308,12 @@ Each curve point records:
 
 | Step | Content | Sites | Campaign |
 |---|---|---|---|
-| G-gate | G-granadeiro (v8 `paper` reproduction) at Villaviciosa; G-bijagos on the pre-registered sub-region; positive control | Villaviciosa; Bijagós sub-region | 1A' (Stage 0) |
-| G-base | `ctl` at P0 (NDWI, LB). Runs **right after Stage B**, with at most 2 cheap workers beside it | all 5 | 1A' |
-| G-nir | `ctl` at C1 + NIR (Granadeiro's native cell) | Villaviciosa, Escalda (1A'); Wadden, Ems (1B) | 1A' / 1B |
-| G-L9 | L9(3^4): C ∈ {C1, C2, C6} × I ∈ {NDWI, NIR, MNDWI} × T ∈ {W3, W1, W5}, with the 4th column unassigned (an interaction/error check) | Villaviciosa, Escalda | 1B |
-| G-curves | K6 | Villaviciosa, Escalda | 1B |
-| G-tune | The symmetric tuning grid (§5.12) at Escalda | Escalda | 1B |
+| G-gate | G-granadeiro (v8 `paper` reproduction) at Villaviciosa; G-bijagos on the pre-registered sub-region; positive control | Villaviciosa; Bijagós sub-region | Campaign 1 (Stage 0) |
+| G-base | `ctl` at P0 (NDWI, LB). Runs **right after Stage B**, with at most 2 cheap workers beside it | all 5 | Campaign 1 |
+| G-nir | `ctl` at C1 + NIR (Granadeiro's native cell) | Villaviciosa, Escalda (Campaign 1); Wadden, Ems (Campaign 2) | Campaign 1 / Campaign 2 |
+| G-L9 | L9(3^4): C ∈ {C1, C2, C6} × I ∈ {NDWI, NIR, MNDWI} × T ∈ {W3, W1, W5}, with the 4th column unassigned (an interaction/error check) | Villaviciosa, Escalda | Campaign 2 |
+| G-curves | K6 | Villaviciosa, Escalda | Campaign 2 |
+| G-tune | The symmetric tuning grid (§5.12) at Escalda | Escalda | Campaign 2 |
 | G-T2 | `ctl_unpinned`, `eq1_90`, `calon`; LT and LM rows; L9 at Wadden and Ems; F-mode curves | – | 2 |
 
 The L9 rows (level 1 = base, so run 1 is P0):
@@ -1324,11 +1330,11 @@ The L9 rows (level 1 = base, so run 1 is P0):
 | 8 | C6 | NIR | W3 |
 | 9 | C6 | MNDWI | W1 |
 
-The cheap methods also run all 9 L9 cells in Tier 1B, so MAREA − Granadeiro contrasts exist at every one of them.
+The cheap methods also run all 9 L9 cells in Campaign 2, so MAREA − Granadeiro contrasts exist at every one of them.
 
 **Assumption check:** if, for the cheap methods, the C × I or the I × T interaction share exceeds 10 % of the total variance at a site (§9.4), Granadeiro's array main effects at that site are flagged as possibly aliased.
 
-**Robustness for Granadeiro.** Granadeiro is not in G1'. Its robustness set is the L9 cells, at Villaviciosa and Escalda, in Tier 1B. Until then, and at Wadden and Ems throughout, the robustness of any MAREA-vs-Granadeiro claim is "not assessed", so there is no headline against Granadeiro (§9.7).
+**Robustness for Granadeiro.** Granadeiro is not in G1'. Its robustness set is the L9 cells, at Villaviciosa and Escalda, in Campaign 2. Until then, and at Wadden and Ems throughout, the robustness of any MAREA-vs-Granadeiro claim is "not assessed", so there is no headline against Granadeiro (§9.7).
 
 ### 5.12 Symmetric internal-parameter tuning budget (v13 D21, re-instated)
 
@@ -1343,7 +1349,7 @@ MAREA's internal parameters were developed on these sites, judges and truths: th
 | E6a Costa | vertex rejection distance {1, 2} px × minimum contour length {10, 20} vertices | 4 |
 | E7 Coast X-Ray | water threshold {0.1, 0.2, 0.3} × minimum images per bin {3, 5} | 6 |
 | E8 Bué | a ∈ {−4, −8} × saturation threshold {0.2, 0.3, 0.4} | 6 |
-| E3 Granadeiro (Tier 1B) | SD threshold {0.15, 0.20} × lag window {±90 min, −45..180 min} | 4 |
+| E3 Granadeiro (Campaign 2) | SD threshold {0.15, 0.20} × lag window {±90 min, −45..180 min} | 4 |
 
 The asymmetry that remains is that MAREA is in-sample at every site, while the tuned competitors are in-sample only at Escalda. It is disclosed in every table note.
 
@@ -1357,16 +1363,16 @@ The asymmetry that remains is that MAREA is in-sample at every site, while the t
 | Native cells | ✓ | ✓ | ✓ | G-nir | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
 | OFAT, G1' | ✓ | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
 | Calendar years | ✓ | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (scored where judges cover) | – |
-| Tuning (Escalda) and tuned rows | – | ✓ | ✓ | 1B | ✓ | – | ✓ | ✓ | ✓ | – | – |
+| Tuning (Escalda) and tuned rows | – | ✓ | ✓ | Campaign 2 | ✓ | – | ✓ | ✓ | ✓ | – | – |
 | K1' | ✓ | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
-| Tier 1B windows, G2, centred, K3-K5 | ✓ | ✓ | ✓ | L9 rows | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (where judges cover) | – |
+| Campaign 2 windows, G2, centred, K3-K5 | ✓ | ✓ | ✓ | L9 rows | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (where judges cover) | – |
 | K6 | – | – | – | ✓ | – | – | – | – | – | L06 | – |
 
 Ferrol runs every lag design. Its elevation methods run at P0 only, for truth-free repeatability and coverage.
 
 ### 5.14 Campaigns, the two-week plan and the cut list
 
-**Tier 1A'** (confirmatory core; must fit two calendar weeks on the server, §14.2) needs only the 2023-2025 stores and the 2023-2025 judge series:
+**Campaign 1** (confirmatory core; must fit two calendar weeks on the server, §14.2) needs only the 2023-2025 stores and the 2023-2025 judge series:
 - Stage 0: fetch, inputs, G-time, prepare, truth (with the truth-error model), pilots, gates, positive control, lock-A;
 - Stage L: the lag benchmark at P0 (W1-W3);
 - Stage T: timing (≤ 10 h);
@@ -1376,29 +1382,29 @@ Ferrol runs every lag design. Its elevation methods run at P0 only, for truth-fr
 - Stage K: K1';
 - score and report.
 
-**Tier 1B** (a separate campaign, gated on the arrival of the 2017-2022 batch and on the gauge extension [V5]): prepare 2017-2022; the nested-window OFAT; G2; the survey-centred windows; the calendar years 2017-2022 (final archive-stability condition); NIDEM at W9 and Coast X-Ray at W5 (as published and native); K3-K6; the I × T check; the NDWI@20 slice; the Tier-1B OFAT levels; G-nir at Wadden and Ems; G-L9; G-tune; and the away site, if approved.
+**Campaign 2** (a separate campaign, gated on the arrival of the 2017-2022 batch and on the gauge extension [V5]): prepare 2017-2022; the nested-window OFAT; G2; the survey-centred windows; the calendar years 2017-2022 (final archive-stability condition); NIDEM at W9 and Coast X-Ray at W5 (as published and native); K3-K6; the I × T check; the NDWI@20 slice; the Campaign-2 OFAT levels; G-nir at Wadden and Ems; G-L9; G-tune; and the away site, if approved.
 
-**Away site** [V27, recommended for Tier 1B]: Tauranga Harbour, New Zealand. It is Costa et al.'s (2023) home site, with public LINZ LiDAR, in-harbour gauges and lagged inner arms. It runs P0, the as-published rows and the native cells for every Tier-1 method, and it doubles as Costa's fidelity check (published RMSE about 0.20 m). It costs one openEO download (W3) and about 20 wh.
+**Away site** [V27, recommended for Campaign 2]: Tauranga Harbour, New Zealand. It is Costa et al.'s (2023) home site, with public LINZ LiDAR, in-harbour gauges and lagged inner arms. It runs P0, the as-published rows and the native cells for every Tier-1 method, and it doubles as Costa's fidelity check (published RMSE about 0.20 m). It costs one openEO download (W3) and about 20 wh.
 
 **Tier 2:** the Tier-2 methods (E9-E12, L05, L13, L16b, L19, L21, L22, the other L01v variants, the HD26 transect variant and RTide), the Tier-2 levels (§2.1), the summer-only subset family (§2.8), K2, K7-K9 and G-T2.
 
-**Pre-ordered cut list** (mechanical). `plan` prints the projected Tier 1A' total against a 10-day cap at the measured throughput (§14). Cuts are applied in this order until the projection fits:
+**Pre-ordered cut list** (mechanical). `plan` prints the projected Campaign 1 total against a 10-day cap at the measured throughput (§14). Cuts are applied in this order until the projection fits:
 1. K1' reps to 3d, 3d, 2d, 2d, 1n, 1.
 2. Matched-N controls to 1 draw for every method.
-3. G1' detection column D3 moved to Tier 1B (G1' becomes C × I at D1: 12 cells).
-4. G-nir at Escalda only in Tier 1A'; G-bijagos on one raster tile.
-5. OFAT AWEI_sh, NDWI@20 and C1d moved to Tier 1B.
+3. G1' detection column D3 moved to Campaign 2 (G1' becomes C × I at D1: 12 cells).
+4. G-nir at Escalda only in Campaign 1; G-bijagos on one raster tile.
+5. OFAT AWEI_sh, NDWI@20 and C1d moved to Campaign 2.
 6. LT and LM rows at the three Dutch sites only.
 7. Tuned rows at two sites.
-8. The Villaviciosa boundary variants moved to Tier 1B.
+8. The Villaviciosa boundary variants moved to Campaign 2.
 
 **Never cut:** G-time; the MAREA, NIDEM, DEA and Granadeiro gates; Stage L at W3; P0 at every site; the as-published rows; the LB-vs-LM/LT practical comparison at three or more sites; the native cells; G-base at three or more sites.
 
-**One-week fallback** (if only one week of server time is available): Stage 0, Stage L, the core of Stage B (P0, as published, the LT and LM rows, the native cells), G-base at Villaviciosa, Escalda and Ems, and the OFAT cloud and index cells. Everything else moves to Tier 1B.
+**One-week fallback** (if only one week of server time is available): Stage 0, Stage L, the core of Stage B (P0, as published, the LT and LM rows, the native cells), G-base at Villaviciosa, Escalda and Ems, and the OFAT cloud and index cells. Everything else moves to Campaign 2.
 
 The compute clock starts only when the code of milestones V1-V3 has passed its gates (§15). Otherwise the machine sits idle. Methods that pass their gates later join as new units without touching existing ones.
 
-### 5.15 Configuration count (Tier 1A')
+### 5.15 Configuration count (Campaign 1)
 
 | Item | Count |
 |---|---|
@@ -1412,7 +1418,7 @@ The compute clock starts only when the code of milestones V1-V3 has passed its g
 | Seeds and split-half at P0 | 4 extra seeds (stochastic stages only) + 2 half-records |
 | Matched-N instances | C2, C6, C8 × 3 draws (frame methods 1 draw) |
 | Curve instances (K1', per site) | 17 new (18 incl. N = all) |
-| Granadeiro units | G-base 5 + G-nir 2 (Tier 1B: G-nir 2 + G-L9 16 + K6 16 + G-tune 4) |
+| Granadeiro units | G-base 5 + G-nir 2 (Campaign 2: G-nir 2 + G-L9 16 + K6 16 + G-tune 4) |
 | Products, N = all (approx.) | ~6,800 (about 25 products per cell × 5 sites, plus level-source, tuning, seed and matched rows) |
 | Curve products (approx.) | ~2,000 |
 
@@ -1859,7 +1865,7 @@ All costs are labelled "as implemented here, on one declared server". Implementa
   - The **calendar-year windows** give the between-year SD of every P0 contrast, printed next to every block CI (§5.8).
   - Disjoint-batch curve points get a two-level bootstrap (replicates, then blocks), labelled "within one record".
   - Nested points are labelled "conditional on the record".
-- **Algorithm-seed variance:** at P0 and W3, 5 seeds for the cheap stochastic steps (MAREA's m2a column draw, the GM20 refits; DEA has none). In Tier 1B, 2 seeds for Granadeiro at Villaviciosa. The seed SD is the floor below which factor effects are reported as nil (§9.4). The production seeds stay primary.
+- **Algorithm-seed variance:** at P0 and W3, 5 seeds for the cheap stochastic steps (MAREA's m2a column draw, the GM20 refits; DEA has none). In Campaign 2, 2 seeds for Granadeiro at Villaviciosa. The seed SD is the floor below which factor effects are reported as nil (§9.4). The production seeds stay primary.
 - **Cross-check at P0:** the Hering-Genton test on the spatial loss differentials (doi:10.1198/TECH.2011.10136).
 
 ### 9.2 Families and multiplicity (pre-registered)
@@ -1908,7 +1914,7 @@ Special rules:
 ### 9.4 Factor effects
 
 1. **Variance shares, per site only.**
-   - They come from the cheap full factorials: G1' in Tier 1A', and G2 and the I × T check in Tier 1B. These are deterministic at N = all, given the archive and the seeds.
+   - They come from the cheap full factorials: G1' in Campaign 1, and G2 and the I × T check in Campaign 2. These are deterministic at N = all, given the archive and the seeds.
    - A functional-ANOVA decomposition gives the shares of C, I, D and their interactions (exact Sobol main and total indices for a full factorial).
    - Responses per method: CAE under F_const on D_truth (N- and setting-invariant), log rmse_meanc on the cell's own view, b*, HFI_D, HPE_c and coverage. For D(MAREA, X), the cell's pair view.
    - Shares are never pooled across sites, because that would pool LiDAR and Vaklodingen truths.
@@ -1919,7 +1925,7 @@ Special rules:
 3. **Cross-site synthesis:** each Vaklodingen site's D̂ and its bootstrap SE feed a random-effects meta-analysis (REML with Hartung-Knapp-Sidik-Jonkman CIs; metafor as the check), with the 95 % prediction interval for a new estuary. Villaviciosa (LiDAR) is shown beside it and added only in a sensitivity. With k = 3 the meta-analysis is wide and descriptive, which is the honest answer.
 4. **Displays:**
    - interaction plots per site;
-   - heatmaps of D(MAREA − X) over C × I rows and D (and T, in Tier 1B) columns, coloured by verdict;
+   - heatmaps of D(MAREA − X) over C × I rows and D (and T, in Campaign 2) columns, coloured by verdict;
    - Taylor diagrams per site (doi:10.1029/2000JD900719).
 
 ### 9.5 Robustness summaries
@@ -1954,13 +1960,13 @@ Every stratum is method-independent (§7.1). In particular, MAREA's own lags are
 2. **Magnitude:** |δ_m| ≥ 2 cm (accuracy), or the slope rule (§7.2).
 3. **Abstention control:** the same direction under CAE with both fills, or in RMSE at matched coverage.
 4. **Native cell** (P2 only): the same direction at X's native cell, with the 95 % CI excluding 0.
-5. **Archive stability:** the same sign in all three calendar years 2023-2025 (Tier 1A'; the headline is then labelled **provisional**), and in at least 7 of the 9 calendar years 2017-2025 (Tier 1B; final). The between-year SD is printed.
-6. **Settings robustness:** the same sign in at least 80 % of the G1' cells (for Granadeiro, the L9 cells), with NOT COMPUTABLE counted as a loss. C0 and D4 are never in the set. If the set is empty, the robustness is **"not assessed" and there is no headline.** This applies to Granadeiro in Tier 1A', and at Wadden and Ems throughout.
+5. **Archive stability:** the same sign in all three calendar years 2023-2025 (Campaign 1; the headline is then labelled **provisional**), and in at least 7 of the 9 calendar years 2017-2025 (Campaign 2; final). The between-year SD is printed.
+6. **Settings robustness:** the same sign in at least 80 % of the G1' cells (for Granadeiro, the L9 cells), with NOT COMPUTABLE counted as a loss. C0 and D4 are never in the set. If the set is empty, the robustness is **"not assessed" and there is no headline.** This applies to Granadeiro in Campaign 1, and at Wadden and Ems throughout.
 7. **Scope:** a P2 headline is stated as "given only a boundary tide". A headline "in practice" also needs the P3 verdict BETTER (or EQUIVALENT, for "as good as") against X(LM) and X(LT) where they are available.
 
 A **cross-site** headline needs the same direction confirmed at every confirmatory site where X is validated and computable, no WORSE verdict at any site, and a meta-analytic estimate in the same direction.
 
-Otherwise the claim is labelled "setting-dependent", and the factor levels that flip it are named. A claim that misses only the Tier-1B part of condition 5 is labelled "provisional".
+Otherwise the claim is labelled "setting-dependent", and the factor levels that flip it are named. A claim that misses only the Campaign-2 part of condition 5 is labelled "provisional".
 
 **Fairness ladder,** one row per rung and competitor, never mixed:
 
@@ -2127,7 +2133,7 @@ The report draws conclusions only under the rules of §9.7. Every table carries:
 - the fidelity tier of each row;
 - its label: as published, common conditions, native cell, tuned, practical water level, or upper bound;
 - the home-advantage note;
-- "provisional" marks where only Tier 1A' evidence exists;
+- "provisional" marks where only Campaign 1 evidence exists;
 - NOT COMPUTABLE and not-applicable cells shown as such, never blank.
 
 ### 11.1 Chapters
@@ -2137,7 +2143,7 @@ The report draws conclusions only under the rules of §9.7. Every table carries:
 3. **Elevation at P0:** the main table per site; families P1 and P2; as published, tuned and native cells; the new metrics.
 4. **Water level in practice:** the LT, LM and LG rows; family P3; headroom.
 5. **Robustness to settings:** OFAT, G1', verdict heatmaps, factor shares, regret and rank flips; archive stability across calendar years.
-6. **Windows and epochs** (Tier 1B): nested windows (confirmed at Escalda), survey-centred windows, the mismatch curves, the stable stratum, the effective epoch.
+6. **Windows and epochs** (Campaign 2): nested windows (confirmed at Escalda), survey-centred windows, the mismatch curves, the stable stratum, the effective epoch.
 7. **How many images:** learning curves, floors, n_target, span vs count, computability.
 8. **Where MAREA is good:** conditional verdicts, the decomposition into the lag and algorithm parts, GAM partial effects, partitions, advantage maps, the lag signature.
 9. **Efficiency:** the cost table, scaling, Pareto fronts, time-to-target.
@@ -2185,7 +2191,7 @@ The report draws conclusions only under the rules of §9.7. Every table carries:
 | F9 | Verdict heatmaps of D(MAREA − X): C × I rows, D (and T) columns |
 | F10 | Interaction plots per factor |
 | F11 | Learning curves (E against N on the curve view, coverage, k/R) per site |
-| F12 | Span vs count: equal-N panels across windows (Tier 1B) |
+| F12 | Span vs count: equal-N panels across windows (Campaign 2) |
 | F13 | RMSE(Δt) epoch-mismatch curves |
 | F14 | Advantage maps; GAM partial effects of the loss differential |
 | F15 | Lag signature: band bias against s and the along-channel gradient |
@@ -2244,7 +2250,7 @@ experiments/
     sensing_time.py              NEW     G-time: sun-angle inversion (SPA), SGP4 propagation, criteria, sensing_times.json
     reader.py                    NEW     fused block reader over package tiles (instance-major), package-backed frame view
     settings.py                  NEW     registries cloud/prep/index/detect/level/window/curves; Setting; setting ids; per-entry source hashes
-    designs.py                   NEW     design tables (base, published, levels, native, ofat, g1, years, tuning, curves-k1, granadeiro-*, and the Tier-1B designs), plan CSV writer, 10-day cap and cut order
+    designs.py                   NEW     design tables (base, published, levels, native, ofat, g1, years, tuning, curves-k1, granadeiro-*, and the Campaign-2 designs), plan CSV writer, 10-day cap and cut order
     obs.py                       ADAPT   NDWI core kept bitwise; dict-of-bands signatures; index (20 m rule)/mask/detector registries; observe(setting) -> X, Y, V, W
     levels.py                    ADAPT   provider over UNION_PERIOD; LB/LT/LM/LG level rows per instance; per-band polygon series
     package.py                   ADAPT   year shards keyed by dom_version; per-band pixel-major tiles; uint8 per-setting counters; OCM step; settings pass; MNAR table
@@ -2399,7 +2405,7 @@ A unit whose `inputs_key` matches a finished product is skipped (resume). Adding
 | `control [--method m] [--world gating\|misspec]` | Positive control on the synthetic store | laptop and server |
 | `timing` | Dedicated timing runs (§8.2); refuses unless the machine is quiet | user, server |
 | `lock --phase A\|B` | Writes LOCK.json (§9.9) | user, server |
-| `plan --design <name> [--sites ...]` | Writes `plans/<design>.csv` with est_hours, est_ram_gb and est_read_gb per unit; prints totals and the Tier 1A' projection against the 10-day cap, with the cut order | user |
+| `plan --design <name> [--sites ...]` | Writes `plans/<design>.csv` with est_hours, est_ram_gb and est_read_gb per unit; prints totals and the Campaign 1 projection against the 10-day cap, with the cut order | user |
 | `run --plans <d1,d2,...> --worker-id k [--threads n] [--steal-stale]` | Consumes the plans in priority order through exclusive, instance-major claims under the RAM ledger | user, server (tmux panes) |
 | `status [--watch 600]` | status.csv: done, running, stale, hung, failed, not_computable, not_applicable per design; completeness and projected finish | user |
 | `score --blocks` | Truth-free block sizes and testable family members (§9.1, §9.2) | user, server |
@@ -2414,7 +2420,7 @@ A unit whose `inputs_key` matches a finished product is skipped (resume). Adding
   - The pilot measures cpu_self/wall per unit. Most per-pixel code is element-wise numpy or single-threaded.
   - If the median ratio is below 1.5, the server runs **8-12 cheap workers at BLAS 1** under the RAM ledger. Otherwise it runs 4 workers at BLAS 4.
   - The budget (§14) is computed at 4 workers and states the gain if more fit.
-- **I/O cap:** at most 3 concurrent units that read the Zarr stores (prepare, the OCM step, Tier-1B passes). A semaphore file in `claims/` enforces it. Frame methods read the package-backed frame view and do not count.
+- **I/O cap:** at most 3 concurrent units that read the Zarr stores (prepare, the OCM step, Campaign-2 passes). A semaphore file in `claims/` enforces it. Frame methods read the package-backed frame view and do not count.
 - **Granadeiro** runs in its own pane with at most 2 cheap workers beside it, BLAS 1 and 16 R workers.
 
 ### 13.5 RAM, failures and hangs
@@ -2512,7 +2518,7 @@ The assistant hands the user a complete command block per stage, after the code 
 
 ### 14.2 Stage budget
 
-**Tier 1A' (two calendar weeks):**
+**Campaign 1 (two calendar weeks):**
 
 | Stage | Content | Cheap wh | Granadeiro | Wall (days) |
 |---|---|---|---|---|
@@ -2526,23 +2532,23 @@ The assistant hands the user a complete command block per stage, after the code 
 | S' | OFAT (16 cells) + G1' (17 new cells): 33 cells × 6.5 × 0.9 ≈ 195; matched-N controls ≈ 25 | ~220 | – | 2.2 after G |
 | K | K1' (17 instances per site) | ~45 | – | 0.6 |
 | Final | score --blocks, incremental scoring, report | ~10 | – | 1.0 |
-| **Tier 1A' total** | | **~410** | **30-48 h** | **≈ 9.5 days; ≈ 10.5-11 days with a 20 % contingency on the compute stages** |
+| **Campaign 1 total** | | **~410** | **30-48 h** | **≈ 9.5 days; ≈ 10.5-11 days with a 20 % contingency on the compute stages** |
 
-With 8 or more workers (if the pilot allows), Tier 1A' takes about 8 days including contingency.
+With 8 or more workers (if the pilot allows), Campaign 1 takes about 8 days including contingency.
 
 **One-week fallback:** Stage 0 (2.5 d); L (0.3 d); the core of B (P0, as published, LT and LM rows, native cells: ~42 wh, 0.6 d); G-base at Villaviciosa, Escalda and Ems (~0.8 d), with 2 workers on the OFAT cloud and index cells (12 cells ≈ 70 wh, finishing about 0.5 d after G); scoring (0.5 d). That makes about 5.5 days, or 6.5 days with contingency.
 
-**Tier 1B (separate campaign, after the 2017-2022 batch and the gauge extension):**
+**Campaign 2 (separate campaign, after the 2017-2022 batch and the gauge extension):**
 
 | Stage | Content | Cheap wh | Granadeiro | Wall (days) |
 |---|---|---|---|---|
 | 0d | prepare 2017-2022 (pass 1, OCM for the G2 and curve settings, settings pass, pass 2, tiles), truth rebuild, gauge QC | ~35 | – | 1.0 |
-| W | Window OFAT W2, W5, W9 (~38); EOT20 only at W9 (~20); G2 new cells (~70); survey-centred windows (~22); Y2017-Y2022 (~17); NIDEM W9 and Coast X-Ray W5 as published and native (~10); Tier-1B OFAT levels C5, C7, class-11-blocked C4, AWEI_nsh, WRI, D4 (~35); the NDWI@20 slice (~18); the I × T check (~4) | ~235 | – | 3.1 |
+| W | Window OFAT W2, W5, W9 (~38); EOT20 only at W9 (~20); G2 new cells (~70); survey-centred windows (~22); Y2017-Y2022 (~17); NIDEM W9 and Coast X-Ray W5 as published and native (~10); Campaign-2 OFAT levels C5, C7, class-11-blocked C4, AWEI_nsh, WRI, D4 (~35); the NDWI@20 slice (~18); the I × T check (~4) | ~235 | – | 3.1 |
 | K-1B | K3 (~50), K4 (~60), K5 (~60) | ~170 | – | 2.3 |
 | G-1B | G-nir at Wadden and Ems (15-20 h), G-L9 at 2 sites (36-60 h), K6 (15-25 h), G-tune (~8 h) | 2 workers beside | 75-115 h | 3-5 (overlapping) |
 | Away | Tauranga: download, prepare, P0, as published, native cells [V27] | ~20 | – | 1 (download) |
 | Final | rescoring, report | ~10 | – | 0.7 |
-| **Tier 1B total** | | **~470** | **75-115 h** | **≈ 9-11 days** |
+| **Campaign 2 total** | | **~470** | **75-115 h** | **≈ 9-11 days** |
 
 **Tier 2:** about 300-500 wh plus 4-8 days of Granadeiro, i.e. 1-2 weeks.
 
@@ -2571,11 +2577,11 @@ The RAM ledger (§13.5) enforces Σ reservations + 6 GB ≤ 62 GB. Granadeiro (�
 | Package shards at dom (6 int16 bands + SCL + CLD = 14 B per observation) | W3 ~45 GB; W9 ~130 GB | dom ≈ 25-30 % of the frames (≈ 7 Mpx), printed by `pilot dom`; refusal above the budget |
 | Per-setting counters (uint8 per year) | ~2 GB per year; ~16 GB for 9 years | ~34 settings × 2 counters × 25.9 Mpx |
 | Frame validity, OCM and buffer bits | ~15-20 GB at 9 years | curve settings only; OCM and buffer bits at dom |
-| Products, N = all (on S0) | ~70 GB (Tier 1A') | ~6,800 products × ~10 MB |
-| Curve products (D_truth + neighbourhoods) | ~10 GB (Tier 1A'); ~25 GB more in Tier 1B | ~2,000 products × ~5 MB |
+| Products, N = all (on S0) | ~70 GB (Campaign 1) | ~6,800 products × ~10 MB |
+| Curve products (D_truth + neighbourhoods) | ~10 GB (Campaign 1); ~25 GB more in Campaign 2 | ~2,000 products × ~5 MB |
 | Sufficient statistics, scores, logs, report | < 10 GB | |
 | TMPDIR for R exchange files | ≥ 10 GB | v13 |
-| **Total** | **≈ 0.25-0.3 TB for Tier 1A'; ≈ 0.5-0.6 TB with Tier 1B** | `inputs` and `check-env` report free space and throughput [V9] |
+| **Total** | **≈ 0.25-0.3 TB for Campaign 1; ≈ 0.5-0.6 TB with Campaign 2** | `inputs` and `check-env` report free space and throughput [V9] |
 
 **Retention policy:**
 - Curve product maps of replicates ≥ 1 are deleted once their sufficient statistics are verified; rep 0 is kept.
@@ -2587,7 +2593,7 @@ The RAM ledger (§13.5) enforces Σ reservations + 6 GB ≤ 62 GB. Granadeiro (�
 2. move curve products to a second disk;
 3. keep N = all products of OFAT and G1' cells as sufficient statistics plus quantile sketches only.
 
-### 14.5 Calendar for Tier 1A'
+### 14.5 Calendar for Campaign 1
 
 Day 1 is the day the V1-V3 code passes its gates. Before that, the machine is not booked.
 
@@ -2620,11 +2626,11 @@ Each milestone ends with a code review, a commit and push by the authors, and a 
 | **V2** | Lag adapters (§12.1 `lags/`, including L16 and L01v-orbit), `readout.py`, `blocks.py`, the lag part of `scoring`/`inference`, `control.py` (lag worlds), `timing.py`; gates G-zarr, G-offset, G-record, G-keep, G-marea, G-lagtruth, G-level, G-ocm; **every elevation method card with its CONFIG, native cell and tuning grid** (needed for lock-A); `pilot attain` | `gate ...`; `control --kind lag`; `pilot attain`; `lock --phase A`; `plan --design lag`; `run --plans lag` (2-4 workers); `score --part lag` | **Stage L: the lag chapter (first results), family L-P1** |
 | **V3** | Tier-1 cheap elevation adapters (E0-E8, E6b Salameh configuration, `published`), the venv-dea runner, `reader.py` (frame view, fused reader), the elevation part of `scoring`/`inference` (sufficient statistics, Romano-Wolf, IUT), the report skeleton, notebooks 00-05; gates G-nidem, G-nidem-code, G-dea, G-flood2topo, G-costa, G-frameview, G-score; `pilot units` | Install venv-dea [V6], Octave [V17] and OmniCloudMask [V1]; gates; `control`; `timing` (Stage T, overnight); `lock --phase B`; `run --plans base,levels,native,years,tuning,g1,ofat,k1`; `score` | **Stages B, S', K: P0 tables, families P1/P2/P3, native cells, settings robustness, base curves** |
 | **V4** | The Granadeiro adapter (re-sequenced v8 on the frame view; job-level checkpoints), the Bijagós sub-region recipe, G-granadeiro, G-bijagos | Bijagós download [V14]; `gate granadeiro`, `gate bijagos` (Stage 0 if ready, otherwise before G); `plan --design granadeiro-base`; `run` in pane `gran` right after Stage B | **Stage G: Granadeiro at P0 and NIR; family L-P2** |
-| **V5** | Tier-1B designs (windows, G2, survey-centred, Y2017-Y2022, K3-K5, the I × T check, Tier-1B OFAT levels, the NDWI@20 slice), the multi-epoch views and the epoch analysis, Granadeiro L9/curves/tuning, the away site | When 2017-2022 and the gauge extension are complete: `inputs`; `prepare <site> --years 2017-2022`; `truth <site>`; `plan`/`run` for the Tier-1B designs, then `granadeiro-l9`, `granadeiro-curves`, `granadeiro-tune` | **Tier 1B campaign** |
-| **V6** | The full `inference` (shares, mixed models in R, meta-analysis, verdicts, regret, the where-analysis with the decomposition and honest partitions), `report.py`, notebooks 06-07 | `score --part all`; `report`; papermill runs of the notebooks | **The report** (Tier 1A' version first, marked provisional where needed) |
+| **V5** | Campaign-2 designs (windows, G2, survey-centred, Y2017-Y2022, K3-K5, the I × T check, Campaign-2 OFAT levels, the NDWI@20 slice), the multi-epoch views and the epoch analysis, Granadeiro L9/curves/tuning, the away site | When 2017-2022 and the gauge extension are complete: `inputs`; `prepare <site> --years 2017-2022`; `truth <site>`; `plan`/`run` for the Campaign-2 designs, then `granadeiro-l9`, `granadeiro-curves`, `granadeiro-tune` | **Campaign 2 campaign** |
+| **V6** | The full `inference` (shares, mixed models in R, meta-analysis, verdicts, regret, the where-analysis with the decomposition and honest partitions), `report.py`, notebooks 06-07 | `score --part all`; `report`; papermill runs of the notebooks | **The report** (Campaign 1 version first, marked provisional where needed) |
 | **V7** | Tier-2 rows and levels, in the order of §5.14 | as above | Tier-2 supplement |
 
-If V4 is late, Stage G runs after K, and the Tier 1A' calendar grows by Granadeiro's wall time (1.1-1.7 days). It is never cut below three sites.
+If V4 is late, Stage G runs after K, and the Campaign 1 calendar grows by Granadeiro's wall time (1.1-1.7 days). It is never cut below three sites.
 
 **Order of runs:**
 
@@ -2635,8 +2641,8 @@ Stage 0 (fetch, inputs, G-time, prepare 2023-2025, truth, pilots, gates, control
   → lock-B → B (P0, as published, level sources, native cells, Y2023-Y2025, tuning, seeds, split-half)
   → G (G-base + G-nir; L-P2)  ∥  S' on 2 workers
   → S' (4 workers) → K (K1')
-  → score --blocks → score → report (Tier 1A')
-  → [2017-2022 batch + gauge extension] Tier 1B campaign → final report
+  → score --blocks → score → report (Campaign 1)
+  → [2017-2022 batch + gauge extension] Campaign 2 campaign → final report
   → Tier 2
 ```
 
@@ -2685,7 +2691,7 @@ The lag benchmark is scored before any elevation score. No lag result can change
 15. **Multiplicity and strictness.** With the headline rule of §9.7, few or no headlines is a likely and legitimate outcome. The report says so in advance.
 16. **Power.** Villaviciosa is expected to be descriptive. The confirmatory evidence rests on three Dutch sites, one of them (the Ems) with an epoch-mismatched inner truth. The P1 band-level test with about 7-12 bands per site has modest power.
 17. **Zarr format specifics.** The store format is experimental on the openEO side. Mitigations: FORMAT_ID, the G-zarr gate and fingerprints in the keys.
-18. **Schedule.** Code readiness (V1-V4) gates the compute clock. The two-week Tier 1A' calendar assumes the code has passed its gates.
+18. **Schedule.** Code readiness (V1-V4) gates the compute clock. The two-week Campaign 1 calendar assumes the code has passed its gates.
 19. **Laptop limits** (about 1.5 GB of free RAM). Only 20 m legacy cubes, small Zarr extracts and the synthetic control run locally.
 
 ---
@@ -2703,23 +2709,23 @@ Each item gives the recommended default first.
 - **V2. Factor levels.**
   - G1' = C{1, 2, 4, 11} × I{NDWI, MNDWI, NIR} × D{fixed, edge-Otsu}.
   - D2 (guarded Otsu) runs as OFAT and in LogiTide's native cell.
-  - D4 is a Tier-1B naive baseline.
+  - D4 is a Campaign-2 naive baseline.
   - NDWI@20 joins the index OFAT, and every index with a 20 m band is computed at 20 m.
 - **V3. New headline metric.** HPE_c (hydroperiod error, h/day) with a per-cell margin equivalent to 2 cm. HFI_D (joint verdicts only) and CAE (two fills) are companions.
 - **V4. Windows and epochs.**
   - Survey-matched truth is the default for every window, and the nested-window effect is confirmed only at Escalda.
   - Stable cells need at least 2 surveys within the window ± 1 year and a range ≤ 0.20 m.
   - Calendar-year windows provide the archive replicates.
-- **V5. Extending gauges to 2017-2022.** Extend the judge series (RWS, WSV, IOC, PdE) and the boundary IOC chunks before any prepare. Without the extension, lags are scored only in W1-W3 and the 2023-2025 years. EOT20-only sensitivities run at W3 (1A') and W9 (1B).
+- **V5. Extending gauges to 2017-2022.** Extend the judge series (RWS, WSV, IOC, PdE) and the boundary IOC chunks before any prepare. Without the extension, lags are scored only in W1-W3 and the 2023-2025 years. EOT20-only sensitivities run at W3 (Campaign 1) and W9 (Campaign 2).
 - **V6. DEA Intertidal environment.** A side venv with `dea-intertidal[datacube]==2.5.3`. Fallback: vendor the seven pure functions (Apache-2.0, NOTICE kept) and gate them bitwise wherever the package installs.
 - **V7. Tier-2 scope.** Pool ADP as a clean-room port (CASSIE is GPL-3.0; no code copied); Khan via its Apache-2.0 code; Bell adapted; Dynamic World if its model runs on the server; SWOT, MOHID and C12 (s2cloudless) only if time remains.
 - **V8. Granadeiro scope.**
-  - Tier 1A': G-base at 5 sites and G-nir at Villaviciosa and Escalda, about 1.1-1.7 days.
-  - Tier 1B: G-nir at Wadden and Ems, L9 at Villaviciosa and Escalda, K6 at {45, 90, 180}, and G-tune, about 3-5 days.
-  - No headline against Granadeiro is possible in Tier 1A' (robustness not assessed).
+  - Campaign 1: G-base at 5 sites and G-nir at Villaviciosa and Escalda, about 1.1-1.7 days.
+  - Campaign 2: G-nir at Wadden and Ems, L9 at Villaviciosa and Escalda, K6 at {45, 90, 180}, and G-tune, about 3-5 days.
+  - No headline against Granadeiro is possible in Campaign 1 (robustness not assessed).
 - **V9. Server and disk facts.**
   - Report the disk type (HDD or SSD), the free space and the sequential throughput for the volumes holding the cubes, the package, the results and TMPDIR.
-  - The need is about 0.3 TB for Tier 1A' and 0.6 TB with Tier 1B.
+  - The need is about 0.3 TB for Campaign 1 and 0.6 TB with Campaign 2.
   - Put the package on an SSD if there is one.
 - **V10. New analysis packages on the server:** R lme4, emmeans, metafor and partykit; optionally statsmodels in the Python venv. Without them, the numpy fallbacks are used and labelled.
 - **V11. Truth-blind index constants.** The NIR fixed threshold is the pooled Otsu, and the standardisation scale s_k the IQR ratio to NDWI, both on keep_full(P0, W3) per site from per-year histograms. Both are frozen before lock-A.
@@ -2749,15 +2755,15 @@ Each item gives the recommended default first.
   - Block size from the map-difference variograms, without the 4 km cap, plus the band-level test for P1.
   - Villaviciosa is expected to be descriptive.
 - **V24. Two campaigns and the cut order.**
-  - Tier 1A' takes about 10.5-11 days including contingency, or about 8 with 8 or more workers.
-  - Tier 1B is a later campaign of about 9-11 days.
+  - Campaign 1 takes about 10.5-11 days including contingency, or about 8 with 8 or more workers.
+  - Campaign 2 is a later campaign of about 9-11 days.
   - The mechanical cut list of §5.14 and the one-week fallback apply.
 - **V25. Truth metadata.**
   - Collect the Vaklodingen source and density per sheet.
   - The 20 m cells are the scoring support at the Dutch sites.
   - RWS intertidal laser altimetry at Escalda becomes a second truth if available.
-- **V26. Headline rule.** The seven conditions of §9.7. Tier 1A' headlines are labelled "provisional" until the nine-year archive check.
-- **V27. Away site and author review.** Tauranga Harbour in Tier 1B (Costa's home site; public LINZ LiDAR and gauges). Email each competitor's corresponding author the method card for review before lock-A.
+- **V26. Headline rule.** The seven conditions of §9.7. Campaign 1 headlines are labelled "provisional" until the nine-year archive check.
+- **V27. Away site and author review.** Tauranga Harbour in Campaign 2 (Costa's home site; public LINZ LiDAR and gauges). Email each competitor's corresponding author the method card for review before lock-A.
 - **V28. Symmetric tuning budget.** The grids of §5.12, tuned on Escalda, with tuned rows elsewhere.
 - **V29. Development judges and the forking-paths disclosure.** The authors complete both lists before lock-A (§1.7, §9.9).
 - **V30. Workers and the package layout.** The worker count follows the pilot: 8-12 at BLAS 1 if cpu/wall < 1.5, else 4 at BLAS 4. The package is transposed to pixel-major tiles after pass 2.
@@ -2784,7 +2790,7 @@ Three adversarial reviews examined revision 1: statistics and design (S), remote
 | S10 | medium | The CAE fill was a competitor's sibling (E5c); bias handling was mixed | Two fills (constant and FREQ) with agreement required; per-part median centring; E5a-c excluded from CAE verdicts; fill points marked | §7.3.3 |
 | S11 | medium | HPE used h_B, which saturates in amplified reaches; a fixed margin; HPE_raw undefined; HFI could reward noise | Gauge-interpolated h_ref at judged sites; a per-cell margin equivalent to 2 cm; HPE_raw dropped; HFI verdicts only jointly with ΔMSE_c; a noise-inflation unit test | §7.3.1-7.3.2, §10.3 |
 | S12 | medium | The curve view was unspecified; the floor included truth error; TTT was unreachable; the curve model could not identify I and D | Fixed N-invariant curve view with fills; s_method after σ²_T; absolute TTT targets (0.20 and 0.30 m) plus the relative one; model with (1 \| subset) and no I or D terms | §7.4, §8.3 |
-| S13 | medium | Factor shares pooled across truth types; seed noise was not separated; I × T was never estimated | Shares per site only; the seed-SD floor; an I × T check in Tier 1B, or aliasing stated | §9.4, §5.7, §5.11 |
+| S13 | medium | Factor shares pooled across truth types; seed noise was not separated; I × T was never estimated | Shares per site only; the seed-SD floor; an I × T check in Campaign 2, or aliasing stated | §9.4, §5.7, §5.11 |
 | S14 | low | Verdict precedence was undefined; NOT COMPUTABLE survivorship; regret against a varying set | An explicit verdict order with the "clear" sub-label; NOT COMPUTABLE counted as a loss with the computable share printed; regret against a fixed comparator set | §9.3, §9.5 |
 | S15 | low | The positive control was MAREA's own model; its bias tolerance was inconsistent with the estimands | Linear-mixing world over sub-pixel relief; per-method offsets from theory; removal only for a documented fault; misspecified worlds reported for every method | §10.2 |
 | S16 | low | Harness cost was reported as shared; interval scores mixed 95 % and 50 % intervals | Attribution by dependency signature, with shared-split and stand-alone costs; interval scores only for nominal 95 % intervals (GM20 rescaled, declared) | §8.1, §6.4, §3.3.1 |
@@ -2813,11 +2819,11 @@ The "missing" list of review S maps as follows:
 | R3 | major | State-dependent (MNAR) cloud masking on flats | Truth-free MNAR table and curves per cloud level; a logistic-slope covariate; C1d (dark area allowed) in OFAT | §2.2, §2.10, §9.4 |
 | R4 | major | All cloud levels came from Sen2Cor | OmniCloudMask (C11) in Tier 1 and in G1' at all sites; CLP/CLM checked (not listed by CDSE on 2026-10-09; Tier 2 if exposed); the cross-tab extended to dry flats at low tide and turbid channel water | §2.2 |
 | R5 | major | Collection-1 reprocessing made the date-based offset rules wrong; G-zarr might fail | Offset regime and Sen2Cor generation decided per scene; date rules withdrawn; G-offset; a pre-registered G-zarr response | §1.10, §1.11, §2.3, §10.1 |
-| R6 | major | Index effects were confounded with 20 m resolution | Every index with a 20 m band computed at 20 m on 2 × 2 means; NDWI@20 in the Tier-1 OFAT and in a Tier-1B G1' slice | §2.4, §5.6, §5.7 |
+| R6 | major | Index effects were confounded with 20 m resolution | Every index with a 20 m band computed at 20 m on 2 × 2 means; NDWI@20 in the Tier-1 OFAT and in a Campaign-2 G1' slice | §2.4, §5.6, §5.7 |
 | R7 | major | The strata omitted substrate, vegetation, turbidity, sampled-range position and amplification | All added (truth-free or truth-only definitions), and used in conditional verdicts, GAMs and partitions | §7.1, §9.6 |
 | R8 | major | PNOA LiDAR records the water surface at flight time | Flight time per strip, a Gijón-based level mask, constant-patch water detection, a coverage statement; descriptive if the flight time is unknown | §1.8, §17 (V18) |
 | R9 | major | Vaklodingen were treated as exact 10 m truth | 20 m cells as the scoring support at the Dutch sites; source and density metadata; a direct-measurement sensitivity; RWS LiDAR at Escalda if available | §1.8, §7.1, §17 (V25) |
-| R10 | major | Only home sites, and in-house rivals | Proposed away site (Tauranga, Tier 1B); author review of the cards; literature and in-house lag methods shown separately; scope of the conclusions stated | §0.8, §3.1, §5.14, §6.5 |
+| R10 | major | Only home sites, and in-house rivals | Proposed away site (Tauranga, Campaign 2); author review of the cards; literature and in-house lag methods shown separately; scope of the conclusions stated | §0.8, §3.1, §5.14, §6.5 |
 | R11 | moderate | OLS slope attenuation | b* = b/λ̂ (reliability-ratio correction). Deming regression was not adopted, because it needs each method's own error variance. | §7.2 |
 | R12 | moderate | Otsu on near-single-class or multimodal scenes; unclear D2 domain | A fixed domain Ω with a ring of permanent water and land; a minority-share guard ≥ 0.15; corr(t_s, h_B) and the fallback rate reported | §2.6 |
 | R13 | moderate | D5 was mis-cited to Murray et al. 2019 | Relabelled as an in-house majority vote (F4); Dynamic World as a Tier-2 learned detector | §2.6 |
@@ -2827,11 +2833,11 @@ The "missing" list of review S maps as follows:
 | R17 | moderate | The range filter hid amplified reaches | Per-band excluded counts; a local LG range sensitivity | §1.8, §7.6 |
 | R18 | moderate | Sun/view geometry, orbit and season were ignored | Angles and orbit in the sidecar; lag per relative orbit; anchor index by orbit and season; a low-sun (SZA > 70°) sensitivity; a summer-only subset family in Tier 2 | §1.10, §2.4, §3.3.1, §6.4 |
 | R19 | moderate | Non-stationarity in long windows | A temporal-split change map and the effective epoch | §2.7, §7.5 |
-| R20 | minor | SCL 11 (snow/ice) kept by C4/C5 | Counted per site-year; a class-11-blocked sensitivity (Tier 1B) | §1.11, §2.2 |
+| R20 | minor | SCL 11 (snow/ice) kept by C4/C5 | Counted per site-year; a class-11-blocked sensitivity (Campaign 2) | §1.11, §2.2 |
 | R21 | minor | EOT20-only boundary at Villaviciosa | Gijón residual and Cantabrian consensus sensitivities | §1.5 |
 | R22 | minor | Gauge time-stamp conventions | Recorded, centred, ± half-window sensitivity | §1.7 |
 | R23 | minor | Misregistration on channel banks | ±1 px shift sensitivity; a slopes < 2 % view | §7.6 |
-| R24 | minor | D4 reads the same layer as C | Labelled a naive baseline, moved to Tier 1B, excluded from the headline robustness sets | §2.6, §9.7 |
+| R24 | minor | D4 reads the same layer as C | Labelled a naive baseline, moved to Campaign 2, excluded from the headline robustness sets | §2.6, §9.7 |
 
 The remaining "missing" item of review R, the declared S2-L2A-only limitation, is in §0.8.
 
@@ -2839,7 +2845,7 @@ The remaining "missing" item of review R, the declared S2-L2A-only limitation, i
 
 | Id | Severity | Issue | Change | Where |
 |---|---|---|---|---|
-| C1 | critical | Revision 1 needed about 3 weeks against a 1-2 week envelope, and its cut list saved only 1.5-2 days | Tier 1A' ≈ 9.5 days (≈ 10.5-11 with contingency; ≈ 8 with 8+ workers); Tier 1B a separate campaign; a mechanical cut order with a 10-day cap printed by `plan`; a one-week fallback; a calendar | §5.14, §14.2, §14.5 |
+| C1 | critical | Revision 1 needed about 3 weeks against a 1-2 week envelope, and its cut list saved only 1.5-2 days | Campaign 1 ≈ 9.5 days (≈ 10.5-11 with contingency; ≈ 8 with 8+ workers); Campaign 2 a separate campaign; a mechanical cut order with a 10-day cap printed by `plan`; a one-week fallback; a calendar | §5.14, §14.2, §14.5 |
 | C2 | critical | C0 made dom and S the whole frame (light check: C0 U_rec 100 %, keep_full 69 % at Escalda) | Fixed S0; C0 never in dom or in a grid, run once on S0; `pilot dom` refusal rule | §2.10 |
 | C3 | high | dom and the range filter depended on the 2017-2022 data | dom frozen at lock-A on the 2023-2025 envelope; range filter from the 1-min h_B series; dom_version in the shard keys; outside-dom share measured | §1.8, §2.10, §13.2 |
 | C4 | high | code_key contradicted the invalidation table | Per-registry-entry source hashes; a test that a dummy level changes no existing key | §2, §13.2, §10.3 |
@@ -2866,7 +2872,7 @@ The "missing" list of review C maps as follows:
 - per-unit measurements: §8.2;
 - wall caps and hangs: §13.5;
 - the scoring design: §13.6;
-- Tier 1B gated on the 2017-2022 arrival: §5.14 and V24;
+- Campaign 2 gated on the 2017-2022 arrival: §5.14 and V24;
 - Granadeiro SD-mask sizes: §2.10;
 - the calendar: §14.5;
 - retention: §14.4.
@@ -2880,9 +2886,9 @@ The "missing" list of review C maps as follows:
 5. **MAREA runs under LB only** (review R proposed LB/LM/LG for every method). Its lag is a correction relative to the boundary. MAREA with a lag estimated relative to LM is Tier 2. No delay runs under every source and provides the headroom.
 6. **The 20 m cells are the scoring support** of every view at the Dutch sites, not an extra co-primary view (review R). This keeps the intersection-union at two views.
 7. **The per-location lag TOST is dropped** rather than given a method-side variance (review S offered both options). Most methods have no method-side interval.
-8. **AWEI_nsh, WRI and D4 move to Tier 1B, not Tier 2** (review C), because the user asked for "other indices if useful" and detection alternatives.
-9. **G-nir runs at Villaviciosa and Escalda in Tier 1A', and at Wadden and Ems in Tier 1B** (review C proposed two sites only). G-nir is Granadeiro's native cell, which the headline rule needs.
-10. **The away site is recommended for Tier 1B, not Tier 1A'** (review R). It does not fit the two-week envelope. It remains the user's decision (V27).
+8. **AWEI_nsh, WRI and D4 move to Campaign 2, not Tier 2** (review C), because the user asked for "other indices if useful" and detection alternatives.
+9. **G-nir runs at Villaviciosa and Escalda in Campaign 1, and at Wadden and Ems in Campaign 2** (review C proposed two sites only). G-nir is Granadeiro's native cell, which the headline rule needs.
+10. **The away site is recommended for Campaign 2, not Campaign 1** (review R). It does not fit the two-week envelope. It remains the user's decision (V27).
 11. **The development-free judges are a sensitivity, not the primary set** (review S). Dropping Harlingen from the primary set would remove one of only two Wadden locations.
 12. **HPE's margin is computed per cell**, which is the per-pixel form review S offered, not a per-site derived constant.
 
