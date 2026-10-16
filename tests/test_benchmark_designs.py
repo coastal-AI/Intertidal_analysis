@@ -20,6 +20,13 @@ AVAILABLE rows elsewhere; the Dutch LM rows at W1), the E0 'nodelay' unit
 writes E0a only, the never-cut items are checked on the kept units, the
 v2 block-size lattice is frozen, and the CLI guards (the sensing file's
 site, even --block-rows, SIGTERM as Ctrl-C, the output root's .gitignore).
+2026-10-15/16: check-env's inputs section (a missing, empty or cut-short
+input of a Campaign 1 step is a FAIL with the step and what to copy, a
+present one OK with its size or file count, a later milestone's a WARN; an
+entry that cannot be checked does not stop the section), the judge CSVs and
+Vaklodingen sheets named from this machine's stations.json and catalogue,
+the boundary gauges against the union IOC cache, and the INPUTS table, which
+names the code's own paths.
 
 Run:  python -X utf8 -m pytest tests/test_benchmark_designs.py -q
 """
@@ -495,3 +502,334 @@ def test_gauge_lag_rows_split_the_level_error():
     # the gauge-lag unit alone never stands in for MAREA's LB row (Stage L at W3)
     only_g = [u for u in units if u.status == "planned"]
     assert not D.never_cut_check(only_g, sites=D.DUTCH_SITES)["Stage L at W3"]["ok"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  check-env's inputs section (2026-10-15: the server lacked estuary_truth/)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_EST = "data_v4/gauges/estuary_truth/"
+_COPY_EST = "copy from the laptop: data_v4/gauges/estuary_truth/ (291 MB)"
+
+
+def test_cli_check_env_inputs_fail_ok_warn(tmp_path, monkeypatch):
+    """A missing, empty or cut-short input that a Campaign 1 step needs is a
+    FAIL that names the step and what to copy from the laptop (only the bad
+    files while their folder is here, the folder when it is not); a present
+    one is OK with its size or file count; a later milestone's is a WARN,
+    checked at 10 m only; an input of a site that is not checked is skipped;
+    an entry that cannot be checked is reported and the section goes on."""
+    import shutil
+
+    from experiments import v13_benchmark as v13
+    from experiments import validation_v2 as cli
+
+    est = tmp_path / "data_v4" / "gauges" / "estuary_truth"
+    est.mkdir(parents=True)
+    (est / "escalda__a.csv").write_bytes(b"x" * 2000)
+    (est / "escalda__c.csv").write_bytes(b"x" * 999)              # an interrupted copy
+    (tmp_path / "data_v4" / "gauges" / "ioc_stations.json").write_bytes(b"[]" * 1500)
+    ocean = tmp_path / "tide_models" / "M" / "ocean_tides"
+    ocean.mkdir(parents=True)
+    for k in range(3):
+        (ocean / f"c{k}_ocean_m.nc").write_bytes(b"y" * 10)
+    (tmp_path / "products_e").mkdir()
+    (tmp_path / "products_e" / "marea_extract.npz").write_bytes(b"")
+    sizes = {_EST + "escalda__a.csv": 2000, _EST + "escalda__c.csv": 1000}
+    table = (
+        cli.Need("IOC station list", ("data_v4/gauges/ioc_stations.json",), ("escalda", "wadden"),
+                 "prepare (h_B)", "before prepare", "copy from the laptop: data_v4/gauges/"
+                 "ioc_stations.json", copy="data_v4/gauges/ioc_stations.json"),
+        cli.Need("tide model", ("tide_models/M/ocean_tides/*_ocean_m.nc",), (), "prepare (h_B)",
+                 "before prepare", "copy from the laptop: tide_models/M/", copy="tide_models/M/",
+                 count=3),
+        cli.Need("judge stations", (_EST + "stations.json",), ("escalda", "ferrol"),
+                 "fetch judges", "before fetch judges", _COPY_EST, copy=_EST),
+        cli.Need("judge series", (_EST + "escalda__a.csv", _EST + "escalda__b.csv",
+                                  _EST + "escalda__c.csv"), ("escalda",),
+                 "truth escalda (lag truths)", "before truth", _COPY_EST, copy=_EST),
+        cli.Need("production extraction", ("products_e/marea_extract.npz",), ("ems",),
+                 "the gate G-keep", "V2", "made on the server", note="identity not checked"),
+        cli.Need("RTK grid", ("products_v/grid.tif",), ("villaviciosa",), "truth villaviciosa",
+                 "before truth", "tracked in git: git pull"),
+    )
+    ck = v13.Checks()
+    out = cli.check_inputs(ck, ["escalda", "ems"], root=str(tmp_path), table=table, sizes=sizes,
+                           boundary=False)
+    got = {i["what"]: (i["level"], i["detail"]) for i in ck.items}
+    assert got["input IOC station list"] == ("OK", "data_v4/gauges/ioc_stations.json, 3 KB "
+                                                   "(escalda)")
+    assert got["input tide model"] == ("OK", "3 files, 30 B in tide_models/M/ocean_tides/ "
+                                             "(every site)")
+    assert got["input judge stations"] == (
+        "FAIL", "data_v4/gauges/estuary_truth/stations.json is missing (escalda); needed now "
+                "(fetch judges is the first V1 step); used by fetch judges; get it: " + _COPY_EST)
+    level, detail = got["input escalda judge series"]
+    assert level == "FAIL" and detail == (
+        "2 of 3 files missing or incomplete in data_v4/gauges/estuary_truth/ (escalda__b.csv, "
+        "escalda__c.csv (has 999 B, not the laptop's 1,000 B (an interrupted copy?))); needed "
+        "before truth; used by truth escalda (lag truths); get it: " + _COPY_EST)
+    assert got["input ems production extraction"] == (
+        "WARN", "products_e/marea_extract.npz is empty (0 B); needed at milestone V2; used by "
+                "the gate G-keep; get it: made on the server")
+    assert "input villaviciosa RTK grid" not in got           # villaviciosa is not checked
+    # the folder is here: only the bad files are to be copied
+    assert out == {"OK": 2, "FAIL": 2, "WARN": 1,
+                   "copy": [_EST + "stations.json", _EST + "escalda__b.csv",
+                            _EST + "escalda__c.csv"]}
+    assert got["inputs summary"][1].endswith(
+        "(WARN); copy from the laptop to the same repository-relative paths with scp -p (it "
+        "keeps the file times; a folder goes with scp -p -r into its parent folder): "
+        + ", ".join(out["copy"]))
+    (tmp_path / "products_e" / "marea_extract.npz").write_bytes(b"z")
+    ck = v13.Checks()
+    cli.check_inputs(ck, ["ems"], root=str(tmp_path), table=table, boundary=False)
+    assert {i["what"]: i["detail"] for i in ck.items}["input ems production extraction"] == (
+        "products_e/marea_extract.npz, 1 B; identity not checked")
+    # a glob short of its count is a FAIL; at 20 m the later milestones are not checked;
+    # without its folder here, the folder is to be copied (and none of its files)
+    (ocean / "c2_ocean_m.nc").unlink()
+    shutil.rmtree(est)
+    ck = v13.Checks()
+    out = cli.check_inputs(ck, ["escalda", "ems"], res=20, root=str(tmp_path), table=table,
+                           sizes=sizes, boundary=False)
+    got = {i["what"]: (i["level"], i["detail"]) for i in ck.items}
+    assert got["input tide model"] == ("FAIL", (
+        "tide_models/M/ocean_tides/*_ocean_m.nc matches 2 of 3 files (every site); needed "
+        "before prepare; used by prepare (h_B); get it: copy from the laptop: tide_models/M/"))
+    assert "input ems production extraction" not in got
+    assert out == {"OK": 1, "FAIL": 3, "WARN": 0, "copy": ["tide_models/M/", _EST]}
+    # an entry that cannot be checked (a stale mount, say) is reported at its level
+    def stale(*a, **k):
+        raise OSError("stale file handle")
+
+    monkeypatch.setattr(cli, "_scan_input", stale)
+    ck = v13.Checks()
+    out = cli.check_inputs(ck, ["ems"], root=str(tmp_path), table=table, boundary=False)
+    got = {i["what"]: (i["level"], i["detail"]) for i in ck.items}
+    assert got["input tide model"][0] == "FAIL" and got["input tide model"][1].startswith(
+        "cannot be checked (OSError: stale file handle) (every site); needed before prepare")
+    assert got["input ems production extraction"][0] == "WARN"
+    assert out["FAIL"] == 1 and out["WARN"] == 1 and "inputs summary" in got
+
+
+def test_cli_check_env_inputs_names_from_this_machines_files(tmp_path, monkeypatch):
+    """The judges' CSVs are named from this machine's stations.json (as
+    judges.stations reads it) and the sheets from sheets_for on this
+    machine's catalogue; while those files are absent, the laptop's names.
+    A stations.json without a judge of config.JUDGES, or a catalogue that
+    sheets_for cannot read, is a FAIL."""
+    from experiments import v13_benchmark as v13
+    from experiments import validation_v2 as cli
+
+    monkeypatch.chdir(ROOT)
+    from experiments import v0_vaklodingen_fetch as v0
+
+    table = (cli.Need("judge series", (_EST + "laptop.csv",), ("wadden",), "truth wadden",
+                      "before fetch judges", _COPY_EST, copy=_EST, derive="judges"),
+             cli.Need("Vaklodingen sheets", ("data_v4/truth/vaklodingen/vaklodingenKB1.nc",),
+                      ("ems",), "truth ems --part elev", "before truth",
+                      "copy from the laptop: data_v4/truth/vaklodingen/",
+                      copy="data_v4/truth/vaklodingen/", derive="vak"))
+
+    def run():
+        ck = v13.Checks()
+        cli.check_inputs(ck, ["wadden", "ems"], root=str(tmp_path), table=table, sizes={},
+                         boundary=False)
+        return {i["what"]: (i["level"], i["detail"]) for i in ck.items}
+
+    got = run()                                                  # neither file here
+    assert got["input wadden judge series"][1].startswith(
+        "data_v4/gauges/estuary_truth/laptop.csv is missing (names from the laptop's list: "
+        "stations.json is absent here); needed now")
+    assert got["input ems Vaklodingen sheets"][1].startswith(
+        "data_v4/truth/vaklodingen/vaklodingenKB1.nc is missing (names from the laptop's list: "
+        "the catalogue is absent here); needed before truth")
+    # stations.json here: the 'file' of each judge
+    est = tmp_path / "data_v4" / "gauges" / "estuary_truth"
+    est.mkdir(parents=True)
+    rows = [{"code": c, "site": "wadden", "file": f"wadden__{c}.csv", "in_boundary": False}
+            for c in config.JUDGES["wadden"]]
+    (est / "stations.json").write_text(json.dumps(rows), encoding="utf-8")
+    for r in rows:
+        (est / r["file"]).write_bytes(b"z" * 10)
+    assert run()["input wadden judge series"] == (
+        "OK", "2 files, 20 B in data_v4/gauges/estuary_truth/ (names from stations.json)")
+    (est / rows[1]["file"]).unlink()
+    assert run()["input wadden judge series"][1].startswith(
+        f"1 of 2 files missing in data_v4/gauges/estuary_truth/ ({rows[1]['file']}) (names "
+        "from stations.json); needed now")
+    (est / "stations.json").write_text(json.dumps(rows[:1]), encoding="utf-8")
+    level, detail = run()["input wadden judge series"]
+    assert level == "FAIL" and detail.startswith(
+        "data_v4/gauges/estuary_truth/stations.json cannot list the wadden judges (KeyError: "
+        "data_v4/gauges/estuary_truth/stations.json lacks the judges ['harlingen.waddenzee'] "
+        "of wadden); needed now")
+    # the catalogue here: sheets_for's names, but only for the repository whose
+    # catalogue sheets_for reads (v0.ROOT)
+    (tmp_path / "data_v4" / "truth").mkdir(parents=True)
+    (tmp_path / "data_v4" / "truth" / "vaklodingen_catalog.nc").write_bytes(b"c")
+
+    def broken(site):
+        raise OSError("not a netCDF file")
+
+    monkeypatch.setattr(v0, "sheets_for", broken)
+    assert run()["input ems Vaklodingen sheets"][1].startswith(
+        "data_v4/truth/vaklodingen/vaklodingenKB1.nc is missing (names from the laptop's list); "
+        "needed before truth")
+    monkeypatch.setattr(v0, "ROOT", str(tmp_path))
+    monkeypatch.setattr(v0, "sheets_for", lambda site: [("vaklodingenKB9.nc", None, None)])
+    got = run()["input ems Vaklodingen sheets"]
+    assert got[0] == "FAIL" and got[1].startswith(
+        "data_v4/truth/vaklodingen/vaklodingenKB9.nc is missing (names from the catalogue); "
+        "needed before truth")
+    (tmp_path / "data_v4" / "truth" / "vaklodingen").mkdir()
+    (tmp_path / "data_v4" / "truth" / "vaklodingen" / "vaklodingenKB9.nc").write_bytes(b"s")
+    assert run()["input ems Vaklodingen sheets"] == (
+        "OK", "data_v4/truth/vaklodingen/vaklodingenKB9.nc, 1 B (names from the catalogue)")
+    monkeypatch.setattr(v0, "sheets_for", broken)
+    assert run()["input ems Vaklodingen sheets"] == (
+        "FAIL", "data_v4/truth/vaklodingen_catalog.nc cannot list the ems sheets (OSError: not "
+                "a netCDF file); needed before truth; used by truth ems --part elev; get it: "
+                "copy from the laptop: data_v4/truth/vaklodingen/")
+
+
+def test_cli_check_env_boundary_gauges_against_the_union_cache(tmp_path):
+    """At 10 m, the boundary codes of this machine's ioc_stations.json
+    (boundary_codes) must be among fetch ioc's UNION_CODES and ready in the
+    union cache (union_ready); a pytmd site has no line, nor has any site
+    while the list is absent (its own line FAILs)."""
+    from experiments import v13_benchmark as v13
+    from experiments import validation_v2 as cli
+    from experiments.benchmark.fetch import ioc as fioc
+
+    gauges = tmp_path / "data_v4" / "gauges"
+    cache = gauges / "ioc_2017-2025"
+    cache.mkdir(parents=True)
+    st = [{"Code": "vlis", "Lat": 51.4429, "Lon": 3.5970},
+          {"Code": "brsk", "Lat": 51.4014, "Lon": 3.5477},
+          {"Code": "trnz", "Lat": 51.3362, "Lon": 3.8195}]          # held out at escalda
+    (gauges / "ioc_stations.json").write_text(json.dumps(st), encoding="utf-8")
+    man = {"codes": {}}
+    for code in ("vlis", "brsk"):
+        for y in fioc.UNION_YEARS:
+            (cache / f"ioc_{code}_{y}-01-01_{y}-12-31.json").write_text("[1]")
+        (cache / fioc.marker_name(code)).write_text("[]")
+        man["codes"][code] = {"years": {str(y): {"ok": True, "kind": "downloaded"}
+                                        for y in fioc.UNION_YEARS}}
+    (cache / fioc.MANIFEST_NAME).write_text(json.dumps(man), encoding="utf-8")
+
+    def run(sites=("escalda", "villaviciosa")):
+        ck = v13.Checks()
+        out = cli.check_boundary_cache(ck, list(sites), root=str(tmp_path))
+        return out, {i["what"]: (i["level"], i["detail"]) for i in ck.items}
+
+    out, got = run()
+    assert out == {"OK": 1, "FAIL": 0} and list(got) == ["input escalda boundary gauges"]
+    assert got["input escalda boundary gauges"] == (
+        "OK", "['vlis', 'brsk'] from data_v4/gauges/ioc_stations.json, ready in "
+              "data_v4/gauges/ioc_2017-2025/ (every year 2017-2025, markers, assessed by the "
+              "last fetch ioc)")
+    # inside the inputs section at 10 m only, counted in its summary
+    ck = v13.Checks()
+    res = cli.check_inputs(ck, ["escalda"], root=str(tmp_path), table=())
+    assert res["OK"] == 1 and [i["what"] for i in ck.items] == [
+        "inputs", "input escalda boundary gauges", "inputs summary"]
+    ck = v13.Checks()
+    cli.check_inputs(ck, ["escalda"], res=20, root=str(tmp_path), table=())
+    assert "input escalda boundary gauges" not in [i["what"] for i in ck.items]
+    # a missing marker: not ready
+    (cache / fioc.marker_name("brsk")).unlink()
+    out, got = run()
+    level, detail = got["input escalda boundary gauges"]
+    assert out["FAIL"] == 1 and level == "FAIL" and detail.startswith(
+        "['vlis', 'brsk'] from data_v4/gauges/ioc_stations.json: the union IOC cache is not "
+        "ready (brsk: no union marker data_v4/gauges/ioc_2017-2025/ioc_brsk_2017-01-01_"
+        "2025-12-31.json); needed before prepare; used by prepare --step record")
+    assert detail.endswith("get it: run 'fetch ioc' (exit 0 only when the cache is ready)")
+    # a list whose nearest gauge fetch ioc never fetches
+    (gauges / "ioc_stations.json").write_text(
+        json.dumps(st + [{"Code": "zzzz", "Lat": 51.395, "Lon": 3.70}]), encoding="utf-8")
+    level, detail = run()[1]["input escalda boundary gauges"]
+    assert level == "FAIL" and detail.startswith(
+        "data_v4/gauges/ioc_stations.json gives ['zzzz', 'vlis']: ['zzzz'] not among fetch "
+        "ioc's UNION_CODES")
+    # no union cache at all
+    (gauges / "ioc_stations.json").write_text(json.dumps(st), encoding="utf-8")
+    import shutil
+    shutil.rmtree(cache)
+    assert "(data_v4/gauges/ioc_2017-2025/ does not exist)" in \
+        run()[1]["input escalda boundary gauges"][1]
+    # no list: no line (the 'IOC station list' entry FAILs)
+    (gauges / "ioc_stations.json").unlink()
+    assert run() == ({"OK": 0, "FAIL": 0}, {})
+
+
+def test_cli_check_env_inputs_table_names_the_code_paths(monkeypatch):
+    """The INPUTS table holds the code's own paths: the judges' stations, the
+    IOC list, the PNOA DTM and the RTK files; one judge-series entry per site
+    with judges, one CSV per listed judge (the stations.json 'file' where the
+    file is here), LG named only where LG runs; the sheets of every
+    Vaklodingen site (sheets_for where the catalogue is here); the 10 m
+    production files of config.site_config; the laptop sizes of the
+    laptop-only copies. No Zarr store and no CLI output is listed; a copy
+    hint names its path."""
+    from experiments import v1_vaklodingen_validate as v1
+    from experiments import v10_validation_report as v10
+    from experiments import validation_v2 as cli
+    from pyintertidal import rtk
+
+    monkeypatch.chdir(ROOT)
+    assert set(cli.WHEN_PHRASE) == set(cli.WHEN) and set(cli.CAMPAIGN1_WHEN) < set(cli.WHEN)
+    assert (cli._STATIONS, cli._ESTUARY, cli._IOC_STATIONS, cli._VAK_DIR, cli._MDT02) == (
+        config.STATIONS_JSON, config.ESTUARY_TRUTH + "/", config.IOC_STATIONS,
+        v1.TRUTH_DIR + "/", v10.MDT02)
+    assert cli._LG_SITES == tuple(settings.LEVEL["LG"].sites)
+    for n in cli.INPUTS:
+        assert n.when in cli.WHEN
+        assert n.what and n.needed_by and n.how and set(n.sites) <= set(config.SITES)
+        assert n.paths and sum("*" in p for p in n.paths) <= 1
+        for p in n.paths:
+            assert "\\" not in p and not os.path.isabs(p) and ".." not in p.split("/")
+            assert not p.endswith("/")
+            assert not p.startswith(("cubes/", "results/", "data_v4/gauges/ioc_2017-2025"))
+        if n.copy:
+            assert n.how.startswith(f"copy from the laptop: {n.copy}")
+        if n.derive:
+            assert n.derive in ("judges", "vak") and len(n.sites) == 1
+    by = {(n.what, n.sites): n for n in cli.INPUTS}
+    paths = {p for n in cli.INPUTS for p in n.paths}
+    assert {config.STATIONS_JSON, config.IOC_STATIONS, v10.MDT02, rtk.DEFAULT_CSV,
+            rtk.DEFAULT_ALICANTE_CSV, rtk.DEFAULT_GRID} <= paths
+    gauge_sites = tuple(s for s in config.SITES if config.BOUNDARY[s]["kind"] == "make_boundary")
+    judge_sites = tuple(s for s in config.SITES if config.JUDGES[s])
+    assert by[("IOC station list", gauge_sites)].when == "before prepare"
+    assert by[("judge stations", judge_sites)].when == "before fetch judges"
+    series = {n.sites[0]: [os.path.basename(p) for p in n.paths]
+              for n in cli.INPUTS if n.what == "judge series"}
+    assert {s: len(f) for s, f in series.items()} == {s: len(config.JUDGES[s])
+                                                      for s in judge_sites}
+    for n in cli.INPUTS:
+        if n.what == "judge series":
+            assert n.derive == "judges" and n.when == "before fetch judges"
+            assert ("(LG)" in n.needed_by) == (n.sites[0] in settings.LEVEL["LG"].sites)
+    if os.path.exists(config.STATIONS_JSON):
+        with open(config.STATIONS_JSON, encoding="utf-8") as f:
+            st = {r["code"]: r["file"] for r in json.load(f)}
+        assert series == {s: [st[c] for c in config.JUDGES[s]] for s in judge_sites}
+    # the laptop sizes: every judge CSV, stations.json and the PNOA DTM, equal where here
+    assert set(cli.LAPTOP_BYTES) == {config.STATIONS_JSON, v10.MDT02} | {
+        cli._ESTUARY + f for files in series.values() for f in files}
+    for p, nbytes in cli.LAPTOP_BYTES.items():
+        if os.path.exists(p):
+            assert os.path.getsize(p) == nbytes, p
+    vak = {n.sites[0]: [os.path.basename(p) for p in n.paths]
+           for n in cli.INPUTS if n.what == "Vaklodingen sheets"}
+    assert set(vak) == {s for s in config.SITES if "vaklodingen" in config.ELEVATION_TRUTH[s]}
+    if os.path.exists("data_v4/truth/vaklodingen_catalog.nc"):
+        from experiments import v0_vaklodingen_fetch as v0
+        assert vak == {s: [name for name, _, _ in v0.sheets_for(s)] for s in vak}
+    for site in config.SITES:
+        cfg = config.site_config(site, 10)
+        assert by[("production extraction", (site,))].paths == (cfg.extract,)
+        assert by[("production MAREA result", (site,))].paths == (cfg.transition_result,)

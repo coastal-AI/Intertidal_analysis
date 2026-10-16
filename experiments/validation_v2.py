@@ -44,6 +44,22 @@ validation_v2_20m``: local software checks only, never reported numbers.
 ``VALIDATION_V2_SPACE_MARGIN_GB`` lowers the 20 GB free-space margin of the
 passes for local scratch checks on a small disk (never on the server).
 
+External inputs (check-env)
+---------------------------
+``check-env`` also lists every external input of the commands: the gauge,
+truth, tide-model and production files that no command of this CLI writes
+(:data:`INPUTS`, one declarative table; the Zarr stores and the outputs of
+earlier steps are not in it). It checks existence and sizes only:
+OK when present; FAIL when a Campaign 1 step (fetch judges, prepare, truth)
+needs one that is missing, empty, of another size than the laptop's copy
+(:data:`LAPTOP_BYTES`, the laptop-only files) or whose names this machine's
+stations.json or Vaklodingen catalogue cannot give (the judge CSVs and the
+sheets are named from those files when present); WARN when only a later
+milestone does. At 10 m, one line per gauge site checks the boundary codes
+of this machine's ioc_stations.json against the union IOC cache of ``fetch
+ioc``. Each message names the step and how to get the input (for a
+laptop-only input, the repository-relative path to copy, with ``scp -p``).
+
 Milestone V1 delivers fetch, inputs, check-env, prepare, truth, pilot
 crosstab and pilot dom, plan and status (and the optional ``diag time``).
 The other commands of §13.3 (the gates, control, timing, lock, run, pilot
@@ -85,13 +101,16 @@ Pre-registered rules this file enforces (§13.3, §13.7, §13.8)
 * No command reads a truth before its lock (the scoring commands are V2+).
 """
 import argparse
+import glob
 import importlib
 import json
 import os
+import posixpath
 import socket
 import sys
 import time
 import traceback
+from typing import NamedTuple
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #: the output root per resolution (spec §13.1); ``VALIDATION_V2_ROOT``
@@ -542,6 +561,422 @@ def cmd_inputs(args):
     return 1 if bad else 0
 
 
+# ── the external inputs (check-env's 'inputs' section; merged sweeps of 2026-10-15/16) ──
+
+class Need(NamedTuple):
+    """One external input of the commands in :data:`INPUTS`.
+
+    ``paths`` are repository-relative files with '/' separators, or one
+    glob ('*') that must match at least ``count`` non-empty files. ``sites``
+    are the sites whose commands read it (() = every site). ``when`` is one
+    of :data:`WHEN`. ``how`` says how to get it on this machine; ``copy`` is
+    the repository-relative file or folder (trailing '/') to copy from the
+    laptop ('' when the input is not a laptop copy). ``derive`` (one-site
+    entries) names the file from which the code itself takes the names on
+    this machine: 'judges' (stations.json, ``judges.stations``) or 'vak'
+    (the Vaklodingen catalogue, ``v0_vaklodingen_fetch.sheets_for``);
+    ``paths`` are then the laptop's names, used while that file is absent.
+    ``note`` is added to the OK line.
+    """
+    what: str
+    paths: tuple
+    sites: tuple
+    needed_by: str
+    when: str
+    how: str
+    copy: str = ""
+    count: int = 1
+    derive: str = ""
+    note: str = ""
+
+
+#: the Campaign 1 steps of milestone V1 (fetch judges is the first): a
+#: missing or incomplete input is a FAIL
+CAMPAIGN1_WHEN = ("before fetch judges", "before prepare", "before truth")
+#: every ``when`` of the table; the later ones are WARN
+WHEN = CAMPAIGN1_WHEN + ("V2", "V3 methods", "V4", "Campaign 2", "optional")
+WHEN_PHRASE = {"before fetch judges": "needed now (fetch judges is the first V1 step)",
+               "before prepare": "needed before prepare", "before truth": "needed before truth",
+               "V2": "needed at milestone V2", "V3 methods": "needed at milestone V3 (methods)",
+               "V4": "needed at milestone V4", "Campaign 2": "needed for Campaign 2",
+               "optional": "optional"}
+_GAUGE_SITES = ("escalda", "wadden", "ems", "ferrol")      # make_boundary (config.BOUNDARY)
+_DUTCH = ("escalda", "wadden", "ems")
+_LG_SITES = ("escalda", "wadden", "ems")                   # settings.LEVEL["LG"].sites
+_IOC_STATIONS = "data_v4/gauges/ioc_stations.json"         # config.IOC_STATIONS
+_ESTUARY = "data_v4/gauges/estuary_truth/"                 # config.ESTUARY_TRUTH
+_STATIONS = _ESTUARY + "stations.json"                     # config.STATIONS_JSON
+_VAK_CATALOGUE = "data_v4/truth/vaklodingen_catalog.nc"    # read by sheets_for
+_VAK_DIR = "data_v4/truth/vaklodingen/"                    # v1_vaklodingen_validate.TRUTH_DIR
+_MDT02 = "data_v4/truth/pnoa/MDT02-WGS84-0015-3-COB2.tif"  # v10_validation_report.MDT02
+_COPY_ESTUARY = (f"copy from the laptop: {_ESTUARY} (291 MB, 40 files; it holds stations.json "
+                 "and the 18 judge CSVs), once and with scp -p: the judge table, the lag "
+                 "truths and the sources step key on the file times")
+#: the judges' CSVs as delivered on 2026-10-07 (the 'file' of each config.JUDGES
+#: code in stations.json, in that order) and their sizes on the laptop
+_JUDGE_FILES = {
+    "escalda": {"escalda__rws_gatvanborssele.csv": 4_140_412,
+                "escalda__rws_terneuzen.csv": 4_129_410,
+                "escalda__rws_terneuzen.westsluis.buiten.csv": 4_118_385,
+                "escalda__rws_borssele.csv": 244_291},
+    "wadden": {"wadden__rws_terschelling.west.csv": 3_994_797,
+               "wadden__rws_harlingen.waddenzee.csv": 4_010_989},
+    "ems": {"ems__wsv_emshoern_9340010.csv": 41_559_633,
+            "ems__rws_eemshaven.waddenzee.csv": 4_014_737,
+            "ems__rws_eemshaven.haven.csv": 350_095,
+            "ems__wsv_dukegat_3990020.csv": 41_526_019,
+            "ems__wsv_knock_3990010.csv": 41_493_031,
+            "ems__rws_delfzijl.csv": 4_012_577,
+            "ems__wsv_emden_neue_seeschleuse_3970010.csv": 41_516_909,
+            "ems__wsv_pogum_3950020.csv": 41_497_066,
+            "ems__rws_nieuwestatenzijl.dollard.csv": 4_136_737,
+            "ems__rws_uithuizerwad.csv": 2_262_632},
+    "ferrol": {"ferrol__ioc_fer2.csv": 39_768_602, "ferrol__pde_fer4_3212.csv": 8_410_877},
+}
+_JUDGE_SITES = tuple(_JUDGE_FILES)                         # config.JUDGES (villaviciosa: none)
+#: the sizes of the laptop-only copies (no other source exists): a file of
+#: another size here is an interrupted or a different copy (a FAIL)
+LAPTOP_BYTES = {_STATIONS: 51_943, _MDT02: 92_977_360,
+                **{_ESTUARY + f: b for files in _JUDGE_FILES.values() for f, b in files.items()}}
+#: the Vaklodingen sheets of each site on the laptop (sheets_for) and their size
+_VAK_SHEETS = {
+    "escalda": (("KB113_4948", "KB114_4948", "KB114_5150", "KB115_4948", "KB115_5150"),
+                "628 MB"),
+    "wadden": (("KB124_1312", "KB124_1514", "KB124_1716", "KB124_1918", "KB125_1312",
+                "KB125_1514", "KB125_1716", "KB125_1918", "KB126_1312", "KB126_1514",
+                "KB126_1716", "KB126_1918", "KB127_1312", "KB127_1514", "KB127_1716"),
+               "1.13 GB"),
+    "ems": (("KB135_1110", "KB135_1312", "KB136_1110", "KB136_1312", "KB136_1514",
+             "KB137_1110", "KB137_1312", "KB137_1514", "KB137_1716", "KB138_1514",
+             "KB138_1716", "KB139_1514"), "580 MB"),
+}
+#: the 10 m production files of the reproduction gates (config.site_config(site, 10):
+#: extract, transition_result)
+_PRODUCTION = {
+    "escalda": ("products_escalda_10m/marea_extract.npz",
+                "products_escalda_10m/marea_eot20_g2/result.json"),
+    "wadden": ("products_wadden_10m/marea_extract.npz",
+               "products_wadden_10m/marea_eot20_g1/result.json"),
+    "ems": ("products_ems_10m/marea_extract.npz", "products_ems_10m/marea_eot20_g1/result.json"),
+    "ferrol": ("products_ferrol/marea_extract.npz", "products_ferrol/marea_eot20_g1/result.json"),
+    "villaviciosa": ("products_marea/marea_extract.npz",
+                     "products_marea/marea_eot20_g0_2023-2025/result.json"),
+}
+_PRODUCTION_HOW = ("made on the server by the 10 m production run (2026-10-01..06); never "
+                   "replace it with a laptop copy (the laptop's are older or absent)")
+_UNCHECKED = "identity not checked (the gate compares it; the laptop's copies are older)"
+_GIT_HOW = "tracked in git: git pull (git checkout -- <path> restores a deleted file)"
+
+
+def _judge_use(site):
+    """What reads a site's judge CSVs (LG only at :data:`_LG_SITES`)."""
+    use = (f"fetch judges (it records coverage 0 for a missing CSV), truth {site} (the judge "
+           "table and the lag truths" + ("; Ferrol has no elevation truth, so these are its "
+                                         "only truth)" if site == "ferrol" else ")"))
+    return use + (" and prepare --step sources (LG)" if site in _LG_SITES else "")
+
+
+#: every external input of the commands, Campaign 1 first (check-env's 'inputs')
+INPUTS = (
+    Need("judge stations", (_STATIONS,), _JUDGE_SITES,
+         "fetch judges (it opens it first); prepare --step support (NB: copy it before "
+         "support,dom, since a later arrival changes S0 and dom and a frozen dom refuses) "
+         "and, at escalda, wadden and ems, --step sources (LG); truth <site> (the judge "
+         "table, built before the elevation part, so --part elev fails too)",
+         "before fetch judges", _COPY_ESTUARY, copy=_ESTUARY),
+    *(Need("judge series", tuple(_ESTUARY + f for f in files), (site,), _judge_use(site),
+           "before fetch judges", _COPY_ESTUARY, copy=_ESTUARY, derive="judges")
+      for site, files in _JUDGE_FILES.items()),
+    Need("IOC station list", (_IOC_STATIONS,), _GAUGE_SITES,
+         "prepare --step record (and series, levels) and truth: the boundary h_B "
+         "(make_boundary takes the nearest IOC gauges from this list; the lines "
+         "'input <site> boundary gauges' check them against the union IOC cache)",
+         "before prepare", f"copy from the laptop: {_IOC_STATIONS} (2.6 MB), only when this "
+         "machine has none: never replace a copy before comparing sha256 (the list decides "
+         "the boundary gauges)", copy=_IOC_STATIONS),
+    Need("EOT20 tide model", ("tide_models/EOT20/ocean_tides/*_ocean_eot20.nc",), (),
+         "prepare and truth (every h_B: EOT20 in make_boundary, PyTMDBoundary at "
+         "villaviciosa) and prepare --step sources (LT)",
+         "before prepare", "copy from the laptop: tide_models/EOT20/ (2.26 GB), or unpack the "
+         "EOT20 release (SEANOE) into it; 'fetch tides' lists the installed models",
+         copy="tide_models/EOT20/", count=17),
+    Need("Vaklodingen catalogue", (_VAK_CATALOGUE,), _DUTCH,
+         "truth <site> --part elev (sheets_for lists the site's sheets from it) and fetch "
+         "vak-meta", "before truth", f"copy from the laptop: {_VAK_CATALOGUE} (41 KB)",
+         copy=_VAK_CATALOGUE),
+    *(Need("Vaklodingen sheets", tuple(f"{_VAK_DIR}vaklodingen{n}.nc" for n in names), (site,),
+           f"truth {site} --part elev (D_truth, which enters S0 and dom: truth only logs a "
+           "missing sheet and the truth shrinks) and fetch vak-meta",
+           "before truth", f"copy from the laptop: {_VAK_DIR} (only the missing sheets; "
+           f"{size} for the {len(names)} {site} sheets), or python -X utf8 -m "
+           f"experiments.v0_vaklodingen_fetch {site} (Deltares OPeNDAP; needs the catalogue)",
+           copy=_VAK_DIR, derive="vak")
+      for site, (names, size) in _VAK_SHEETS.items()),
+    Need("PNOA LiDAR DTM (MDT02)", (_MDT02,), ("villaviciosa",),
+         "truth villaviciosa --part elev (the PNOA D_truth, which enters S0 and dom)",
+         "before truth", "copy from the laptop: data_v4/truth/pnoa/ (93 MB)",
+         copy="data_v4/truth/pnoa/"),
+    Need("RTK survey", ("data/villaviciosa_rtk_gnss.csv",
+                        "data/villaviciosa_rtk_gnss_alicante.csv"), ("villaviciosa",),
+         "truth villaviciosa --part elev (the RTK points, read only through "
+         "pyintertidal.rtk.load_rtk(); scored in the Alicante datum)",
+         "before truth", _GIT_HOW),
+    Need("RTK grid", ("products_villaviciosa/hsr_eot20_2023-2025.tif",), ("villaviciosa",),
+         "truth villaviciosa --part elev (the PNOA and RTK grid) and inputs (grid check)",
+         "before truth", _GIT_HOW),
+    *(Need("production extraction", (extract,), (site,),
+           "the reproduction gates G-keep and G-marea (production keep, Y, C, sea and "
+           "inter on the legacy inputs)", "V2", _PRODUCTION_HOW, note=_UNCHECKED)
+      for site, (extract, _) in _PRODUCTION.items()),
+    *(Need("production MAREA result", (result,), (site,),
+           "the reproduction gate G-record (the 10 m production record and its tide range)",
+           "V2", _PRODUCTION_HOW, note=_UNCHECKED)
+      for site, (_, result) in _PRODUCTION.items()),
+    Need("Granadeiro reference", ("products_marea/granadeiro2021/granadeiro2021.npz",),
+         ("villaviciosa",), "the gate G-granadeiro (v8 paper products at Villaviciosa)",
+         "V4", "made on the server by experiments/v8_granadeiro2021.py (2026-10-05); the "
+         "laptop holds only the mirror under results/server_10m/", note=_UNCHECKED),
+)
+
+
+def _size(nbytes):
+    if nbytes < 1e3:
+        return f"{nbytes} B"
+    if nbytes < 1e6:
+        return f"{nbytes / 1e3:.0f} KB"
+    if nbytes < 1e9:
+        return f"{nbytes / 1e6:.1f} MB"
+    return f"{nbytes / 1e9:.2f} GB"
+
+
+def _local(root, rel):
+    return os.path.join(root, *[x for x in rel.split("/") if x])
+
+
+def _derive_paths(need, site, root):
+    """``(paths, source, error)`` of one entry: the files the code reads on
+    this machine. 'judges': the CSV of each judge of ``judges.stations(site)``
+    on this machine's stations.json; 'vak': the sheets of
+    ``v0_vaklodingen_fetch.sheets_for(site)``, which reads the catalogue of
+    the repository it lives in (so only when ``root`` is that repository).
+    While that file is absent: ``need.paths`` (the laptop's names).
+    ``error`` says why the file cannot give the names (a FAIL)."""
+    if need.derive == "judges":
+        src = _local(root, _STATIONS)
+        if not os.path.isfile(src):
+            return need.paths, "the laptop's list: stations.json is absent here", None
+        from experiments.benchmark import judges
+        try:
+            files = [s.get("file") for s in judges.stations(site, src)]
+            if not files or not all(files):
+                raise ValueError(f"no 'file' for some judges of {site}")
+        except Exception as e:                  # KeyError: a judge of config.JUDGES is absent
+            msg = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
+            return need.paths, None, (f"{_STATIONS} cannot list the {site} judges "
+                                      f"({type(e).__name__}: {str(msg).replace(src, _STATIONS)})")
+        return tuple(_ESTUARY + f for f in files), "stations.json", None
+    if need.derive == "vak":
+        if not os.path.isfile(_local(root, _VAK_CATALOGUE)):
+            return need.paths, "the laptop's list: the catalogue is absent here", None
+        from experiments import v0_vaklodingen_fetch as v0
+        if os.path.normcase(os.path.realpath(root)) != os.path.normcase(os.path.realpath(v0.ROOT)):
+            return need.paths, "the laptop's list", None
+        try:
+            names = [name for name, _, _ in v0.sheets_for(site)]
+            if not names:
+                raise ValueError(f"no sheet meets the {site} box")
+        except Exception as e:
+            return need.paths, None, (f"{_VAK_CATALOGUE} cannot list the {site} sheets "
+                                      f"({type(e).__name__}: {e})")
+        return tuple(_VAK_DIR + n for n in names), "the catalogue", None
+    return need.paths, "", None
+
+
+def _scan_input(paths, count, root, sizes):
+    """``(n_files, nbytes, bad)`` of the files ``paths`` under ``root``:
+    existence and sizes only (no file is opened). ``bad`` holds ``(path,
+    phrase)`` for every path that is missing, empty, of another size than the
+    laptop's copy (``sizes``) or, for a glob, short of ``count`` non-empty
+    matches."""
+    n, nbytes, bad = 0, 0, []
+    for rel in paths:
+        if "*" in rel:
+            got = [os.path.getsize(f)
+                   for f in sorted(glob.glob(_local(glob.escape(root), rel))) if os.path.isfile(f)]
+            full = [s for s in got if s > 0]
+            n, nbytes = n + len(full), nbytes + sum(full)
+            if len(full) < count:
+                bad.append((rel, f"matches {len(full)} of {count} files"
+                                 + (f" ({len(got) - len(full)} more are empty)"
+                                    if len(got) > len(full) else "")))
+            continue
+        p = _local(root, rel)
+        if not os.path.isfile(p):
+            bad.append((rel, "is missing"))
+            continue
+        size, want = os.path.getsize(p), sizes.get(rel)
+        if size == 0:
+            bad.append((rel, "is empty (0 B)"))
+        elif want is not None and size != want:
+            bad.append((rel, f"has {size:,} B, not the laptop's {want:,} B (an interrupted "
+                             "copy?)"))
+        else:
+            n, nbytes = n + 1, nbytes + size
+    return n, nbytes, bad
+
+
+def _folder(paths):
+    return (posixpath.commonpath([posixpath.dirname(p) for p in paths]) if paths else ".") + "/"
+
+
+def _lack(paths, bad):
+    """One phrase for the paths of an entry that are bad."""
+    if len(paths) == 1:
+        return f"{bad[0][0]} {bad[0][1]}"
+    names = [posixpath.basename(rel) + ("" if why == "is missing" else f" ({why})")
+             for rel, why in bad]
+    kind = "missing" if all(why == "is missing" for _, why in bad) else "missing or incomplete"
+    return (f"{len(bad)} of {len(paths)} files {kind} in {_folder(paths)} ("
+            + ", ".join(names[:4]) + (", ..." if len(names) > 4 else "") + ")")
+
+
+def _copy_items(need, bad, error, root):
+    """What to copy from the laptop for one entry: ``need.copy`` whole when
+    it is a file, when its folder is absent here, for a glob or when the
+    names cannot be derived; else only the bad files (a folder copy would
+    overwrite the good files here and change their times)."""
+    if not need.copy:
+        return []
+    if (error or not need.copy.endswith("/") or any("*" in rel for rel, _ in bad)
+            or not os.path.isdir(_local(root, need.copy))):
+        return [need.copy]
+    return [rel for rel, _ in bad]
+
+
+def check_boundary_cache(ck, sites, root=None):
+    """At 10 m, one line per gauge site: the IOC codes h_B takes from this
+    machine's ioc_stations.json (``levels.boundary_codes``, as
+    ``levels.union_provider`` does) must be among fetch ioc's
+    ``UNION_CODES`` (fetch ioc never reads the list) and ready in its union
+    cache (``union_ready``: every year 2017-2025, the marker, the last
+    assessment); prepare --step record and truth refuse otherwise. It reads
+    the list, file names, the markers and ioc_manifest.json. Sites without a
+    gauge member are skipped, and so is every site while the list is absent
+    (its own line FAILs). Returns ``{"OK", "FAIL": counts}``."""
+    root = root or ROOT
+    from experiments.benchmark import config, levels
+    from experiments.benchmark.fetch import ioc as fioc
+
+    lst = _local(root, _IOC_STATIONS)
+    cache = _local(root, fioc.UNION_CACHE)
+    use = ("needed before prepare; used by prepare --step record (levels.union_provider refuses "
+           "to build h_B) and truth")
+    differs = ("compare this machine's ioc_stations.json with the laptop's (sha256) and decide "
+               "which list is right before changing anything")
+    out = {"OK": 0, "FAIL": 0}
+    for site in sites:
+        cfg = config.site_config(site, 10)
+        b = cfg.boundary
+        n = int(b.get("n_gauges") or 0) if b.get("kind") == "make_boundary" else 0
+        if not n or not os.path.isfile(lst):
+            continue
+        label = f"input {site} boundary gauges"
+        try:
+            codes = levels.boundary_codes(cfg, lst)
+            extra = [c for c in codes if c not in fioc.UNION_CODES]
+            ready, problems = fioc.union_ready(codes, cache) if codes else (False, [])
+        except Exception as e:
+            ck.fail(label, f"{_IOC_STATIONS} cannot give the codes ({type(e).__name__}: {e}); "
+                           f"{use}; get it: {differs}")
+            out["FAIL"] += 1
+            continue
+        if len(codes) < n or extra:
+            ck.fail(label, f"{_IOC_STATIONS} gives {codes}: "
+                    + (f"{extra} not among fetch ioc's UNION_CODES {list(fioc.UNION_CODES)}, so "
+                       "fetch ioc never fetched them" if extra else
+                       f"only {len(codes)} of the {n} gauges within 400 km")
+                    + f"; {use}; get it: {differs}")
+        elif not ready:
+            probs = (f"{fioc.UNION_CACHE}/ does not exist" if not os.path.isdir(cache) else
+                     "; ".join(str(p).replace(cache + os.sep, fioc.UNION_CACHE + "/")
+                               .replace(cache, fioc.UNION_CACHE) for p in problems))
+            ck.fail(label, f"{codes} from {_IOC_STATIONS}: the union IOC cache is not ready "
+                           f"({probs}); {use}; get it: run 'fetch ioc' (exit 0 only when the "
+                           "cache is ready)")
+        else:
+            ck.ok(label, f"{codes} from {_IOC_STATIONS}, ready in {fioc.UNION_CACHE}/ (every "
+                         "year 2017-2025, markers, assessed by the last fetch ioc)")
+            out["OK"] += 1
+            continue
+        out["FAIL"] += 1
+    return out
+
+
+def check_inputs(ck, sites, res=10, root=None, table=None, sizes=None, boundary=True):
+    """check-env's 'inputs' section: every entry of ``table`` (default
+    :data:`INPUTS`) read by one of ``sites``. OK when present (with its size
+    or file count); FAIL when a Campaign 1 step needs one that is missing,
+    empty or of another size than the laptop's copy (``sizes``, default
+    :data:`LAPTOP_BYTES`), or whose names cannot be derived; WARN when a
+    later milestone does (checked at 10 m only: the later milestones read
+    the 10 m production files). An entry that cannot be checked (an OSError
+    of a stale mount, say) is reported at its level and the section goes on.
+    At 10 m and with ``boundary``, :func:`check_boundary_cache` follows.
+    Paths are resolved under ``root`` (default the repository root). Returns
+    ``{"OK", "FAIL", "WARN": counts, "copy": [repository-relative paths to
+    copy from the laptop]}``."""
+    root = root or ROOT
+    table = INPUTS if table is None else table
+    sizes = LAPTOP_BYTES if sizes is None else sizes
+    sites = list(sites)
+    ck.info("inputs", "the external inputs of the commands (INPUTS; existence and sizes "
+                      "only): FAIL = a Campaign 1 step needs it, WARN = a later milestone")
+    out = {"OK": 0, "FAIL": 0, "WARN": 0, "copy": []}
+    for need in table:
+        at = [s for s in (need.sites or sites) if s in sites]
+        if not at or (res != 10 and need.when not in CAMPAIGN1_WHEN):
+            continue
+        one = len(need.sites) == 1
+        label = f"input {at[0]} {need.what}" if one else f"input {need.what}"
+        where = "" if one else f" ({', '.join(at) if need.sites else 'every site'})"
+        level = "FAIL" if need.when in CAMPAIGN1_WHEN else "WARN"
+        tail = f"; {WHEN_PHRASE[need.when]}; used by {need.needed_by}; get it: {need.how}"
+        try:
+            paths, source, error = _derive_paths(need, at[0], root)
+            n, nbytes, bad = (0, 0, []) if error else _scan_input(paths, need.count, root, sizes)
+        except Exception as e:                   # the step would meet the same error
+            ck.add(level, label, f"cannot be checked ({type(e).__name__}: {e}){where}{tail}")
+            out[level] += 1
+            continue
+        names = f" (names from {source})" if source else ""
+        if not error and not bad:
+            plain = len(paths) == 1 and "*" not in paths[0]
+            ck.ok(label, (f"{paths[0]}, {_size(nbytes)}" if plain else
+                          f"{n} files, {_size(nbytes)} in {_folder(paths)}") + where + names
+                  + (f"; {need.note}" if need.note else ""))
+            out["OK"] += 1
+            continue
+        ck.add(level, label, f"{error or _lack(paths, bad)}{where}{names}{tail}")
+        out[level] += 1
+        for c in _copy_items(need, bad, error, root):
+            if c not in out["copy"]:
+                out["copy"].append(c)
+    if res == 10 and boundary:
+        b = check_boundary_cache(ck, sites, root)
+        out["OK"] += b["OK"]
+        out["FAIL"] += b["FAIL"]
+    folders = [c for c in out["copy"] if c.endswith("/")]
+    out["copy"] = [c for c in out["copy"]
+                   if c.endswith("/") or not any(c.startswith(f) for f in folders)]
+    ck.info("inputs summary", f"{out['OK']} present, {out['FAIL']} missing or incomplete for "
+                              f"Campaign 1 (FAIL), {out['WARN']} missing for later milestones "
+                              "(WARN)"
+            + ("; copy from the laptop to the same repository-relative paths with scp -p (it "
+               "keeps the file times; a folder goes with scp -p -r into its parent folder): "
+               + ", ".join(out["copy"]) if out["copy"] else ""))
+    return out
+
+
 def _version(dist):
     import importlib.metadata as md
     try:
@@ -553,7 +988,9 @@ def _version(dist):
 def check_env(sites, cubes_root=None, rscript=None, network=False, res=10):
     """The §13.3 environment checks; returns the v13 ``Checks``. At 10 m the
     Zarr stores and their catalogue times; at 20 m the legacy netCDF cubes
-    and their catalogue times (local runs)."""
+    and their catalogue times (local runs). Then the external inputs of the
+    sites (:func:`check_inputs`: the :data:`INPUTS` table and, at 10 m, the
+    boundary gauges against the union IOC cache)."""
     import platform
     import shutil
 
@@ -660,6 +1097,10 @@ def check_env(sites, cubes_root=None, rscript=None, network=False, res=10):
                     ck.fail(f"{site} production IOC chunks", f"{type(e).__name__}: {e}")
             if not boundary_ok:
                 ck.warn(f"{site} boundary", "h_B cannot be built for the local run")
+    try:
+        check_inputs(ck, sites, res=res)
+    except Exception as e:                      # never lose the lines below
+        ck.fail("inputs", f"the section stopped: {type(e).__name__}: {e}")
     dea = os.environ.get("VENV_DEA") or ("venv-dea" if os.path.isdir("venv-dea") else None)
     (ck.ok if dea else ck.warn)("venv-dea (E2, V3)", dea or "not found")
     oct_ = shutil.which("octave")
@@ -1270,7 +1711,9 @@ def build_parser():
     sp.set_defaults(func=cmd_inputs)
 
     sp = sub.add_parser("check-env", help="versions, R, tide models, OmniCloudMask, CMEMS, "
-                                          "inputs of the resolution, disk, RAM, BLAS")
+                                          "inputs of the resolution, the external inputs "
+                                          "(gauges, truths, tide model: what to copy), disk, "
+                                          "RAM, BLAS")
     _common(sp)
     sp.add_argument("--rscript", default=None)
     sp.add_argument("--network", action="store_true", help="query the CDSE collection "
