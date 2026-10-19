@@ -41,7 +41,14 @@ Pre-registered (frozen before any truth is read)
     record".
   - escalda / wadden / ems: every cube scene with an overpass time and a
     finite level of make_boundary(aoi, 'EOT20', n_gauges = 2 / 1 / 1,
-    period 2023-2025, exclude = trnz / harl / delf).
+    period 2023-2025, exclude = trnz / harl / delf). With
+    ``--sensitivity-marea-record`` (added 2026-10-19, same-scenes
+    comparison): exactly the scene record MAREA scored at the site in the
+    production run (``record_dates`` of products_<site>_10m/marea_<tag>/
+    result.json, transition-zone screening; 68 / 71 / 54 scenes),
+    cross-checked with comparison_<tag>/products.npz, same boundary levels,
+    a LABELLED SENSITIVITY "NIDEM on MAREA's N-scene record" written to
+    nidem_<tag>/sensitivity_marea_record/ (CSVs included).
 * Extraction check: before contouring, at the extraction's keep pixels,
   the streamed SCL is asserted to give exactly the extraction's C
   (SCL in {4, 5, 6, 7}) and the streamed NDWI to equal the extraction's Y
@@ -115,6 +122,7 @@ Run (from the repo root)
     python -X utf8 -m experiments.v7_waterline_contour escalda
     python -X utf8 -m experiments.v7_waterline_contour wadden
     python -X utf8 -m experiments.v7_waterline_contour ems
+    python -X utf8 -m experiments.v7_waterline_contour escalda --sensitivity-marea-record
     python -X utf8 -m experiments.v7_waterline_contour <site> --preflight-only
     python -X utf8 -m experiments.v7_waterline_contour <site> --s2-scene-rule
     python -X utf8 -m experiments.v7_waterline_contour ems --record-not-computable
@@ -130,6 +138,8 @@ Dutch: products_<site>/nidem_<tag>/ (variant: nidem_<tag>_s2_scene_rule/)
     with nidem_preflight.json, nidem.npz, GeoTIFFs, diagnostics, and
     products_<site>/comparison_<tag>/vaklodingen_metrics_with_nidem.csv,
     vaklodingen_by_band_with_nidem.csv (variant: ..._with_nidem_s2_scene_rule.csv)
+    (sensitivity: everything, both CSVs included, in
+    products_<site>/nidem_<tag>/sensitivity_marea_record/)
 """
 import argparse
 import gc
@@ -175,6 +185,8 @@ for _s in ("escalda", "wadden", "ems"):
     _c["overpass"] = f"{_p}/overpass_times.json"
     _c["out"] = f"{_p}/nidem_{_c['tag']}"
     _c["comparison"] = f"{_p}/comparison_{_c['tag']}"
+    # the MAREA production run whose scored record the sensitivity reuses
+    _c["marea_result"] = f"{_p}/marea_{_c['tag']}/result.json"
 
 TOL = 1e-9
 #: scenes of the scored Villaviciosa no-delay / MAREA record (asserted by
@@ -197,15 +209,30 @@ VARIANT_LEAD = "VARIANT (Sentinel-2 scene rule)"
 PRIMARY_NOT_COMPUTABLE_NAME = "NIDEM (ITEM rule)"
 #: revision of 2026-09-29 (C): the Villaviciosa sensitivity on MAREA's record
 SENSITIVITY_TAG = "sensitivity_marea_record"
-SENSITIVITY_SUFFIX = f" on MAREA's {VVA_SCORED_SCENES}-scene record"
-SENSITIVITY_LEAD = f"SENSITIVITY (NIDEM on MAREA's {VVA_SCORED_SCENES}-scene record)"
+
+
+def sensitivity_suffix(n=None):
+    """Label suffix of the sensitivity on MAREA's ``n``-scene record
+    (default: Villaviciosa's 97 scenes)."""
+    return f" on MAREA's {VVA_SCORED_SCENES if n is None else int(n)}-scene record"
+
+
+def sensitivity_lead(n=None):
+    """Role label of the sensitivity on MAREA's ``n``-scene record."""
+    return (f"SENSITIVITY (NIDEM on MAREA's "
+            f"{VVA_SCORED_SCENES if n is None else int(n)}-scene record)")
+
+
+SENSITIVITY_SUFFIX = sensitivity_suffix()
+SENSITIVITY_LEAD = sensitivity_lead()
 #: the run modes
 MODES = ("primary", "sensitivity", "variant")
 
 
 def run_mode(sensitivity=False, variant=False):
-    """'primary', 'sensitivity' (Villaviciosa, MAREA's 97-scene record) or
-    'variant' (the Sentinel-2 scene rule)."""
+    """'primary', 'sensitivity' (NIDEM on MAREA's scored record: Villaviciosa
+    97 scenes; Dutch sites since 2026-10-19) or 'variant' (the Sentinel-2
+    scene rule)."""
     if sensitivity and variant:
         raise ValueError("a run is either the sensitivity or the variant")
     return "sensitivity" if sensitivity else "variant" if variant else "primary"
@@ -217,11 +244,12 @@ def pixel_rule(mode):
     return "load_ard" if mode == "variant" else "item"
 
 
-def nidem_name(base, mode):
+def nidem_name(base, mode, n_sens=None):
     """Product label of a NIDEM row: unchanged for the primary, suffixed
-    ', Sentinel-2 scene rule' for the variant and " on MAREA's 97-scene
-    record" for the Villaviciosa sensitivity. A bool ``mode`` is read as
-    the variant flag (True) or the primary (False)."""
+    ', Sentinel-2 scene rule' for the variant and " on MAREA's N-scene
+    record" for the sensitivity (N = ``n_sens``, default Villaviciosa's 97).
+    A bool ``mode`` is read as the variant flag (True) or the primary
+    (False)."""
     if mode is True:
         mode = "variant"
     elif mode is False:
@@ -229,18 +257,18 @@ def nidem_name(base, mode):
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}")
     return base + {"primary": "", "variant": VARIANT_SUFFIX,
-                   "sensitivity": SENSITIVITY_SUFFIX}[mode]
+                   "sensitivity": sensitivity_suffix(n_sens)}[mode]
 
 
 def output_paths(site, sensitivity=False, variant=False):
     """Output directory and metrics CSV path(s) of a run. With both flags
     off they are exactly the paths of the primary runs; the variant and the
-    sensitivity write to their own directories and CSV files."""
+    sensitivity write to their own directories and CSV files. The Dutch
+    sensitivity (2026-10-19) writes everything, CSVs included, to the new
+    folder nidem_<tag>/sensitivity_marea_record/."""
     cfg = SITES[site]
     out = cfg["out"]
     if sensitivity:
-        if site != "villaviciosa":
-            raise ValueError("the sensitivity run is Villaviciosa only")
         out = os.path.join(out, SENSITIVITY_TAG)
     suffix = f"_{VARIANT_TAG}" if variant else ""
     if variant:
@@ -248,6 +276,9 @@ def output_paths(site, sensitivity=False, variant=False):
                else out + suffix)
     if site == "villaviciosa":
         csv = {"rtk": os.path.join(out, f"rtk_metrics_with_nidem{suffix}.csv")}
+    elif sensitivity:
+        csv = {"metrics": os.path.join(out, f"vaklodingen_metrics_with_nidem{suffix}.csv"),
+               "by_band": os.path.join(out, f"vaklodingen_by_band_with_nidem{suffix}.csv")}
     else:
         d = cfg["comparison"]
         csv = {"metrics": f"{d}/vaklodingen_metrics_with_nidem{suffix}.csv",
@@ -295,19 +326,46 @@ def villaviciosa_usable_dates(nb_path=VVA_NOTEBOOK):
     return usable
 
 
+def marea_record_dates(site, cfg):
+    """The scene record MAREA scored at a Dutch site in the production run:
+    ``record_dates`` of products_<site>/marea_<tag>/result.json (the
+    transition-zone screened record), checked against its ``n_escenas`` and
+    against ``record_dates`` of comparison_<tag>/products.npz (the scored
+    no-delay / MAREA products) when that file holds them."""
+    if site == "villaviciosa":
+        raise ValueError("Villaviciosa's MAREA record comes from the notebook "
+                         "(villaviciosa_usable_dates)")
+    path = cfg["marea_result"]
+    r = json.load(open(path, encoding="utf-8"))
+    dates = [str(d) for d in (r.get("record_dates") or [])]
+    if not dates:
+        raise RuntimeError(f"{path} stores no record_dates")
+    if len(dates) != int(r["n_escenas"]):
+        raise RuntimeError(f"{path}: {len(dates)} record_dates but n_escenas "
+                           f"{r['n_escenas']}")
+    if len(set(dates)) != len(dates) or dates != sorted(dates):
+        raise RuntimeError(f"{path}: record_dates not unique and sorted")
+    pz = os.path.join(cfg["comparison"], "products.npz")
+    if os.path.exists(pz):
+        with np.load(pz) as P:
+            if "record_dates" in P.files and [str(d) for d in P["record_dates"]] != dates:
+                raise RuntimeError(f"{pz} record_dates differ from {path}")
+    return np.array(dates)
+
+
 def build_record(site, cfg, ext_dates, marea_record=False):
     """Scenes, times and boundary levels of the run's record.
 
     ITEM's all-observations rule at every site (revision of 2026-09-29, C):
     every cube scene of 2023-2025 with an overpass time and a finite
-    boundary level. ``marea_record`` (Villaviciosa only) gives instead
-    MAREA's scored 97-scene cloud-filtered record, for the labelled
-    sensitivity "NIDEM on MAREA's 97-scene record"."""
+    boundary level. ``marea_record`` gives instead MAREA's scored record,
+    for the labelled sensitivity "NIDEM on MAREA's N-scene record":
+    Villaviciosa the 97-scene cloud-filtered record of the notebook; the
+    Dutch sites (2026-10-19) the record_dates of the MAREA production run
+    (:func:`marea_record_dates`), with the same boundary levels."""
     import pandas as pd
     import pyintertidal as pit
 
-    if marea_record and site != "villaviciosa":
-        raise ValueError("MAREA's cloud-filtered record exists at Villaviciosa only")
     overpass = {k: pd.Timestamp(v).to_pydatetime()
                 for k, v in json.load(open(cfg["overpass"])).items()}
     have = np.array([d in overpass for d in ext_dates])
@@ -337,10 +395,23 @@ def build_record(site, cfg, ext_dates, marea_record=False):
                                  n_gauges=cfg["n_gauges"], period=TIME_EXTENT,
                                  exclude=cfg["judge"])
         bname = getattr(boundary, "name", str(boundary))
-        sel = have
-        rule = ("PRIMARY: all cube scenes with an overpass time and a finite "
-                "boundary level (ITEM all-observations rule; also the scored "
-                "no-delay / MAREA record)")
+        want_dates = None
+        if marea_record:
+            want_dates = marea_record_dates(site, cfg)
+            lost = sorted(set(want_dates.tolist()) - set(ext_dates[have].tolist()))
+            if lost:
+                raise RuntimeError(f"{len(lost)} MAREA record date(s) not in the "
+                                   f"extraction with an overpass time: {lost[:5]}")
+            sel = np.isin(ext_dates, want_dates) & have
+            rule = (f"{sensitivity_lead(len(want_dates))}: the scene record MAREA "
+                    f"scored at this site (record_dates of {cfg['marea_result']}; "
+                    "transition-zone screening), same boundary levels as the "
+                    "primary (the scored no-delay / MAREA record)")
+        else:
+            sel = have
+            rule = ("PRIMARY: all cube scenes with an overpass time and a finite "
+                    "boundary level (ITEM all-observations rule; also the scored "
+                    "no-delay / MAREA record)")
     idx = np.flatnonzero(sel)
     t_real = pd.DatetimeIndex(pd.to_datetime(
         [overpass[d] for d in ext_dates[idx]])).tz_localize(None)
@@ -357,6 +428,13 @@ def build_record(site, cfg, ext_dates, marea_record=False):
         if len(rec["h"]) != want:
             raise RuntimeError(f"Villaviciosa record has {len(rec['h'])} scenes, "
                                f"expected {want}")
+    elif marea_record:
+        # every scene MAREA scored, none other, each with a finite level
+        if not np.array_equal(rec["dates"], want_dates):
+            raise RuntimeError(f"{site}: the sensitivity record ({len(rec['dates'])} "
+                               f"scenes) is not MAREA's {len(want_dates)}-scene "
+                               "record (a level is non-finite or a date is missing)")
+        rec["marea_result"] = cfg["marea_result"]
     return rec
 
 
@@ -576,17 +654,19 @@ def rtk_records(mode, n_nidem_scenes, keep, shape, granadeiro_raster,
              "Granadeiro": n_gran, "NIDEM": int(n_nidem_scenes)})
 
 
-def mode_leads(mode):
-    """(lead, supplementary lead) role labels of a run mode."""
+def mode_leads(mode, n_sens=None):
+    """(lead, supplementary lead) role labels of a run mode (``n_sens``: the
+    sensitivity's scene count, default Villaviciosa's 97)."""
+    sl = sensitivity_lead(n_sens)
     return {"primary": ("PRIMARY", "supplementary"),
-            "sensitivity": (SENSITIVITY_LEAD, f"{SENSITIVITY_LEAD} supplementary"),
+            "sensitivity": (sl, f"{sl} supplementary"),
             "variant": (VARIANT_LEAD, f"{VARIANT_LEAD} supplementary")}[mode]
 
 
-def not_computable_name(mode):
+def not_computable_name(mode, n_sens=None):
     """Product label of a NOT COMPUTABLE row."""
     return {"primary": PRIMARY_NOT_COMPUTABLE_NAME, "variant": VARIANT_NAME,
-            "sensitivity": nidem_name("NIDEM", "sensitivity")}[mode]
+            "sensitivity": nidem_name("NIDEM", "sensitivity", n_sens)}[mode]
 
 
 def score_rtk(path, res, keep, shape, mode, n_nidem_scenes,
@@ -729,14 +809,18 @@ def vscore(p, t):
 
 
 def score_vaklodingen(site, cfg, res, keep, grid, csv_paths, variant=False,
-                      not_computable=None):
+                      not_computable=None, mode=None, n_sens=None):
     """Vaklodingen tables. ``res`` None with ``not_computable`` (the reason)
     writes the reproduced published rows plus NOT COMPUTABLE NIDEM rows
-    (n = 0) and a note column (decision (a))."""
+    (n = 0) and a note column (decision (a)). ``mode`` (default from
+    ``variant``: 'variant' or 'primary') sets the NIDEM labels; 'sensitivity'
+    labels them " on MAREA's ``n_sens``-scene record"."""
     import pandas as pd
     import pyproj
     from experiments import v1_vaklodingen_validate as v1
 
+    if mode is None:
+        mode = "variant" if variant else "primary"
     d = cfg["comparison"]
     P = np.load(f"{d}/products.npz")
     assert np.array_equal(P["keep"], keep), "products.npz keep != extraction keep"
@@ -807,15 +891,14 @@ def score_vaklodingen(site, cfg, res, keep, grid, csv_paths, variant=False,
     log(f"  reproduced vaklodingen_by_band.csv: max |diff| {worst_b:.2e}")
 
     # 2. NIDEM
-    N = lambda b: nidem_name(b, variant)  # noqa: E731
-    lead, sup = ((VARIANT_LEAD, f"{VARIANT_LEAD} supplementary") if variant
-                 else ("PRIMARY", "supplementary"))
+    N = lambda b: nidem_name(b, mode, n_sens)  # noqa: E731
+    lead, sup = mode_leads(mode, n_sens)
     ones = np.ones(len(keep), bool)
     tv = np.isfinite(truth_v)
 
     if res is None:
         # decision (a) / a stopped variant: reproduced rows + NOT COMPUTABLE
-        name = VARIANT_NAME if variant else PRIMARY_NOT_COMPUTABLE_NAME
+        name = not_computable_name(mode, n_sens)
         rows = []
         for p in base:
             for subset, sel in (("all", ones), (thin_label, thin), (ref_label, vcommon)):
@@ -881,7 +964,7 @@ def score_vaklodingen(site, cfg, res, keep, grid, csv_paths, variant=False,
         rows.append(lrow(p, thin_label, "reproduced (published)", thin))
         rows.append(lrow(p, ref_label,
                          "reproduced (published)", vcommon))
-    bounded_role = f"{VARIANT_LEAD} {BOUNDED_ROLE}" if variant else BOUNDED_ROLE
+    bounded_role = BOUNDED_ROLE if mode == "primary" else f"{lead} {BOUNDED_ROLE}"
     rows.append(lrow(nid_name, "all", f"{lead}: filtered, on keep", ones))
     rows.append(lrow(nid_name, thin_label, f"{lead}: filtered, on keep", thin))
     rows.append(lrow(N("NIDEM unfiltered"), "all", f"{sup}: unfiltered, on keep", ones))
@@ -1571,14 +1654,14 @@ def _refuse_overwrite(jpath, paths):
 
 def record_not_computable(site, cfg, *, mode, pre, ppath,
                           csv_paths, out_dir, grid, keep, record_label,
-                          reason=None, n_before_scene_rule=None):
+                          reason=None, n_before_scene_rule=None, n_sens=None):
     """Decision (a) (and a stopped variant / sensitivity): write the metrics
     CSV(s) with the reproduced published rows plus a NOT COMPUTABLE NIDEM
     row (n = 0, note = reason), and nidem_diagnostics.json. The pre-flight
-    file is only read."""
+    file is only read. ``n_sens``: the Dutch sensitivity's scene count."""
     variant = mode == "variant"
-    name = not_computable_name(mode)
-    lead = {"variant": VARIANT_LEAD, "sensitivity": SENSITIVITY_LEAD,
+    name = not_computable_name(mode, n_sens)
+    lead = {"variant": VARIANT_LEAD, "sensitivity": sensitivity_lead(n_sens),
             "primary": "PRIMARY (ITEM rule)"}[mode]
     if reason is None:
         reason = not_computable_reason(pre, lead, ppath)
@@ -1597,10 +1680,13 @@ def record_not_computable(site, cfg, *, mode, pre, ppath,
     else:
         written, counts = score_vaklodingen(site, cfg, None, keep, grid,
                                             csv_paths, variant=variant,
-                                            not_computable=reason)
+                                            not_computable=reason, mode=mode,
+                                            n_sens=n_sens)
         inputs = [f"{cfg['comparison']}/{f}" for f in
                   ("products.npz", "vaklodingen_metrics.csv",
                    "vaklodingen_by_band.csv")]
+        if mode == "sensitivity":
+            inputs.append(cfg["marea_result"])
     out = {
         "experiment": "v7_waterline_contour", "site": site,
         "record": record_label, "record_rule": pre.get("record_rule"),
@@ -1634,9 +1720,9 @@ def record_not_computable(site, cfg, *, mode, pre, ppath,
     return out
 
 
-def record_label_of(mode):
+def record_label_of(mode, n_sens=None):
     return {"primary": "primary: ITEM all-observations record, ITEM pixel-quality mask",
-            "sensitivity": f"{SENSITIVITY_LEAD}, ITEM pixel-quality mask",
+            "sensitivity": f"{sensitivity_lead(n_sens)}, ITEM pixel-quality mask",
             "variant": (f"{VARIANT_LEAD}: primary record, scenes with a "
                         f"full-frame load_ard good fraction < "
                         f"{wc.S2_SCENE_MIN_GOODDATA} dropped, load_ard pixel mask")}[mode]
@@ -1646,8 +1732,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("site", choices=sorted(SITES))
     ap.add_argument("--sensitivity-marea-record", action="store_true",
-                    help="villaviciosa only: labelled sensitivity 'NIDEM on "
-                         "MAREA's 97-scene record'")
+                    help="labelled sensitivity 'NIDEM on MAREA's N-scene "
+                         "record': villaviciosa the notebook's 97 scenes; "
+                         "Dutch sites the record_dates of the MAREA production "
+                         "run (marea_<tag>/result.json); own output folder "
+                         "nidem_<tag>/sensitivity_marea_record/")
     ap.add_argument("--sensitivity-all-scenes", action="store_true",
                     help="SUPERSEDED (2026-09-29): the all-scenes record is the "
                          "Villaviciosa primary; refused")
@@ -1673,9 +1762,6 @@ def main(argv=None):
                          "2026-09-29): the all-scenes record is the Villaviciosa "
                          "PRIMARY; the sensitivity is --sensitivity-marea-record")
     sensitivity, variant = args.sensitivity_marea_record, args.s2_scene_rule
-    if sensitivity and site != "villaviciosa":
-        raise SystemExit("--sensitivity-marea-record applies to villaviciosa only "
-                         "(the Dutch MAREA records already use every scene)")
     if sensitivity and variant:
         raise SystemExit("--s2-scene-rule applies to the primary record only")
     if args.record_not_computable and args.preflight_only:
@@ -1685,9 +1771,13 @@ def main(argv=None):
     rule = pixel_rule(mode)
     t_start = time.time()
     timings = {}
+    # the Dutch sensitivity (2026-10-19): MAREA's scored record, read (and
+    # checked) before anything is written
+    dutch_sens = sensitivity and site != "villaviciosa"
+    n_sens = len(marea_record_dates(site, cfg)) if dutch_sens else None
     out_dir, csv_paths = output_paths(site, sensitivity, variant)
     os.makedirs(out_dir, exist_ok=True)
-    record_label = record_label_of(mode)
+    record_label = record_label_of(mode, n_sens)
     log(f"[v7] {site} ({record_label}) -> {out_dir}")
 
     # grid and extraction consistency
@@ -1715,6 +1805,8 @@ def main(argv=None):
     ppath = os.path.join(out_dir, "nidem_preflight.json")
     nc_kw = dict(mode=mode, ppath=ppath, csv_paths=csv_paths, out_dir=out_dir,
                  grid=grid, keep=keep, record_label=record_label)
+    if dutch_sens:
+        nc_kw["n_sens"] = n_sens
 
     if args.record_not_computable:
         # decision (a): from the existing STOPPED pre-flight, which is only read
@@ -1785,7 +1877,7 @@ def main(argv=None):
         with open(ppath, "w", encoding="utf-8") as f:
             json.dump(pre, f, indent=1, default=float)
         record_not_computable(site, cfg, pre=pre, reason=(
-            f"{mode_leads(mode)[0]}: NOT COMPUTABLE, empty tidal interval: {e}"),
+            f"{mode_leads(mode, n_sens)[0]}: NOT COMPUTABLE, empty tidal interval: {e}"),
             n_before_scene_rule=n_before_scene_rule, **nc_kw)
         raise
     log(f"  record: {len(h)} scenes ({rec['dates'][0]} .. {rec['dates'][-1]}), "
@@ -1955,7 +2047,8 @@ def main(argv=None):
         written = [csv_path]
     else:
         written, score_counts = score_vaklodingen(site, cfg, res, keep, grid,
-                                                  csv_paths, variant=variant)
+                                                  csv_paths, variant=variant,
+                                                  mode=mode, n_sens=n_sens)
     timings["scoring_s"] = time.time() - t0
     timings["total_s"] = time.time() - t_start
 
@@ -1970,6 +2063,8 @@ def main(argv=None):
                    f"{cfg['comparison']}/vaklodingen_metrics.csv",
                    f"{cfg['comparison']}/vaklodingen_by_band.csv"):
             inputs[p_] = sha256(p_)
+        if dutch_sens:
+            inputs[cfg["marea_result"]] = sha256(cfg["marea_result"])
     st = os.stat(cfg["cube"])
     out = {
         "experiment": "v7_waterline_contour", "site": site, "record": record_label,
@@ -1986,6 +2081,16 @@ def main(argv=None):
     if variant:
         out["nidem_variant"] = VARIANT_NAME
         out["s2_scene_rule"] = scene_rule
+    if dutch_sens:
+        out["sensitivity_marea_record"] = {
+            "added": ("2026-10-19, same-scenes comparison: NIDEM on exactly the "
+                      "scene record MAREA scored at this site in the production "
+                      "run; everything else as the primary (ITEM pixel mask, "
+                      "intervals, contours, filters, scoring)"),
+            "marea_result": cfg["marea_result"],
+            "n_scenes": int(len(rec["dates"])),
+            "record_dates": [str(d) for d in rec["dates"]],
+        }
     out |= {
         "extraction_check": check_info,
         "scene_quality_prepass (record scenes)": quality,

@@ -857,8 +857,15 @@ def test_script_outputs_are_separate_and_primary_paths_unchanged():
     assert norm(out) == norm("products_marea/nidem/sensitivity_marea_record")
     assert norm(csv["rtk"]) == norm(
         "products_marea/nidem/sensitivity_marea_record/rtk_metrics_with_nidem.csv")
-    with pytest.raises(ValueError):
-        v7.output_paths("ems", sensitivity=True)
+    # the Dutch sensitivity (2026-10-19): a new folder inside the NIDEM
+    # products, CSVs included; nothing in comparison_<tag>/ is touched
+    pe = dutch_products("ems")
+    out, csv = v7.output_paths("ems", sensitivity=True)
+    assert norm(out) == norm(f"{pe}/nidem_eot20_g1/sensitivity_marea_record")
+    assert {k: norm(v) for k, v in csv.items()} == {
+        "metrics": norm(f"{out}/vaklodingen_metrics_with_nidem.csv"),
+        "by_band": norm(f"{out}/vaklodingen_by_band_with_nidem.csv")}
+    assert v7.SITES["ems"]["marea_result"] == f"{pe}/marea_eot20_g1/result.json"
     # the variant: separate directories and CSV files
     out, csv = v7.output_paths("villaviciosa", variant=True)
     assert norm(out) == norm("products_marea/nidem/s2_scene_rule")
@@ -875,8 +882,14 @@ def test_script_outputs_are_separate_and_primary_paths_unchanged():
     assert v7.nidem_name("NIDEM", True) == "NIDEM, Sentinel-2 scene rule"
     assert v7.nidem_name("NIDEM", "variant") == "NIDEM, Sentinel-2 scene rule"
     assert v7.nidem_name("NIDEM", "sensitivity") == "NIDEM on MAREA's 97-scene record"
+    assert v7.nidem_name("NIDEM", "sensitivity", 54) == "NIDEM on MAREA's 54-scene record"
+    assert v7.SENSITIVITY_LEAD == "SENSITIVITY (NIDEM on MAREA's 97-scene record)"
+    assert v7.mode_leads("sensitivity", 68)[0] == "SENSITIVITY (NIDEM on MAREA's 68-scene record)"
+    assert v7.mode_leads("primary") == ("PRIMARY", "supplementary")
+    assert v7.mode_leads("variant") == (v7.VARIANT_LEAD, f"{v7.VARIANT_LEAD} supplementary")
     assert v7.nidem_name(v7.BOUNDED, True) == "NIDEM bounded-conf, Sentinel-2 scene rule"
     assert v7.not_computable_name("primary") == "NIDEM (ITEM rule)"
+    assert v7.not_computable_name("variant") == v7.VARIANT_NAME
     # pixel masks per mode
     assert v7.pixel_rule("primary") == v7.pixel_rule("sensitivity") == "item"
     assert v7.pixel_rule("variant") == "load_ard"
@@ -914,9 +927,55 @@ def test_script_refuses_the_superseded_flag_and_bad_combinations():
     with pytest.raises(SystemExit):
         v7.main(["villaviciosa", "--sensitivity-all-scenes"])
     with pytest.raises(SystemExit):
-        v7.main(["ems", "--sensitivity-marea-record"])
+        v7.main(["ems", "--sensitivity-marea-record", "--s2-scene-rule"])
     with pytest.raises(SystemExit):
         v7.main(["villaviciosa", "--sensitivity-marea-record", "--s2-scene-rule"])
+
+
+def test_dutch_marea_record_dates(tmp_path):
+    """The Dutch sensitivity reads MAREA's scored record from the production
+    run's result.json, checked against n_escenas and products.npz."""
+    import json
+    v7 = pytest.importorskip("experiments.v7_waterline_contour")
+    dates = ["2023-01-18", "2023-01-30", "2024-05-02"]
+    res = tmp_path / "result.json"
+    comp = tmp_path / "comparison"
+    comp.mkdir()
+    cfg = {"marea_result": str(res), "comparison": str(comp)}
+    res.write_text(json.dumps({"n_escenas": 3, "record_dates": dates}), encoding="utf-8")
+    assert v7.marea_record_dates("escalda", cfg).tolist() == dates
+    np.savez(comp / "products.npz", record_dates=np.array(dates))
+    assert v7.marea_record_dates("escalda", cfg).tolist() == dates
+    np.savez(comp / "products.npz", record_dates=np.array(dates[:2]))
+    with pytest.raises(RuntimeError):
+        v7.marea_record_dates("escalda", cfg)
+    (comp / "products.npz").unlink()
+    res.write_text(json.dumps({"n_escenas": 4, "record_dates": dates}), encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        v7.marea_record_dates("escalda", cfg)
+    res.write_text(json.dumps({"n_escenas": 3, "record_dates": dates[::-1]}), encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        v7.marea_record_dates("escalda", cfg)
+    with pytest.raises(ValueError):
+        v7.marea_record_dates("villaviciosa", cfg)
+
+
+@pytest.mark.parametrize("site,n", [("escalda", 68), ("wadden", 71), ("ems", 54)])
+def test_dutch_marea_record_of_the_10m_run(site, n):
+    """The laptop mirror of the 10 m server run (results/server_10m): the
+    stored record has MAREA's scene count and every date has an overpass time."""
+    import json
+    v7 = pytest.importorskip("experiments.v7_waterline_contour")
+    cfg = v7.SITES[site]
+    mirror = {k: os.path.join("results/server_10m", cfg[k])
+              for k in ("marea_result", "comparison")}
+    if not os.path.exists(mirror["marea_result"]):
+        pytest.skip("10 m mirror not available")
+    d = v7.marea_record_dates(site, mirror)
+    assert len(d) == n
+    if os.path.exists(cfg["overpass"]):
+        ov = json.load(open(cfg["overpass"]))
+        assert all(x in ov for x in d)
 
 
 def test_villaviciosa_record_switch():
@@ -943,8 +1002,6 @@ def test_villaviciosa_record_switch():
     assert all(int(t) in pos for t in sens["time_index"])
     idx = np.array([pos[int(t)] for t in sens["time_index"]])
     np.testing.assert_allclose(prim["h"][idx], sens["h"], atol=1e-9)
-    with pytest.raises(ValueError):
-        v7.build_record("ems", v7.SITES["ems"], ext_dates, marea_record=True)
 
 
 def test_extraction_check_compares_ndwi_and_counts_mask_changes():

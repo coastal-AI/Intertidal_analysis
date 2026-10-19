@@ -34,6 +34,18 @@ variant).
 
 Writes results/method_comparison/{<site>.csv, summary.json, tables.tex}.
 Run from the repository root:  python -m experiments.v9_method_comparison [site ...]
+
+Same-scenes comparison (2026-10-19, ``--same-scenes``): adds, at every site,
+the labelled sensitivity ``NIDEM (on MAREA's record)`` (v7
+``--sensitivity-marea-record``: NIDEM on exactly the scenes MAREA scored,
+asserted against MAREA's stored record_dates), scored like every other row,
+plus the subsets ``common_published`` (truth & no delay & MAREA & NIDEM, the
+common subset of docs/paper/tables/external_rows.tex; checked against the
+v7 CSV) and ``common_same_scenes`` (truth & no delay & MAREA & NIDEM on
+MAREA's record). Writes to results/method_comparison_same_scenes/ only
+({<site>.csv, summary.json, same_scenes_summary.csv, same_scenes_summary.md});
+the default run and its outputs are unchanged.
+    python -m experiments.v9_method_comparison --same-scenes [site ...]
 """
 from __future__ import annotations
 
@@ -52,6 +64,10 @@ sys.path.insert(0, ROOT)
 from experiments.validation_grid import dutch_cube, dutch_products, thin_mask  # noqa: E402
 
 OUT = "results/method_comparison"
+#: the same-scenes comparison (--same-scenes) writes here only
+OUT_SAME = "results/method_comparison_same_scenes"
+#: the sensitivity row: NIDEM on exactly MAREA's scored scene record
+SENS = "NIDEM (on MAREA's record)"
 TOL = 1e-9
 RTK_CSV = "data/villaviciosa_rtk_gnss.csv"
 
@@ -82,7 +98,8 @@ for _s, _c in SITES.items():
               lag_result=[f"{_p}/marea_{_c['tag']}/result.json"],
               granadeiro=f"{_p}/granadeiro2021_{_c['tag']}",
               nidem=f"{_p}/nidem_{_c['tag']}",
-              nidem_variant=f"{_p}/nidem_{_c['tag']}_s2_scene_rule")
+              nidem_variant=f"{_p}/nidem_{_c['tag']}_s2_scene_rule",
+              nidem_sensitivity=f"{_p}/nidem_{_c['tag']}/sensitivity_marea_record")
 
 MAIN = ("no delay", "MAREA", "Granadeiro", "NIDEM")
 
@@ -144,11 +161,66 @@ def marea_record_size(cfg):
     return int(json.load(open(files[-1], encoding="utf-8"))["n_escenas"])
 
 
+def marea_record_dates(cfg):
+    """The scene dates MAREA scored (record_dates of its result.json), or None."""
+    files = [f for f in cfg["lag_result"] if os.path.exists(f)]
+    if not files:
+        return None
+    d = json.load(open(files[-1], encoding="utf-8")).get("record_dates")
+    return [str(x)[:10] for x in d] if d else None
+
+
+def check_same_scenes(path, marea_dates):
+    """The sensitivity's scenes (nidem.npz 'dates') must be exactly MAREA's
+    scored record; returns them."""
+    f = os.path.join(path, "nidem.npz")
+    with np.load(f, allow_pickle=True) as z:
+        d = [str(x)[:10] for x in z["dates"]]
+    if marea_dates is None:
+        print(f"  WARNING: no MAREA record_dates to check {f} against")
+    elif d != list(marea_dates):
+        raise AssertionError(f"{f}: its {len(d)} scenes are not MAREA's "
+                             f"{len(marea_dates)}-scene record")
+    else:
+        print(f"  {SENS}: its {len(d)} scenes are exactly MAREA's record")
+    return d
+
+
+def same_scene_rows(site, prods, records, truth_ok, score_fn):
+    """The same-scenes subsets (``--same-scenes``) for the products in
+    ``prods`` (values at the scoring points): ``common_published`` = truth &
+    no delay & MAREA & NIDEM (the common subset of external_rows.tex; no
+    delay & MAREA where NIDEM is not computable), ``common_same_scenes`` =
+    truth & no delay & MAREA & NIDEM on MAREA's record, and ``common4`` =
+    both NIDEMs too. ``score_fn(values)`` returns the metrics dict or None."""
+    pub = ["no delay", "MAREA"] + (["NIDEM"] if "NIDEM" in prods else [])
+    subsets = [("common_published", pub)]
+    if SENS in prods:
+        subsets.append(("common_same_scenes", ["no delay", "MAREA", SENS]))
+        if "NIDEM" in prods:
+            subsets.append(("common4", ["no delay", "MAREA", "NIDEM", SENS]))
+    rows, info = [], {}
+    for label, members in subsets:
+        sel = truth_ok.copy()
+        for p in members:
+            sel &= np.isfinite(prods[p])
+        info[label] = {"members": members, "n": int(sel.sum())}
+        for p in members:
+            v = np.where(sel, prods[p], np.nan)
+            s = score_fn(v)
+            rows.append({"site": site, "product": p, "subset": label,
+                         "rule": records[p][0], "scenes": records[p][1],
+                         **({k: s[k] for k in ("n", "rmse_m", "slope", "r", "bias_m")} if s else
+                            {"n": int(np.sum(np.isfinite(v) & truth_ok)), "rmse_m": np.nan,
+                             "slope": np.nan, "r": np.nan, "bias_m": np.nan})})
+    return rows, info
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  scoring
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_villaviciosa(cfg):
+def score_villaviciosa(cfg, same_scenes=False):
     from pyintertidal import elevation_validation as ev
     from pyintertidal import rtk
 
@@ -212,11 +284,19 @@ def score_villaviciosa(cfg):
                          **({k: f[k] for k in ("n", "rmse_m", "slope", "r", "bias_m")} if f else
                             {"n": int(np.sum(np.isfinite(v) & sel)), "rmse_m": np.nan, "slope": np.nan,
                              "r": np.nan, "bias_m": np.nan})})
-    return pd.DataFrame(rows), {"common_members": main_present, "common_n": int(common.sum()),
-                                "truth_datum": datum}
+    info = {"common_members": main_present, "common_n": int(common.sum()),
+            "truth_datum": datum}
+    if same_scenes:
+        if SENS in samp:
+            check_same_scenes(cfg["nidem_sensitivity"], marea_record_dates(cfg))
+        extra, info["same_scenes"] = same_scene_rows(
+            "villaviciosa", samp, records, np.isfinite(zt_t),
+            lambda v: ev.ols_against_truth(zt_t, v))
+        rows += extra
+    return pd.DataFrame(rows), info
 
 
-def score_dutch(site, cfg):
+def score_dutch(site, cfg, same_scenes=False):
     import pyproj
     from experiments import v1_vaklodingen_validate as v1
     from experiments.v7_waterline_contour import cube_grid, vscore
@@ -270,6 +350,15 @@ def score_dutch(site, cfg):
     if "z_gran" in P.files:
         prods["Granadeiro (superseded implementation)"] = P["z_gran"].astype(float)
         records["Granadeiro (superseded implementation)"] = ("old code", None)
+    if same_scenes:
+        # NIDEM on exactly MAREA's scored record (v7 --sensitivity-marea-record)
+        sen, n_s, st_s = load_nidem(cfg["nidem_sensitivity"], keep)
+        if sen is not None:
+            mdates = ([str(x)[:10] for x in P["record_dates"]] if "record_dates" in P.files
+                      else marea_record_dates(cfg))
+            check_same_scenes(cfg["nidem_sensitivity"], mdates)
+            prods[SENS] = sen
+        records[SENS] = ("MAREA's record", n_s if sen is not None else st_s)
 
     members = ["no delay", "MAREA"] + [p for p in ("Granadeiro",) if p in prods]
     members += ["NIDEM"] if "NIDEM" in prods else (["NIDEM (S2 scene rule)"] if "NIDEM (S2 scene rule)" in prods else [])
@@ -286,7 +375,10 @@ def score_dutch(site, cfg):
                          **(s if s else {"n": int(np.sum(np.isfinite(vv) & np.isfinite(truth))),
                                          "rmse_m": np.nan, "slope": np.nan, "r": np.nan,
                                          "bias_m": np.nan})})
-    for name, st in (("NIDEM", st_n), ("NIDEM (S2 scene rule)", st_v), ("Granadeiro", st_g)):
+    missing = [("NIDEM", st_n), ("NIDEM (S2 scene rule)", st_v), ("Granadeiro", st_g)]
+    if same_scenes:
+        missing.append((SENS, records[SENS][1]))
+    for name, st in missing:
         if name not in prods:
             rows.append({"site": site, "product": name, "subset": "all", "rule": records[name][0],
                          "scenes": st, "n": 0, "rmse_m": np.nan, "slope": np.nan, "r": np.nan,
@@ -294,7 +386,42 @@ def score_dutch(site, cfg):
     info = {"common_members": members, "common_n": int(common.sum()),
             "truth_px": int(np.isfinite(truth_raw).sum()),
             "truth_in_range": int(np.isfinite(truth).sum()), "level_range_nodelay": [lo_, hi_]}
+    if same_scenes:
+        extra, info["same_scenes"] = same_scene_rows(site, prods, records, np.isfinite(truth),
+                                                     lambda v: vscore(v, truth))
+        rows += extra
+        info["same_scenes"]["common_published_vs_v7_csv_max_abs_diff"] = \
+            check_published_common(cfg, extra)
     return pd.DataFrame(rows), info
+
+
+def check_published_common(cfg, rows):
+    """The ``common_published`` rows must reproduce the common subset of the
+    v7 CSV behind docs/paper/tables/external_rows.tex (common3 no delay &
+    MAREA & NIDEM; common2 where NIDEM is not computable). Returns the max
+    |diff| (None if the CSV is absent); warns, does not stop, above TOL."""
+    f = f"{cfg['comparison']}/vaklodingen_metrics_with_nidem.csv"
+    if not os.path.exists(f):
+        print(f"  WARNING: {f} not found; common_published not cross-checked")
+        return None
+    ref = pd.read_csv(f)
+    com = ref[ref["subset"].astype(str).str.startswith("common3")]
+    if com.empty:
+        com = ref[ref["subset"].astype(str).str.startswith("common2")]
+    worst = 0.0
+    for r in rows:
+        if r["subset"] != "common_published":
+            continue
+        c = com[com["product"] == r["product"]]
+        if c.empty:
+            print(f"  WARNING: no {r['product']} row in the common subset of {f}")
+            worst = np.inf
+            continue
+        for k in ("n", "rmse_m", "slope", "r", "bias_m"):
+            worst = max(worst, abs(float(r[k]) - float(c[k].iloc[0])))
+    msg = f"common_published vs {f}: max |diff| {worst:.1e}"
+    print(("  " if worst <= TOL else "  WARNING: NOT REPRODUCED, ") + msg)
+    return float(worst)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -326,24 +453,135 @@ def latex_rows(df):
     return "\n".join(lines)
 
 
-def main(sites):
-    os.makedirs(OUT, exist_ok=True)
+# ─────────────────────────────────────────────────────────────────────────────
+#  same-scenes summary (--same-scenes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+SUMMARY_PRODUCTS = (("no delay", "no delay"), ("MAREA", "MAREA"),
+                    ("NIDEM", "NIDEM (all observations, as published)"),
+                    (SENS, SENS))
+COMMONS = ("common_published", "common_same_scenes")
+
+
+def same_scenes_summary(frames, summary):
+    """One row per site and method: scenes, n, RMSE, slope, r, bias on all
+    pixels / points, and the RMSE (and n) on the published common subset and
+    on the same-scenes common subset."""
+    rows = []
+    for df in frames:
+        site = str(df["site"].iloc[0])
+        for prod, label in SUMMARY_PRODUCTS:
+            a = df[(df["product"] == prod) & (df["subset"] == "all")]
+            if a.empty:
+                continue
+            a = a.iloc[0]
+            r = {"site": site, "method": label, "rule": a["rule"], "scenes": a["scenes"],
+                 **{k: a[k] for k in ("n", "rmse_m", "slope", "r", "bias_m")}}
+            for key in COMMONS:
+                c = df[(df["product"] == prod) & (df["subset"] == key)]
+                r[f"n_{key}"] = c["n"].iloc[0] if len(c) else np.nan
+                r[f"rmse_{key}_m"] = c["rmse_m"].iloc[0] if len(c) else np.nan
+            rows.append(r)
+    return pd.DataFrame(rows)
+
+
+def _f(v, d=3):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return str(v) if v is not None else "--"
+    return "--" if not np.isfinite(v) else f"{v:.{d}f}"
+
+
+def _n(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "--"
+    return "--" if not np.isfinite(v) or v <= 0 else f"{int(v):,}"
+
+
+def summary_markdown(tab, summary):
+    truth = {"villaviciosa": "RTK-GNSS (development split, Alicante datum)"}
+    lines = ["# Same-scenes comparison: no delay vs MAREA vs NIDEM",
+             "",
+             f"NIDEM (on MAREA's record) = NIDEM run on exactly the scenes MAREA scored "
+             f"(v7 --sensitivity-marea-record; dates asserted equal). Metrics as the "
+             f"published tables (v9): RMSE, slope and r median-centred, bias = median "
+             f"(product - truth). common_published = truth & no delay & MAREA & NIDEM "
+             f"(all observations), the common subset of external_rows.tex; "
+             f"common_same_scenes = truth & no delay & MAREA & NIDEM (on MAREA's record).",
+             ""]
+    for site in tab["site"].unique():
+        d = tab[tab["site"] == site]
+        info = summary.get(site, {}).get("same_scenes", {})
+        npub = (info.get("common_published") or {}).get("n")
+        nss = (info.get("common_same_scenes") or {}).get("n")
+        lines += [f"## {SITES[site]['name']} ({site}); truth: {truth.get(site, SITES[site]['truth'])}",
+                  "",
+                  f"common_published n = {_n(npub)}; common_same_scenes n = {_n(nss)}",
+                  "",
+                  "| method | scenes | n | RMSE (m) | slope | r | bias (m) | RMSE common published (m) | RMSE common same scenes (m) |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for _, r in d.iterrows():
+            sc = r["scenes"]
+            sc = _n(sc) if isinstance(sc, (int, float, np.integer, np.floating)) else str(sc)
+            lines.append(f"| {r['method']} | {sc} | {_n(r['n'])} | {_f(r['rmse_m'])} | "
+                         f"{_f(r['slope'], 2)} | {_f(r['r'], 2)} | {_f(r['bias_m'])} | "
+                         f"{_f(r['rmse_common_published_m'])} | {_f(r['rmse_common_same_scenes_m'])} |")
+        lines.append("")
+    errs = {s: v["error"] for s, v in summary.items() if isinstance(v, dict) and "error" in v}
+    if errs:
+        lines += ["## Sites not scored", ""] + [f"* {s}: {e}" for s, e in errs.items()] + [""]
+    return "\n".join(lines)
+
+
+def main(sites, same_scenes=False):
+    out = OUT_SAME if same_scenes else OUT
+    os.makedirs(out, exist_ok=True)
     frames, summary = [], {}
     for site in sites:
         print(f"[{site}]")
         cfg = SITES[site]
-        df, info = score_villaviciosa(cfg) if site == "villaviciosa" else score_dutch(site, cfg)
-        df.to_csv(f"{OUT}/{site}.csv", index=False)
+        if same_scenes:
+            # one site failing (e.g. a sensitivity not run yet) must not lose the others
+            try:
+                df, info = (score_villaviciosa(cfg, same_scenes=True) if site == "villaviciosa"
+                            else score_dutch(site, cfg, same_scenes=True))
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                traceback.print_exc()
+                summary[site] = {"error": f"{type(e).__name__}: {e}"}
+                continue
+        else:
+            df, info = score_villaviciosa(cfg) if site == "villaviciosa" else score_dutch(site, cfg)
+        df.to_csv(f"{out}/{site}.csv", index=False)
         frames.append(df)
         summary[site] = info
-        show = df[df["subset"].isin(["all", "common"])][["product", "subset", "scenes", "n", "rmse_m",
-                                                         "slope", "r", "bias_m"]]
+        shown = ["all", "common"] + (list(COMMONS) if same_scenes else [])
+        show = df[df["subset"].isin(shown)][["product", "subset", "scenes", "n", "rmse_m",
+                                            "slope", "r", "bias_m"]]
         print(show.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+    json.dump(summary, open(f"{out}/summary.json", "w"), indent=1, default=str)
+    if same_scenes:
+        tab = same_scenes_summary(frames, summary)
+        tab.to_csv(f"{out}/same_scenes_summary.csv", index=False)
+        open(f"{out}/same_scenes_summary.md", "w", encoding="utf-8").write(
+            summary_markdown(tab, summary) + "\n")
+        print(tab.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(f"-> {out}/same_scenes_summary.{{csv,md}}")
+        return
     allf = pd.concat(frames, ignore_index=True)
-    json.dump(summary, open(f"{OUT}/summary.json", "w"), indent=1, default=str)
-    open(f"{OUT}/tables.tex", "w", encoding="utf-8").write(latex_rows(allf) + "\n")
-    print(f"-> {OUT}/")
+    open(f"{out}/tables.tex", "w", encoding="utf-8").write(latex_rows(allf) + "\n")
+    print(f"-> {out}/")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:] or list(SITES))
+    _args = sys.argv[1:]
+    _same = "--same-scenes" in _args
+    _sites = [a for a in _args if a != "--same-scenes"]
+    _bad = [s for s in _sites if s not in SITES]
+    if _bad:
+        raise SystemExit(f"unknown site(s) {_bad}; choose from {list(SITES)} "
+                         "(optional flag: --same-scenes)")
+    main(_sites or list(SITES), same_scenes=_same)
