@@ -71,9 +71,10 @@ in x and 0.25 m in y, is not rounding) and then take the lattice's exact
 float64 values; otherwise the lattice check decides on the regular axis
 through their median, and an offset is refused. Arrays larger than the
 request (the Zarr writer pads to whole chunks) are cropped onto the
-reference frame by coordinates on the checked lattice, and the FORMAT REPORT
-says what the cropped-away margin held (a note: the fill, or data outside
-the frame, on a sample of dates). A delivery that does not cover the frame
+reference frame AT THE REGISTERED OFFSET (below: the delivered coordinates
+do not place the pixels), and the FORMAT REPORT says what the cropped-away
+margin held (a note: the fill, or data outside the frame, on a sample of
+dates). A delivery that does not cover the frame
 (it would be padded with the fill, which reads as no-data inside the frame)
 stops a production year (``--allow-padding`` overrides); --test only warns.
 A time axis in ``milliseconds since 01/01/1970 - 00:00:00`` (and
@@ -86,12 +87,99 @@ DECLARE (``_FillValue``/``nodata`` attribute) or a Zarr ``fill_value`` of
 own (0 is clear sky in CLD): if -32768 occurs in the data it is the no-data,
 otherwise the run stops (AMBIGUOUS NO-DATA) unless ``--nodata`` is given.
 
+Registration (2026-10-19)
+-------------------------
+Every main store written from the backend's Zarr until 2026-10-19 was
+displaced by an integer number of pixels against the legacy netCDF cube of
+its site (same grid, same dates): the delivered arrays are padded (e.g.
+1152 x 1152 px for Villaviciosa's 915 x 915 px frame) and their x/y LABEL
+them as if the data started at the requested corner, but the frame's data
+start at row dy, column dx of them (Villaviciosa (72, 72), Ferrol (4, 2),
+Escalda (5, 1), Wadden (0, 5), Ems (288, 271); constant across the years of
+a site; the backend's rule is unknown). The coordinates therefore never
+place the pixels of a padded delivery; ``register_delivery`` establishes the
+offset (dy, dx) of the frame in the delivered (padded) arrays, and every
+band (the 10 m ones, the nearest-resampled 20 m ones, SCL, CLD) is cropped at
+``raw[dy:dy + H, dx:dx + W]`` with the frame's coordinates:
+
+* against the site's reference netCDF when it covers the year: the common
+  dates whose delivered SCL is clear (classes 4/5/6 on >=
+  REGISTRATION_MIN_CLEAR of its valid pixels, counted one date at a time in
+  the part of the arrays inside the frame at every offset) are tried
+  clearest first, at most REGISTRATION_MAX_TRIED, until REGISTRATION_DATES
+  count: per date, the masked FFT cross-correlation of the reference's B08
+  frame against the FULL delivered array (every offset 0 <= dy <= rows - H,
+  0 <= dx <= cols - W; no cyclic shift; B03 must confirm) must peak with
+  Pearson r >= REGISTRATION_MIN_R_ANY on the frame, REGISTRATION_MIN_MARGIN
+  above the best offset outside the peak (REGISTRATION_PEAK_PX) and a
+  CENTRED peak (REGISTRATION_MAX_SUBPIXEL); a date that does not (its
+  reference frame without data, a mosaic that differs) is set aside and
+  listed, a date whose peak passes ELSEWHERE refuses the year; at least
+  REGISTRATION_MIN_DATES dates must count, all at one offset, at least
+  REGISTRATION_MIN_DATES of them with B08 r >= REGISTRATION_MIN_R; the
+  delivered SCL must not match the reference's better within
+  REGISTRATION_SCL_SEARCH_PX of that offset. ``--offset-px ROWS,COLS`` must
+  agree with it (when the registration cannot measure without contradicting
+  it, e.g. too few clear dates, the expert offset stands unconfirmed, with a
+  warning, and the verification after writing decides);
+* a year the reference does not cover (campaign 2): ``--offset-px`` is
+  CHECKED against a store of the site registered against its reference (same
+  extent and grid): the per-pixel MEDIAN COMPOSITES of the
+  REGISTRATION_SIBLING_DATES clearest dates of this delivery (full arrays)
+  and of that store (its frame) must not put the frame elsewhere (refused),
+  and confirm it when they can (recorded); when nothing can check it, a
+  delivery of another array shape than the site's stores' is refused unless
+  ``--accept-unverified-offset``. Without ``--offset-px``, the offset of a
+  registered store of the SAME request (same extent, grid and delivered
+  shape) is taken only when those composites put the frame there for B08
+  and B03 (peak rules; r >= REGISTRATION_SIBLING_MIN_R: two years'
+  composites differ). Single dates of two years cannot do this (haze the SCL
+  calls clear, product geolocation 1 px apart): composites can;
+* arrays of the frame's shape whose x/y agree have no other offset (in a
+  year without reference checked within REGISTRATION_FRAME_SIZED_PX of (0, 0)
+  against a registered store's composites); arrays smaller than the frame
+  are placed by their coordinates (padding rules);
+* the 20 m layer (B8A B11 B12 SCL CLD) must not contradict the offset: the
+  delivery's own B8A against its B08 frame (REGISTRATION_20M_*), the SCL
+  against the reference's (above), and the 20 m cells of the placed frame
+  at phase (0, 0) of the 20 m lattice (REGISTRATION_PHASE_*).
+
+Anything else refuses the year before a store is written (--test warns and
+keeps the coordinates). The store records ``delivered_offset_px``,
+``delivered_shape_px``, ``registration_method``, ``registration_reference``,
+``registration_dates``, ``registration_r`` and the whole ``registration``
+record. After writing, the main store is verified against the reference
+(``verify_and_complete``): 'identical', or NEAR-IDENTICAL (on the identical
+grid, B03 and B08 equal on >= 99.9 % and SCL on >= 99 % of the pixel-dates
+valid in either store: VERIFY_MIN_EQUAL; no date of the reference missing;
+no date displaced) marks it complete; anything else leaves it NOT complete
+and stops the year with a message pointing at ``<year>.verify.json`` (the
+raw download is kept), which says per date whether the store is in place
+(``geometry_check``) and where the values differ (per 100-pixel block), so
+``--accept-differences`` (recorded) is decided on evidence: it accepts
+differing values, never a displaced store; a store written from the same
+delivery and refused is then verified again, not rewritten.
+``--renormalise`` rebuilds the stores of the sites / years given from their
+kept raw delivery (``<year>.part``, kept by ``--keep-raw``) without any
+network call or job: the raw normalised again with the registration and
+written, the store there moved aside to ``<year>.zarr.superseded-<UTC>``
+(never deleted) only once the new one is whole (its sidecars copied with the
+same suffix first), the new one verified, and ``<year>.verify.json``,
+``<year>.format.txt``, ``<year>.job.json`` and the ledger's notes updated;
+refused when the raw is missing or the disk cannot hold a second copy.
+``--renormalise --dry-run`` prints the measured offsets, the 20 m checks and
+what would be moved, and does nothing. The angles stores are placed by their
+x/y (no band to register them); a padded angles delivery is recorded and
+flagged (``angles_placement``, ``verify_angles``).
+
 One openEO batch job per year (windows [YYYY-01-01, YYYY+1-01-01), end-
 exclusive like ``experiments/download_cube.py``), with the same
 ``JOB_OPTIONS``. Each year: job -> download into ``<year>.part/`` ->
-normalise into ``<year>.zarr`` (every block read back and compared with what
-the backend delivered) -> compare with the existing netCDF cube of the site
-where it covers the year (``<year>.verify.json``) -> overpass times of the
+normalise into ``<year>.zarr`` (registered; every block read back and
+compared with what the backend delivered) -> compare with the existing
+netCDF cube of the site where it covers the year (``<year>.verify.json``;
+the store is marked complete only when the comparison accepts it) ->
+overpass times of the
 new dates into ``cubes/<site>/overpass_times.json`` (a NEW file; the
 pipeline's files are only read). Resumable: a finished year is skipped; a
 year that failed is the only one repeated; a job left running by a killed
@@ -229,14 +317,20 @@ Usage (from the repository root; on the server after ``source env.sh``)::
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2023-2025 --products angles
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2017-2022
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2023 --verify-only
+    $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023 --renormalise --dry-run
+    $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023 --renormalise
+    $PY -X utf8 -m experiments.download_cube_zarr ems --years 2022 --offset-px 288,271
+    $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023 --accept-differences
 
 To force a fresh job for a year, pass ``--new-job`` ONCE: the year's
 ``<year>.part`` (and ``<year>.angles.part``) is moved aside and no job is
 reattached (deleting the folder alone is not enough: a finished job of the
 same title would be found again on the backend). Do not keep ``--new-job``
 when resuming that run. A store that is complete is skipped even with
-``--new-job`` (nothing is paid for twice); delete ``<year>.zarr`` or
-``<year>.angles.zarr`` first to make it again.
+``--new-job`` (nothing is paid for twice); move ``<year>.zarr`` or
+``<year>.angles.zarr`` aside first to make it again (or ``--renormalise``
+a main store whose raw delivery was kept). A store found where a new one is
+written is moved aside to ``<year>.zarr.superseded-<UTC>``, never deleted.
 
 Importing this module does nothing (no chdir, no network); ``main`` works
 from the repository root.
@@ -363,6 +457,130 @@ LONLAT_SOURCE = ("--lonlat-extent: the lon/lat box (EPSG:4326), the request befo
 #: the short origin of a --lonlat-extent request (the dry run prints it)
 LONLAT_ORIGIN = "--lonlat-extent: the old lon/lat box, NOT on the lattice (diagnosis only)"
 
+#: REGISTRATION (2026-10-19; module docstring, "Registration"). The bands
+#: whose masked cross-correlation places the frame in a padded delivery: the
+#: first measures, the second must confirm (same offset, same rules)
+REGISTRATION_BANDS = ("B08", "B03")
+#: SCL classes that make a pixel clear for choosing the dates (vegetation,
+#: not vegetated, water), counted on the DELIVERED SCL in the ALWAYS-INSIDE
+#: core of the arrays (``core_window``: rows Hr - H .. H, columns Wr - W ..
+#: W, inside the frame at every candidate offset; the whole array when that
+#: core is empty), one date at a time (``clear_counts``)
+REGISTRATION_CLEAR_SCL = (4, 5, 6)
+#: a date is usable when at least this share of its valid delivered SCL
+#: pixels is clear ...
+REGISTRATION_MIN_CLEAR = 0.5
+#: ... and its valid SCL pixels number at least this share of the counted
+#: window (the reference frame of a date must also hold data on this share)
+REGISTRATION_MIN_COVER = 0.5
+#: the dates counted (at most), and the fewest accepted
+REGISTRATION_DATES = 5
+REGISTRATION_MIN_DATES = 3
+#: against the reference netCDF the usable dates are tried clearest first,
+#: at most this many: a date that does not measure (its reference frame
+#: without data, r below REGISTRATION_MIN_R_ANY, a peak not unique or not
+#: centred) is SET ASIDE (listed) and the next clearest one taken; a date
+#: whose peak passes at ANOTHER offset refuses the year (disagreement)
+REGISTRATION_MAX_TRIED = 10
+#: Pearson r on the frame at the registered offset: every counted date and
+#: band reaches REGISTRATION_MIN_R_ANY, and at least REGISTRATION_MIN_DATES
+#: counted dates reach REGISTRATION_MIN_R in B08. The same products give r =
+#: 1.0000 at the true offset (Ferrol, Escalda, Wadden, Ems); two downloads of
+#: Villaviciosa differ in a mosaic strip of the westernmost ~90 columns (the
+#: other tile), which costs r: B08 0.9947 and B03 0.9836 on 2025-10-02 with
+#: every argmax at the true offset (margins 0.10-0.20), so requiring 0.995 of
+#: every date and band tested the products' identity, not the geometry
+REGISTRATION_MIN_R = 0.995
+REGISTRATION_MIN_R_ANY = 0.98
+#: offsets within this many pixels (Chebyshev) of the best belong to its
+#: peak; the best must beat every offset outside it by REGISTRATION_MIN_MARGIN
+#: in r. Measured on clear dates of the legacy cubes, at 2 px or more from
+#: the true offset: identical data (one date) B08 r <= 0.94 at Ferrol (10 m),
+#: <= 0.976 at Wadden (a 20 m pixel = 2 px of 10 m), B03 <= 0.87 / 0.91, so
+#: margins >= 0.024; composites of two years (the sibling check) B08 / B03
+#: margins 0.050-0.133 at Ferrol, 0.024-0.061 at Wadden
+REGISTRATION_PEAK_PX = 1
+REGISTRATION_MIN_MARGIN = 0.005
+#: the peak must also be CENTRED on the offset found: the parabola through
+#: the best r and its two neighbours, on each axis, puts the maximum within
+#: this many pixels of it. The margin rule cannot see a flat-topped peak whose
+#: argmax is the wrong pixel (Ferrol, 2023-10-06 vs 2024-10-10: argmax 39
+#: with r 0.657, the true 40 at 0.652, sub-pixel maximum 39.38); identical
+#: data give a symmetric peak (~0)
+REGISTRATION_MAX_SUBPIXEL = 0.25
+#: an offset counts only when the frame's valid pixels and the delivery's
+#: overlap there on at least this share of the frame's valid pixels
+REGISTRATION_MIN_OVERLAP = 0.5
+#: a year without a reference netCDF takes the offset of a registered store
+#: of the site (the sibling) only when the per-pixel MEDIAN COMPOSITES of the
+#: REGISTRATION_SIBLING_DATES clearest usable dates of each (this delivery's
+#: full arrays; the sibling's frame) put the correlation peak there, for
+#: every band, with the peak rules above and r >= REGISTRATION_SIBLING_MIN_R.
+#: Single dates of two years cannot do it: on the legacy cubes, with the
+#: true offset known, the pairs of clear dates refused all 6 year pairs at
+#: Ferrol and at Wadden (B03 r 0.06-0.40 on hazy dates the SCL calls clear,
+#: argmax 1 px off on 7 of 60 pairs, product geolocation); the composites
+#: found the exact offset on 12 of 12 (Ferrol r 0.93-0.98, margin
+#: 0.050-0.133; Wadden r 0.90-0.98, margin 0.024-0.061)
+REGISTRATION_SIBLING_DATES = 12
+REGISTRATION_SIBLING_MIN_R = 0.85
+#: the composites are computed in blocks of this many rows (memory: rows x
+#: columns x dates float32, ~100 MB at Ems)
+REGISTRATION_COMPOSITE_ROWS = 512
+#: a delivery of the frame's shape in a year without reference is checked
+#: against a registered store within this many pixels of (0, 0) (the
+#: composite padded with an invalid margin)
+REGISTRATION_FRAME_SIZED_PX = 8
+#: the 20 m layer (B8A B11 B12 SCL CLD, nearest-resampled) takes the offset
+#: measured on the 10 m bands: on the registration dates the delivery's own
+#: B8A (full arrays) is correlated with its own B08 frame at that offset and
+#: must peak there (r >= REGISTRATION_20M_MIN_R where it measures; a peak
+#: that passes at another offset refuses the year). B8A, not B11: B11
+#: against B08 gives r 0.46-0.72 and once an argmax 1 px off (Villaviciosa)
+REGISTRATION_20M_BAND = "B8A"
+REGISTRATION_20M_MIN_R = 0.9
+#: the 20 m PHASE check of the placed frame: for these 20 m spectral bands,
+#: the share of valid pixel pairs inside one 20 m cell of the UTM lattice
+#: holding equal values (``block_equal_counts``) at the four phases of that
+#: lattice (x and / or y shifted by 10 m), on a few dates: nearest
+#: neighbour from the native grid gives ~100 % at phase (0, 0) (Villaviciosa
+#: B11 0.987 vs 0.50 / 0.50 / 0.02); a 20 m layer displaced by an odd number
+#: of pixels makes ANOTHER phase the ~100 % one, which refuses the year when
+#: it beats phase (0, 0) by REGISTRATION_PHASE_MIN_GAIN (on at least
+#: REGISTRATION_PHASE_MIN_PAIRS pairs). SCL / CLD are left out: classes and
+#: cloud probabilities are equal over large areas at any phase
+REGISTRATION_PHASE_BANDS = ("B8A", "B11", "B12")
+REGISTRATION_PHASE_MIN_GAIN = 0.2
+REGISTRATION_PHASE_MIN_PAIRS = 1000
+#: against the reference netCDF the delivered SCL (20 m) is compared with the
+#: reference's on every counted date at the registered offset and at every
+#: offset within REGISTRATION_SCL_SEARCH_PX of it: another offset matching
+#: better by more than REGISTRATION_SCL_TOL (equal share of the pixels valid
+#: in both) refuses the year (a displaced 20 m layer); the registered one
+#: matching best by more than that confirms the 20 m layer
+REGISTRATION_SCL_SEARCH_PX = 2
+REGISTRATION_SCL_TOL = 0.001
+#: the verification after writing (``compare_with_netcdf``) accepts a store
+#: that is 'identical' to the reference, or NEAR-IDENTICAL: on the identical
+#: grid, per band, at least this share of the compared pixel-dates valid in
+#: either store equal (same value, or no data in both); anything else is
+#: refused (the store is not marked complete) unless --accept-differences
+VERIFY_MIN_EQUAL = {"B03": 0.999, "B08": 0.999, "SCL": 0.99}
+#: a store that DIFFERS from the reference gets a per-date GEOMETRY verdict
+#: (``geometry_check``): on every common date with at least
+#: VERIFY_GEOMETRY_MIN_VALID valid B08 pixels in both, the reference's
+#: central crop (at most VERIFY_GEOMETRY_CROP_PX square) is correlated with
+#: the store's within VERIFY_GEOMETRY_SEARCH_PX: 'same' when the peak is at
+#: (0, 0) with r >= VERIFY_GEOMETRY_MIN_R, 'displaced' when it passes
+#: elsewhere, 'undetermined' otherwise. It tells differing VALUES (another
+#: mosaic, a reprocessed product) from a displacement: --accept-differences
+#: accepts the former, never a store displaced on a date or the same on
+#: fewer than half of the dates checked
+VERIFY_GEOMETRY_CROP_PX = 1024
+VERIFY_GEOMETRY_SEARCH_PX = 3
+VERIFY_GEOMETRY_MIN_R = 0.98
+VERIFY_GEOMETRY_MIN_VALID = 0.5
+
 #: dates per year in the existing cubes (Villaviciosa 2016-2025; the other
 #: sites have the same within a few), for size estimates of years no cube has
 TYPICAL_DATES = {2016: 63, 2017: 126, 2018: 145, 2019: 145, 2020: 144, 2021: 146, 2022: 145,
@@ -445,6 +663,21 @@ class LockedError(RuntimeError):
 class FrameRefused(RuntimeError):
     """A production request whose frame is the snapped lon/lat box, not a
     reference grid's (``--allow-snapped-frame``)."""
+
+
+class RegistrationRefused(FormatError):
+    """The frame's place in a padded delivery could not be established by
+    the rules (``register_delivery``): nothing is written."""
+
+
+class VerificationRefused(RuntimeError):
+    """A written store differs from the reference beyond the declared rule
+    (``verification_decision``): it is not marked complete
+    (``--accept-differences``)."""
+
+
+class RawMissing(RuntimeError):
+    """--renormalise: the store's raw delivery (``<year>.part``) is gone."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1608,9 +1841,11 @@ def download_results(job, req, log, workers=4):
 ZARR_MARKERS = {".zgroup", ".zarray", ".zattrs", ".zmetadata", "zarr.json"}
 
 
-def extract_zips(part, log=print):
+def extract_zips(part, log=print, dry_run=False):
     """Unzip every zip asset into ``<part>/extracted/<name without .zip>``
-    (members checked to stay inside it). Returns the extraction folders."""
+    (members checked to stay inside it). Returns the extraction folders.
+    ``dry_run``: nothing is (re)extracted or removed; a zip not extracted
+    yet stops with a FormatError."""
     part = Path(part)
     done = json.loads((part / ASSETS_DONE).read_text(encoding="utf-8"))
     out = []
@@ -1626,6 +1861,9 @@ def extract_zips(part, log=print):
         out.append(dest)
         if flag.is_file() and dest.is_dir():
             continue
+        if dry_run:
+            raise FormatError(f"dry run: {rel} is not extracted in {dest} (no {flag.name} flag); "
+                              f"nothing is extracted or removed by a dry run: run without --dry-run")
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True)
@@ -2153,6 +2391,8 @@ class Interpretation:
     groups: list = field(default_factory=list)   # bands sharing delivered chunks
     coord_dtypes: dict = field(default_factory=dict)  # x / y dtype as delivered ('>f4', ...)
     raw_axes: dict = field(default_factory=dict)  # float32 x / y as delivered (in float64)
+    registration: dict = None    # where the frame sits in the delivered arrays (register_delivery)
+    placement: dict = None       # the angles: how they were placed (angles_placement)
 
 
 def _low_precision(dtype):
@@ -2708,12 +2948,13 @@ def margin_summary(interp, r0, r1, c0, c1, max_dates=REPORT_CANDIDATES):
     return out
 
 
-def format_margin(m, fills=None):
+def format_margin(m, fills=None, how="coordinates"):
     """``(line, clean)`` of a ``margin_summary``: ``clean`` when the margin
     held nothing but the fill / NaN. Either way the line is a NOTE: the
     margin lies outside the frame (cropped by coordinates on the checked
-    lattice), so data there are pixels the request did not ask for, not
-    pixels lost from the store. On a sample of the dates, the line says so."""
+    lattice, or at the registered offset: ``how``), so data there are pixels
+    the request did not ask for, not pixels lost from the store. On a sample
+    of the dates, the line says so."""
     nb = next(iter(m["bands"].values()))["cells"] // max(1, m["dates"])
     sampled = m["dates"] < m["of"]
     head = (f"cropped-away margin: the delivered rows / columns outside rows {m['rows'][0]}:"
@@ -2733,7 +2974,7 @@ def format_margin(m, fills=None):
             bits.append(f"(values {s['min']:g}..{s['max']:g})")
         parts.append(f"{b} " + " ".join(bits))
     return (head + f" holds data{on}, not only the fill: " + "; ".join(parts)
-            + " - pixels OUTSIDE the requested frame, cut off by coordinates (not in the store; "
+            + f" - pixels OUTSIDE the requested frame, cut off by {how} (not in the store; "
             "nothing inside the frame is lost)"), False
 
 
@@ -2949,10 +3190,17 @@ def radiometry_summary(per_date, n_pixels, band, low=LOW_DN):
 
 
 def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, groups=None,
-                format_id=None):
+                format_id=None, complete=True, supersede_to=None):
     """Write the canonical dataset to ``out`` (``<out>.tmp`` then rename).
     ``format_id``: the store's ``format`` attribute (the cubes'
     ``zarr_cubes.FORMAT_ID`` unless given; the angles pass theirs).
+    ``complete=False``: the store is written whole but with ``complete = 0``
+    and ``verification = "pending"``: the main product is marked complete
+    (``mark_complete``) only once its verification against the reference
+    accepts it. A store already at ``out`` is moved aside to
+    ``<out>.superseded-<UTC>`` (or ``supersede_to``, a path chosen in
+    advance), never deleted, and only once the new one is written whole and
+    read back: until then the old store stays where it was.
 
     Template first (metadata and coordinates), then one region write per
     band and time block of ``CHUNKS['t']`` dates (or of the delivered time
@@ -3056,20 +3304,57 @@ def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, grou
         log(f"radiometry: {rad_band} share of valid DN in [1, {LOW_DN}) per date, p90 "
             f"{summ['p90_share_below_low']} over {summ['dates_used']} dates -> "
             f"{summ['offset_state']}")
-    g.attrs["complete"] = 1
+    if complete:
+        g.attrs["complete"] = 1
+    else:
+        g.attrs["verification"] = PENDING
     zarr.consolidate_metadata(str(tmp))
     chk = zc.open_store(tmp)
     if chk.sizes["t"] != T or zc.dates(chk) != dates or sorted(zc.band_names(chk)) != sorted(bands):
         raise RuntimeError(f"{tmp}: the written store does not reopen as written")
     chk.close()
-    old = None
     if out.exists():
-        old = out.with_name(f"{out.name}.old-{utcnow():%Y%m%dT%H%M%S}")
-        os.replace(out, old)
+        move_aside(out, "a store was already there (written again)", log, dest=supersede_to)
     os.replace(tmp, out)
-    if old is not None:
-        shutil.rmtree(old, ignore_errors=True)
     return out
+
+
+#: the ``verification`` attribute of a main store written but not yet accepted
+PENDING = ("pending: written whole, marked complete once its verification against the "
+           "reference accepts it (verification_decision)")
+
+
+def superseded_name(path):
+    """A free ``<path>.superseded-<UTC>`` name beside ``path``."""
+    path = Path(path)
+    stamp = f"{path.name}.superseded-{utcnow():%Y%m%dT%H%M%S}"
+    dest, k = path.with_name(stamp), 1
+    while dest.exists():
+        dest, k = path.with_name(f"{stamp}-{k}"), k + 1
+    return dest
+
+
+def move_aside(path, why, log=print, dest=None):
+    """Move ``path`` (a store) to ``dest`` (a free path chosen in advance) or
+    ``<path>.superseded-<UTC>``: never deleted. Returns the new path."""
+    path = Path(path)
+    dest = Path(dest) if dest is not None and not Path(dest).exists() else superseded_name(path)
+    os.replace(path, dest)
+    log(f"{why}: {path} moved aside to {dest} (kept, never deleted)")
+    return dest
+
+
+def mark_complete(store, attrs=None):
+    """Set ``complete = 1`` (and ``attrs``) on a store written with
+    ``complete=False``, and consolidate its metadata again."""
+    import zarr
+
+    g = zarr.open_group(str(store), mode="r+")
+    for k, v in (attrs or {}).items():
+        g.attrs[k] = v
+    g.attrs["complete"] = 1
+    zarr.consolidate_metadata(str(store))
+    return Path(store)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3296,6 +3581,15 @@ def report_interp(interp, ds):
              f"{y[-1]:.1f} (pixel centres), spacing {x[1] - x[0] if len(x) > 1 else '?'} / "
              f"{y[1] - y[0] if len(y) > 1 else '?'} m")
     L.append(f"  CRS: EPSG {zc._epsg_from_wkt(interp.crs_wkt)} from {interp.crs_source}")
+    reg = interp.registration
+    if reg:
+        o = reg.get("offset")
+        L.append(f"  registration: {reg.get('method')}: "
+                 + (f"frame {reg['frame_shape'][0]} x {reg['frame_shape'][1]} px at row {o[0]}, col "
+                    f"{o[1]} of the delivered {reg['delivered_shape'][0]} x "
+                    f"{reg['delivered_shape'][1]} px (their x/y: row {reg['coordinate_offset'][0]}, "
+                    f"col {reg['coordinate_offset'][1]}); " if o is not None else "")
+                 + str(reg.get("why") or ""))
     for b in ds.data_vars:
         if b == "crs":
             continue
@@ -3809,15 +4103,24 @@ def verify_request(req, log):
                                      start=req.start, end=req.end, ref_period=(p0, p1),
                                      log=lambda m: log(f"  {m}"))
         rep = dict(base, **rep)
+        if rep.get("verdict") == "differs":       # values, or the geometry? (geometry_check)
+            rep["geometry"] = geometry_check(req.store, ref, rep)
+    written = (Path(req.store) / ".zmetadata").is_file()       # complete, or pending its verdict
     others = [y for y in zc.list_years(req.site, req.root) if y != req.year]
-    if others and zc.is_complete(req.store):
+    if others and written:
         a = zc.open_store(req.store)
         b = zc.open_store(zc.store_path(req.site, others[0], req.root))
         rep["same_grid_as_year"] = {str(others[0]): bool(zc._same_grid(a, b))}
         a.close()
         b.close()
-    if zc.is_complete(req.store):
+    if written:
         attrs = zc.store_attrs(req.store)
+        if attrs.get("registration"):
+            rep["registration"] = {k: _json_attr(attrs.get(k)) if k != "registration_method"
+                                   else attrs.get(k)
+                                   for k in ("delivered_offset_px", "delivered_shape_px",
+                                             "registration_method", "registration_dates",
+                                             "registration_r")}
         rad = zc.store_radiometry(attrs)
         if rad:
             rep["radiometry"] = rad
@@ -3828,6 +4131,13 @@ def verify_request(req, log):
     for line in zc.report_lines(rep) if rep.get("dates") else [
             f"verification: {rep['verdict']} ({rep.get('reason')})"]:
         log(line)
+    for b, s in (rep.get("bands") or {}).items() if rep.get("verdict") == "differs" else ():
+        blk = s.get("differing_by_block") or {}
+        if s.get("differing_pixels") and blk:
+            log(f"  {b} differing share per {blk['block_px']}-pixel block: columns "
+                f"{blk['columns']}; rows {blk['rows']}")
+    if rep.get("geometry"):
+        log(f"  geometry: {geometry_summary(rep['geometry'])}")
     if rep.get("radiometry"):
         r = rep["radiometry"]
         log(f"radiometry: {r.get('band')} p90 share of valid DN in [1, {r.get('low_dn')}) over "
@@ -3835,6 +4145,215 @@ def verify_request(req, log):
             + (f"; input baselines {rep['input_baselines']['counts']}"
                if rep.get("input_baselines") else ""))
     return rep
+
+
+def geometry_check(store, nc_path, rep, band="B08"):
+    """The per-date GEOMETRY of a store that differs from its reference
+    (VERIFY_GEOMETRY_*): on every common date of ``rep`` (the report of
+    ``compare_with_netcdf``: its window, the reference period and the common
+    grid window) whose central crop (at most VERIFY_GEOMETRY_CROP_PX square)
+    holds at least VERIFY_GEOMETRY_MIN_VALID valid ``band`` pixels in both,
+    the reference's crop less a margin of VERIFY_GEOMETRY_SEARCH_PX is
+    registered in the store's crop (``offset_of``, r >=
+    VERIFY_GEOMETRY_MIN_R): 'same' (the best offset is (0, 0) with that r and
+    a centred peak; a smooth, cloudy date need not be unique within the few
+    pixels searched: two Villaviciosa downloads gave 120 such dates of 465,
+    every one at (0, 0)), 'displaced' (the peak passes every rule elsewhere:
+    ``{date: [dy, dx, r]}``) or 'undetermined' (``{date: reason}``). The
+    store is read in blocks of dates."""
+    import xarray as xr
+
+    s = VERIFY_GEOMETRY_SEARCH_PX
+    cw = (rep.get("grid") or {}).get("common_window")
+    out = {"checked": False, "band": band, "search_px": s, "min_r": VERIFY_GEOMETRY_MIN_R,
+           "dates_checked": 0, "same": 0, "displaced": {}, "undetermined": {}, "skipped": 0}
+    if not cw:
+        return dict(out, why="no common grid window")
+    zy0, zy1 = cw["store_rows"]
+    zx0, zx1 = cw["store_cols"]
+    ry0, rx0 = cw["reference_rows"][0], cw["reference_cols"][0]
+    Hc, Wc = zy1 - zy0, zx1 - zx0
+    h, w = min(Hc, VERIFY_GEOMETRY_CROP_PX), min(Wc, VERIFY_GEOMETRY_CROP_PX)
+    if h <= 2 * s + 2 or w <= 2 * s + 2:
+        return dict(out, why=f"the common window ({Hc} x {Wc} px) is too small")
+    oy, ox = (Hc - h) // 2, (Wc - w) // 2
+    out.update(crop=[h, w], crop_rows=[zy0 + oy, zy0 + oy + h], crop_cols=[zx0 + ox, zx0 + ox + w])
+    z = zc.open_store(store, bands=[band])
+    r = xr.open_dataset(nc_path, mask_and_scale=False)
+    try:
+        rt = zc._time_dim(r)
+        (w0, w1), (p0, p1) = rep["window"], rep["reference_period"]
+        zd = {d: i for i, d in enumerate(zc._dates_of(z["t"].values)) if w0 <= d < w1}
+        rd = {}
+        for j, d in enumerate(zc._dates_of(r[rt].values)):
+            if max(w0, p0) <= d < min(w1, p1):
+                rd.setdefault(d, j)
+        common = sorted(set(zd) & set(rd))
+        zf, rf = zc.fill_of(z[band]), zc.fill_of(r[band])
+        tb = int(zc.CHUNKS["t"])
+        for k in range(0, len(common), tb):
+            block = common[k:k + tb]
+            za = np.asarray(z[band].isel(t=[zd[d] for d in block], y=slice(zy0 + oy, zy0 + oy + h),
+                                         x=slice(zx0 + ox, zx0 + ox + w)).values)
+            for m, d in enumerate(block):
+                ca = np.asarray(r[band].isel({rt: rd[d], "y": slice(ry0 + oy, ry0 + oy + h),
+                                              "x": slice(rx0 + ox, rx0 + ox + w)}).values)
+                a = za[m]
+                oka, okc = _valid_px(a, zf), _valid_px(ca, rf)
+                if oka.mean() < VERIFY_GEOMETRY_MIN_VALID or okc.mean() < VERIFY_GEOMETRY_MIN_VALID:
+                    out["skipped"] += 1
+                    continue
+                out["dates_checked"] += 1
+                v = offset_of(a, oka, ca[s:h - s, s:w - s], okc[s:h - s, s:w - s],
+                              VERIFY_GEOMETRY_MIN_R)
+                o = v.get("offset")
+                rel = None if o is None else [int(o[0]) - s, int(o[1]) - s]
+                if rel == [0, 0] and v.get("r_ok") and v.get("centred"):
+                    out["same"] += 1                # a smooth (cloudy) date: flat, but AT (0, 0)
+                elif v.get("pass"):
+                    out["displaced"][d] = rel + [v.get("r")]
+                else:
+                    out["undetermined"][d] = (str(v.get("why"))
+                                              + (f" (peak at {tuple(rel)}, r {v.get('r')})"
+                                                 if rel is not None else ""))
+            del za
+    finally:
+        z.close()
+        r.close()
+    return dict(out, checked=True)
+
+
+def geometry_summary(geo):
+    """One line on ``geometry_check``'s record."""
+    if not geo or not geo.get("checked"):
+        return f"not checked ({(geo or {}).get('why')})"
+    n, same = geo["dates_checked"], geo["same"]
+    disp, und = geo["displaced"], geo["undetermined"]
+    head = (f"the store's {geo['band']} is in place (peak at (0, 0) within {geo['search_px']} px, r "
+            f">= {geo['min_r']}) on {same} of the {n} date(s) checked")
+    if disp:
+        head = (f"DISPLACED on {len(disp)} date(s) ("
+                + "; ".join(f"{d} by {tuple(v[:2])} r {v[2]}" for d, v in list(disp.items())[:5])
+                + f"); {head}")
+    if und:
+        head += (f"; undetermined on {len(und)} ("
+                 + "; ".join(f"{d}: {w}" for d, w in list(und.items())[:3])[:400] + ")")
+    if geo.get("skipped"):
+        head += f"; {geo['skipped']} date(s) with too few valid pixels not checked"
+    return head
+
+
+def geometry_blocks(geo):
+    """True when ``geometry_check`` says the store is NOT the reference's
+    geometry: a displaced date, or in place on fewer than half the dates
+    checked. --accept-differences never accepts such a store."""
+    if not geo or not geo.get("checked"):
+        return False
+    return bool(geo["displaced"]) or geo["same"] < 0.5 * geo["dates_checked"]
+
+
+def _equal_share(s):
+    """``(share, n)`` of a band's comparison: the pixel-dates equal (same
+    value, or no data in both) over those valid in either store (no data in
+    both left out of the count)."""
+    n = int(s.get("pixels") or 0) - int(s.get("nodata_both") or 0)
+    if n <= 0:
+        return None, 0
+    return 1.0 - float(s.get("differing_pixels") or 0) / float(n), n
+
+
+def verification_decision(rep):
+    """``(accepted, how, why)`` of a ``verify_request`` report, by the
+    declared rule: 'identical' (or 'identical on the common window', the
+    --test window) is accepted; 'no reference' is accepted as NOT VERIFIED
+    (nothing to compare with: the registration's record says how the frame
+    was placed); 'differs' is accepted as NEAR-IDENTICAL when the grid is
+    the reference's, no date is displaced (``geometry_check``), no date of
+    the reference is missing from the store, and for every band of
+    VERIFY_MIN_EQUAL at least that share of the pixel-dates valid in either
+    store is equal (same value, or no data in both; dates only in the store
+    are listed in the report, not counted); anything else ('not comparable',
+    a band missing, a share below its threshold) is refused. The ``why``
+    carries the geometry verdict, so --accept-differences is decided on it."""
+    v = rep.get("verdict")
+    if v in ("identical", "identical on the common window"):
+        return True, "identical", v
+    if v == "no reference":
+        return True, "not verified", f"no reference ({rep.get('reason')})"
+    if v != "differs":
+        return False, "refused", f"verdict {v!r} ({rep.get('reason')})"
+    grid = rep.get("grid") or {}
+    if not grid.get("identical"):
+        return False, "refused", "the store's grid is not the reference's"
+    geo = rep.get("geometry") or {}
+    d = rep.get("dates") or {}
+    shares, low = {}, []
+    if geo.get("displaced"):
+        low.append(f"GEOMETRY: {geometry_summary(geo)}")
+    for b, need in VERIFY_MIN_EQUAL.items():
+        s = (rep.get("bands") or {}).get(b)
+        eq, n = _equal_share(s) if s else (None, 0)
+        if eq is None:
+            low.append(f"{b} not compared")
+            continue
+        shares[b] = round(eq, 6)
+        if eq < need:
+            low.append(f"{b} equal on {eq:.4%} of {n} pixel-dates valid in either store "
+                       f"(< {need:.1%})")
+    if d.get("only_reference"):
+        low.append(f"{len(d['only_reference'])} date(s) of the reference missing from the store "
+                   f"({d['only_reference'][:6]}{' ...' if len(d['only_reference']) > 6 else ''})")
+    tail = (f"; dates only in the store {len(d.get('only_store') or [])}, only in the reference "
+            f"{len(d.get('only_reference') or [])}"
+            + (f"; geometry: {geometry_summary(geo)}" if geo.get("checked") else ""))
+    if low:
+        return False, "refused", "; ".join(low) + tail
+    return True, "near-identical", ("equal shares "
+                                    + ", ".join(f"{b} {v:.4%}" for b, v in shares.items())
+                                    + f" >= {VERIFY_MIN_EQUAL}" + tail)
+
+
+def verify_and_complete(ctx, req, log):
+    """Verify a main store written with ``complete=False`` against the
+    reference (``verify_request``) and decide (``verification_decision``):
+    accepted -> ``complete = 1`` and the decision in the ``verification``
+    attribute; refused -> the store stays NOT complete and
+    VerificationRefused says where verify.json is, unless
+    ``ctx.accept_differences`` (--accept-differences: accepted, recorded;
+    never a store whose geometry is not the reference's, ``geometry_blocks``)
+    or --test (reported, never refused). The decision is also written into
+    ``<year>.verify.json`` (``acceptance``)."""
+    rep = verify_request(req, log)
+    ok, how, why = verification_decision(rep)
+    geo = rep.get("geometry") or {}
+    acc = {"accepted": ok, "how": how, "why": why, "rule": dict(VERIFY_MIN_EQUAL),
+           "verdict": rep.get("verdict"), "checked_utc": rep.get("checked_utc")}
+    flag = bool(getattr(ctx, "accept_differences", False))
+    blocked = not ok and flag and geometry_blocks(geo)
+    if not ok and flag and not blocked:
+        acc.update(accepted=True, how="accepted with --accept-differences",
+                   why=f"refused by the rule ({why}), accepted with --accept-differences")
+    elif blocked:
+        acc["accept_differences"] = ("--accept-differences given, NOT applied: the geometry is not "
+                                     "the reference's (" + geometry_summary(geo) + ")")
+    elif not ok and req.test:
+        acc.update(accepted=True, how="--test: reported, not refused", why=why)
+    rep["acceptance"] = acc
+    zc.write_json(rep, req.sidecar("verify.json"))
+    if acc["accepted"]:
+        mark_complete(req.store, {"verification": json.dumps(acc)})
+        log(f"verification decision: {acc['how']} ({acc['why']}); {req.store.name} marked complete")
+        return rep
+    raise VerificationRefused(
+        f"{req.tag}: the written store differs from the reference beyond the rule "
+        f"{VERIFY_MIN_EQUAL}: {why}. It is NOT marked complete ({req.store} stays with complete = "
+        f"0); see {req.sidecar('verify.json')} (per band, the differing share per "
+        f"{zc.DIFF_BLOCK_PX}-pixel block of columns / rows; 'geometry': each date in place or not); "
+        f"the raw download stays in {req.part}. "
+        + ("--accept-differences was NOT applied: it accepts differing values, never a store whose "
+           "geometry is not the reference's" if blocked else
+           "Once the differences are explained, run again with --accept-differences to accept it "
+           "(recorded in the store; the written store is verified again, not rewritten)"))
 
 
 def update_overpass(req, dates, log, network=True):
@@ -3911,6 +4430,28 @@ def report_angle_dates(dates):
                f"{dates['only_main'][:12]}{' ...' if len(dates['only_main']) > 12 else ''}")]
 
 
+def unregistered_angles(attrs):
+    """The problem of an angles store placed by its x/y from a PADDED
+    delivery (not registered: ``angles_placement``), or None. A store written
+    before 2026-10-19 has no ``placement`` attribute: its ``delivered_notes``
+    tell (the coordinate crop of a larger delivered grid)."""
+    rec = _json_attr(attrs.get("placement"))
+    if isinstance(rec, dict):
+        if not rec.get("padded"):
+            return None
+        return (f"padded delivery ({rec.get('delivered_shape_cells')} cells for the "
+                f"{rec.get('frame_shape_cells')} cell frame) placed by its x/y, NOT registered: not "
+                f"for the sensing-time inversion until registered")
+    notes = " ".join(str(n) for n in (_json_attr(attrs.get("delivered_notes")) or []))
+    m = re.search(r"delivered grid (\d+) x (\d+) px from .*? put on the reference grid (\d+) x (\d+) "
+                  r"px", notes)
+    if m and (int(m.group(1)) > int(m.group(3)) or int(m.group(2)) > int(m.group(4))):
+        return (f"written before 2026-10-19 from a padded delivery ({m.group(1)} x {m.group(2)} "
+                f"cells for the {m.group(3)} x {m.group(4)} cell frame) placed by its x/y, NOT "
+                f"registered: not for the sensing-time inversion until registered")
+    return None
+
+
 def verify_angles(req, log):
     """Check a written angles store; JSON beside it (``<year>.angles.
     verify.json``) and the log. The verdict lists the problems: dates that
@@ -3940,6 +4481,9 @@ def verify_angles(req, log):
                         f"bound")
     if chk["dates_without_sun"]:
         problems.append(f"{len(chk['dates_without_sun'])} date(s) without sun angles in the frame")
+    unreg = unregistered_angles(zc.store_attrs(req.store))
+    if unreg:
+        problems.append(unreg)
     verdict = "; ".join(problems) if problems else (
         "ok" if dates["compared"] else "ok (dates not compared: no complete main store)")
     rep = {"site": req.site, "year": req.year, "window": [req.start, req.end],
@@ -3976,6 +4520,13 @@ class Context:
         self.allow_snapped = bool(getattr(a, "allow_snapped_frame", False))
         self.nodata = getattr(a, "nodata", None)
         self.new_job = bool(getattr(a, "new_job", False))
+        #: --offset-px (rows, cols) of the frame in the delivered arrays, or None
+        self.offset_px = getattr(a, "offset_px", None)
+        #: --accept-differences: a store refused by the verification rule is accepted (recorded)
+        self.accept_differences = bool(getattr(a, "accept_differences", False))
+        #: --accept-unverified-offset: an --offset-px nothing can check is taken although the
+        #: delivered arrays are not the shape the site's stores were delivered in (recorded)
+        self.accept_unverified_offset = bool(getattr(a, "accept_unverified_offset", False))
         self.network = True
         self.poll_s, self.poll_max_s, self.capacity_wait_s = 10.0, 60.0, 300
         self.sleep = sleep
@@ -4179,19 +4730,13 @@ def delivered_extent_note(attrs, req):
             f"{d:.2f} m off); the coordinates place the pixels, not this attribute")
 
 
-def put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=False):
-    """After the lattice check passed: crop / pad the delivery onto the grid
-    the store must have. Production: the reference grid (``extent``, the
+def placement_target(interp, req, guard, rgrid, extent):
+    """``(target, why)``: the grid the store must have when the delivery's
+    extent is not it, else ``(None, None)`` (the choice of
+    ``put_on_target``). Production: the reference grid (``extent``, the
     lattice check's message, says the delivery has another extent). --test
     with a UTM extent: the requested window (``rgrid``), which must lie on
-    the reference lattice. An alignment that only crops is a note, and so is
-    what the cropped-away margin held (``format_margin``: the Zarr writer's
-    padding to whole chunks, or pixels outside the frame). PADDING (the
-    delivery does not cover the target: rows / columns inside the frame
-    would be the fill, which reads as no-data) stops a production year
-    (FormatError, nothing written) unless ``allow_padding``
-    (--allow-padding), and is a warning otherwise. A production extent that
-    is not the reference frame is a warning too."""
+    the reference lattice (FormatError otherwise)."""
     res = req.spec.resolution
     target, why = None, None
     if req.test and rgrid is not None:
@@ -4210,10 +4755,33 @@ def put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=Fal
                                   f"{rgrid['path']}")
     elif extent:
         target, why = guard, extent
+    return target, why
+
+
+def put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=False,
+                  registered=None):
+    """After the lattice check passed: crop / pad the delivery onto the grid
+    the store must have (``placement_target``). ``registered``: the record of
+    ``register_delivery``; when it holds an offset, every band is cropped AT
+    THAT OFFSET onto the target (``place_at_offset``: the delivered x/y are
+    not used to place the pixels). Otherwise by coordinates
+    (``align_to_grid``): an alignment that only crops is a note, and so is
+    what the cropped-away margin held (``format_margin``: the Zarr writer's
+    padding to whole chunks, or pixels outside the frame). PADDING (the
+    delivery does not cover the target: rows / columns inside the frame
+    would be the fill, which reads as no-data) stops a production year
+    (FormatError, nothing written) unless ``allow_padding``
+    (--allow-padding), and is a warning otherwise. A production extent that
+    is not the reference frame is a warning too."""
+    res = req.spec.resolution
+    target, why = placement_target(interp, req, guard, rgrid, extent)
     if (not req.test and rgrid is not None and ref_grid is not None
             and not _same_axes(rgrid["x"], rgrid["y"], ref_grid)):
         interp.warnings.append(f"{rgrid['path']} is not the frame of {ref_grid['path']}: the store "
                                f"follows the reference grid")
+    if (registered or {}).get("offset") is not None:
+        place_at_offset(interp, target, registered, why)
+        return
     if target is None:
         return
     if not _on_lattice_of(interp.x[0], interp.y[0], target, float(res)):
@@ -4229,6 +4797,1211 @@ def put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=Fal
     (interp.warnings if padded else interp.notes).append(f"{why}; {note}")
     if margin:
         interp.notes.append(format_margin(margin, interp.fills)[0])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  registration: where the frame's pixels sit in a padded delivery
+#  (module docstring, "Registration")
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class RegistrationPlan:
+    """Where the place of the frame in a delivery may come from
+    (``registration_plan``): the reference netCDF covering the window, an
+    expert offset (--offset-px), registered stores of the same request under
+    ``root``. ``strict``: production refuses what the rules do not
+    establish; --test warns and keeps the delivered coordinates."""
+    reference: str = None             # the site's reference netCDF, when it covers the window
+    reference_period: tuple = None    # the period it was requested for (end-exclusive)
+    no_reference: str = ""            # why there is none
+    expert: tuple = None              # --offset-px (rows, cols)
+    strict: bool = True
+    root: object = None               # registered sibling stores are looked for here (None: nowhere)
+    accept_unverified: bool = False   # --accept-unverified-offset (an expert offset nothing can check)
+
+
+def registration_plan(req, ctx=None, ref_grid=None):
+    """The ``RegistrationPlan`` of a main request: the site's reference
+    netCDF when it is on this machine, is the 10 m reference grid
+    (``ref_grid``, from ``reference_grid``) and covers the request's window;
+    ``ctx.offset_px`` (--offset-px; production only) and
+    ``ctx.accept_unverified_offset``; registered stores of the site under the
+    request's root (production only)."""
+    cfg = SITE_CONFIG[req.site]
+    path = ROOT / cfg["reference"]
+    p0, p1 = cfg["reference_period"]
+    expert = None if req.test else getattr(ctx, "offset_px", None)
+    common = dict(expert=tuple(int(v) for v in expert) if expert else None, strict=not req.test,
+                  root=None if req.test else Path(req.root),
+                  accept_unverified=bool(getattr(ctx, "accept_unverified_offset", False)))
+    if not path.is_file():
+        why = f"{path.name} is not on this machine"
+    elif not (req.start < p1 and req.end > p0):
+        why = f"{path.name} covers [{p0}, {p1}), not [{req.start}, {req.end})"
+    elif (ref_grid is None or ref_grid.get("kind") != "netcdf"
+          or Path(str(ref_grid.get("path"))).resolve() != path.resolve()):
+        why = f"{path.name} is not the {RESOLUTION_M} m reference grid of {req.site}"
+    else:
+        return RegistrationPlan(reference=str(path), reference_period=(p0, p1), **common)
+    return RegistrationPlan(no_reference=why, **common)
+
+
+def registration_rule():
+    """The constants of the registration, as recorded with every store."""
+    return {"bands": list(REGISTRATION_BANDS), "clear_scl": list(REGISTRATION_CLEAR_SCL),
+            "min_clear": REGISTRATION_MIN_CLEAR, "min_cover": REGISTRATION_MIN_COVER,
+            "dates": REGISTRATION_DATES, "min_dates": REGISTRATION_MIN_DATES,
+            "max_tried": REGISTRATION_MAX_TRIED, "min_r": REGISTRATION_MIN_R,
+            "min_r_any": REGISTRATION_MIN_R_ANY, "peak_px": REGISTRATION_PEAK_PX,
+            "min_margin": REGISTRATION_MIN_MARGIN, "max_subpixel": REGISTRATION_MAX_SUBPIXEL,
+            "min_overlap": REGISTRATION_MIN_OVERLAP,
+            "sibling_dates": REGISTRATION_SIBLING_DATES,
+            "sibling_min_r": REGISTRATION_SIBLING_MIN_R,
+            "frame_sized_px": REGISTRATION_FRAME_SIZED_PX,
+            "band_20m": REGISTRATION_20M_BAND, "min_r_20m": REGISTRATION_20M_MIN_R,
+            "phase_bands": list(REGISTRATION_PHASE_BANDS),
+            "phase_min_gain": REGISTRATION_PHASE_MIN_GAIN,
+            "scl_search_px": REGISTRATION_SCL_SEARCH_PX, "scl_tol": REGISTRATION_SCL_TOL}
+
+
+def _valid_px(a, fill):
+    """Valid pixels of a band array: not the fill, not 0 (the L2A no-data), finite."""
+    a = np.asarray(a)
+    ok = a != 0
+    if a.dtype.kind == "f":
+        ok &= np.isfinite(a)
+    if fill is not None and not (isinstance(fill, float) and np.isnan(fill)):
+        ok &= a != fill
+    return ok
+
+
+def core_window(shape, frame_shape):
+    """``(rows, cols)`` slices of delivered arrays of ``shape`` (rows, cols)
+    that lie inside a frame of ``frame_shape`` at EVERY offset the frame can
+    take in them (rows Hr - H .. H, columns Wr - W .. W): where the clear
+    pixels of a date are counted before the offset is known, so the margin
+    (data outside the frame, or the fill) does not choose the dates. The
+    whole axis when that core is empty (arrays more than twice the frame)."""
+    (Hr, Wr), (H, W) = (int(v) for v in shape), (int(v) for v in frame_shape)
+    rows = slice(Hr - H, H) if 0 <= Hr - H < H <= Hr else slice(0, Hr)
+    cols = slice(Wr - W, W) if 0 <= Wr - W < W <= Wr else slice(0, Wr)
+    return rows, cols
+
+
+def _window_px(rows, cols, frame_shape=None):
+    """Pixels of the window rows x cols, at most the frame's (the
+    whole-array fallback of core_window holds more than one frame)."""
+    n = int((rows.stop - rows.start) * (cols.stop - cols.start))
+    return n if frame_shape is None else min(n, int(frame_shape[0]) * int(frame_shape[1]))
+
+
+def clear_counts(band, idx, fill, rows=None, cols=None):
+    """``(valid, clear)`` pixel counts of a (t, y, x) SCL band on the dates
+    ``idx`` (valid: neither the fill nor 0; clear: the REGISTRATION_CLEAR_SCL
+    classes), in the window ``rows`` x ``cols`` (default: the whole array),
+    one date at a time, or the dates of one time chunk together when the
+    array is chunked over several dates (a store: each chunk decoded once):
+    each read touches its own chunks and nothing else (one dask graph over
+    every date of a padded delivery, ~460 dates x 930 chunks at Ems, took
+    minutes and gigabytes before computing anything)."""
+    idx = [int(i) for i in idx]
+    nv, nc = np.zeros(len(idx), "int64"), np.zeros(len(idx), "int64")
+    real = fill is not None and not (isinstance(fill, float) and np.isnan(fill))
+    data = band.data if hasattr(band, "dims") else band
+    rows = rows if rows is not None else slice(None)
+    cols = cols if cols is not None else slice(None)
+    tch = getattr(data, "chunks", None)
+    bounds = np.cumsum((0,) + tuple(tch[0])) if tch else None
+    groups = {}
+    for k, i in enumerate(idx):           # dates of one time chunk are read together
+        g = int(np.searchsorted(bounds, i, side="right")) if bounds is not None else k
+        groups.setdefault(g, []).append((k, i))
+    for members in groups.values():
+        block = np.asarray(data[[i for _, i in members], rows, cols])
+        for m, (k, _) in enumerate(members):
+            a = block[m]
+            ok = a != 0
+            if real:
+                ok &= a != fill
+            nv[k] = int(ok.sum())
+            nc[k] = int(np.isin(a, REGISTRATION_CLEAR_SCL).sum())
+        del block
+    return nv, nc
+
+
+def usable_dates(dates, nv, nc, frame_px, n=REGISTRATION_DATES):
+    """The dates of ``clear_counts`` the registration may use: clear on at
+    least REGISTRATION_MIN_CLEAR of their valid SCL pixels, valid on at least
+    REGISTRATION_MIN_COVER of ``frame_px`` (the pixel count of the window
+    counted); the ``n`` clearest (most clear pixels; None: all) first.
+    Returns ``(chosen [(date, position)], number usable)``."""
+    ok = []
+    for k, (d, v, c) in enumerate(zip(dates, nv, nc)):
+        share = float(c) / float(v) if v else 0.0
+        if v >= REGISTRATION_MIN_COVER * frame_px and share >= REGISTRATION_MIN_CLEAR:
+            ok.append((-int(c), str(d), k))
+    ok.sort()
+    return [(d, k) for _, d, k in ok[:n]], len(ok)
+
+
+def _fft_pair():
+    """``(rfft2, irfft2)`` at a given size: scipy's (all cores) when present."""
+    try:
+        from scipy import fft as sfft
+
+        return (lambda a, s: sfft.rfft2(a, s=s, workers=-1),
+                lambda A, s: sfft.irfft2(A, s=s, workers=-1))
+    except ImportError:                     # pragma: no cover - scipy is installed here
+        return (lambda a, s: np.fft.rfft2(a, s=s), lambda A, s: np.fft.irfft2(A, s=s))
+
+
+def _standardised(a, ok):
+    """``a`` as float64, centred and scaled on its valid pixels, 0 elsewhere
+    (r does not change; the sums of the correlation stay small)."""
+    v = np.where(ok, np.asarray(a, dtype="float64"), 0.0)
+    if ok.any():
+        m = float(v[ok].mean())
+        s = float(v[ok].std()) or 1.0
+        v = np.where(ok, (v - m) / s, 0.0)
+    return v
+
+
+def masked_correlation(image, image_ok, template, template_ok):
+    """Pearson r of ``template`` (h x w) against the window ``image[dy:dy +
+    h, dx:dx + w]`` at EVERY offset 0 <= dy <= H - h, 0 <= dx <= W - w, over
+    the pixels valid in both (masked normalised cross-correlation by FFT,
+    Padfield 2012): ``(r, n)``, arrays of shape (H - h + 1, W - w + 1), n the
+    pixels compared, r NaN where fewer than 2 or a side is constant. The
+    transforms are taken at the image's size with the template at the
+    origin: a window inside the image never wraps around, so these are the
+    linear correlations of the full delivered array, not a cyclic shift."""
+    H, W = image.shape
+    h, w = template.shape
+    if h > H or w > W:
+        raise ValueError(f"a {h} x {w} frame cannot lie inside a {H} x {W} array")
+    fw, bw = _fft_pair()
+    s, oh, ow = (H, W), H - h + 1, W - w + 1
+
+    def corr(A, B):
+        return np.array(bw(A * B, s)[:oh, :ow])          # a copy: the full array is freed
+
+    mt = template_ok.astype("float64")
+    t = _standardised(template, template_ok)
+    Cm, Ct, Ct2 = np.conj(fw(mt, s)), np.conj(fw(t, s)), np.conj(fw(t * t, s))
+    del mt, t
+    F = fw(image_ok.astype("float64"), s)
+    n = np.rint(corr(F, Cm))
+    st, st2 = corr(F, Ct), corr(F, Ct2)
+    a = _standardised(image, image_ok)
+    F = fw(a, s)
+    sa, sta = corr(F, Cm), corr(F, Ct)
+    F = fw(a * a, s)
+    del a
+    sa2 = corr(F, Cm)
+    del F, Cm, Ct, Ct2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cov = sta - st * sa / n
+        vt = st2 - st * st / n
+        va = sa2 - sa * sa / n
+        r = cov / np.sqrt(vt * va)
+    r[(n < 2) | ~(vt > 1e-9 * n) | ~(va > 1e-9 * n)] = np.nan
+    return r, n
+
+
+def window_r(image, image_ok, template, template_ok, dy, dx):
+    """``(r, n)``: Pearson r of the frame against the delivered window at
+    offset (dy, dx), computed directly over the pixels valid in both."""
+    h, w = template.shape
+    ok = template_ok & image_ok[dy:dy + h, dx:dx + w]
+    n = int(ok.sum())
+    if n < 2:
+        return None, n
+    a = image[dy:dy + h, dx:dx + w][ok].astype("float64")
+    b = template[ok].astype("float64")
+    a -= a.mean()
+    b -= b.mean()
+    den = math.sqrt(float((a * a).sum()) * float((b * b).sum()))
+    return (float((a * b).sum()) / den if den > 0 else None), n
+
+
+def _subpixel(rr, dy, dx):
+    """``[delta_y, delta_x]``: where the parabola through ``rr[dy, dx]`` and
+    its two neighbours on each axis has its maximum, in pixels from (dy, dx)
+    (None on an axis without two finite neighbours; 0.5 for a flat top)."""
+    out = []
+    for m, p in (((dy - 1, dx), (dy + 1, dx)), ((dy, dx - 1), (dy, dx + 1))):
+        inside = all(0 <= a < s for q in (m, p) for a, s in zip(q, rr.shape))
+        vm, vp = (float(rr[m]), float(rr[p])) if inside else (np.nan, np.nan)
+        c = float(rr[dy, dx])
+        if not (np.isfinite(vm) and np.isfinite(vp)):
+            out.append(None)
+            continue
+        den = vm - 2.0 * c + vp
+        out.append(0.5 if den >= 0 else round(float(0.5 * (vm - vp) / den), 4))
+    return out
+
+
+def offset_of(image, image_ok, template, template_ok, min_r):
+    """Register the frame ``template`` in the delivered ``image``: the best
+    offset of ``masked_correlation`` among those whose overlap holds
+    REGISTRATION_MIN_OVERLAP of the frame's valid pixels, its r computed
+    directly on the frame, the best r outside its peak (REGISTRATION_PEAK_PX)
+    and whether the rules pass: r >= ``min_r`` (``r_ok``), a margin of at
+    least REGISTRATION_MIN_MARGIN over that second best (``unique``; also
+    when every offset lies in the peak) and a CENTRED peak (``centred``: the
+    parabolic sub-pixel maximum within REGISTRATION_MAX_SUBPIXEL of the
+    offset on each axis that has two neighbours)."""
+    nt = int(template_ok.sum())
+    if nt < 2:
+        return {"offset": None, "pass": False, "r_ok": False, "unique": False, "centred": False,
+                "why": "no valid pixel in the frame"}
+    r, n = masked_correlation(image, image_ok, template, template_ok)
+    rr = np.where(n >= REGISTRATION_MIN_OVERLAP * nt, r, np.nan)
+    if not np.isfinite(rr).any():
+        return {"offset": None, "pass": False, "r_ok": False, "unique": False, "centred": False,
+                "why": (f"no offset where the delivery's valid pixels cover "
+                        f"{REGISTRATION_MIN_OVERLAP:.0%} of the frame's")}
+    dy, dx = (int(v) for v in np.unravel_index(int(np.nanargmax(rr)), rr.shape))
+    best = float(rr[dy, dx])
+    p = REGISTRATION_PEAK_PX
+    rest = rr.copy()
+    rest[max(0, dy - p):dy + p + 1, max(0, dx - p):dx + p + 1] = np.nan
+    second = at = None
+    if np.isfinite(rest).any():
+        sy, sx = (int(v) for v in np.unravel_index(int(np.nanargmax(rest)), rest.shape))
+        second, at = float(rest[sy, sx]), [sy, sx]
+    sub = _subpixel(rr, dy, dx)
+    rx, nx = window_r(image, image_ok, template, template_ok, dy, dx)
+    margin = None if second is None else best - second
+    r_ok = rx is not None and rx >= min_r
+    unique = margin is None or margin >= REGISTRATION_MIN_MARGIN
+    centred = all(v is None or abs(v) <= REGISTRATION_MAX_SUBPIXEL for v in sub)
+    why = []
+    if not r_ok:
+        why.append(f"r {'-' if rx is None else f'{rx:.5f}'} < {min_r}")
+    if not unique:
+        why.append(f"not unique: r {second:.5f} at offset {tuple(at)} is within "
+                   f"{REGISTRATION_MIN_MARGIN} of the best {best:.5f}")
+    if not centred:
+        why.append(f"not centred: the peak's parabolic maximum lies ({sub[0]}, {sub[1]}) px from "
+                   f"{(dy, dx)} (> {REGISTRATION_MAX_SUBPIXEL})")
+    return {"offset": [dy, dx], "r": None if rx is None else round(rx, 6),
+            "r_fft": round(best, 6), "second": None if second is None else round(second, 6),
+            "second_at": at, "margin": None if margin is None else round(margin, 6),
+            "subpixel": sub, "overlap": nx, "frame_valid": nt, "r_ok": r_ok, "unique": unique,
+            "centred": centred, "pass": not why, "why": "; ".join(why)}
+
+
+def _r_table(per):
+    """``{band: {date: r}}`` of per-date, per-band ``offset_of`` results."""
+    out = {}
+    for d, bands in per.items():
+        for b, v in bands.items():
+            out.setdefault(b, {})[d] = v.get("r")
+    return out
+
+
+def scl_offset_check(scl, scl_fill, ref, ref_fill, off, frame_shape,
+                     px=REGISTRATION_SCL_SEARCH_PX):
+    """The delivered SCL of one date (the FULL arrays) against the
+    reference's frame on the same date: the share of equal classes over the
+    pixels valid in both, at the registered offset ``off`` and at every
+    offset within ``px`` pixels of it that keeps the frame inside the arrays.
+    Returns ``{"at_offset", "best_other", "best_other_at", "verdict"}``:
+    'confirmed' (the registered offset matches best by more than
+    REGISTRATION_SCL_TOL), 'contradicted' (another offset matches better by
+    more than that: the 20 m layer sits elsewhere) or 'tie' (an SCL without
+    structure at that scale)."""
+    H, W = (int(v) for v in frame_shape)
+    Hr, Wr = scl.shape
+    dy, dx = (int(v) for v in off)
+    okr = _valid_px(ref, ref_fill)
+    oka = _valid_px(scl, scl_fill)
+    shares = {}
+    for oy in range(dy - px, dy + px + 1):
+        for ox in range(dx - px, dx + px + 1):
+            if oy < 0 or ox < 0 or oy + H > Hr or ox + W > Wr:
+                continue
+            both = okr & oka[oy:oy + H, ox:ox + W]
+            n = int(both.sum())
+            if n:
+                shares[(oy, ox)] = float((scl[oy:oy + H, ox:ox + W][both] == ref[both]).sum()) / n
+    s0 = shares.get((dy, dx))
+    out = {"at_offset": None if s0 is None else round(s0, 6), "best_other": None,
+           "best_other_at": None, "verdict": "tie"}
+    if s0 is None:
+        return dict(out, verdict="no pixel valid in both")
+    others = {k: v for k, v in shares.items() if k != (dy, dx)}
+    if others:
+        k = max(others, key=others.get)
+        out.update(best_other=round(others[k], 6), best_other_at=[int(k[0]), int(k[1])])
+        if others[k] - s0 > REGISTRATION_SCL_TOL:
+            out["verdict"] = "contradicted"
+        elif s0 - others[k] > REGISTRATION_SCL_TOL:
+            out["verdict"] = "confirmed"
+    return out
+
+
+def check_20m_layer(interp, off, frame_shape, dates):
+    """The 20 m layer against the 10 m one INSIDE the delivery (no reference
+    needed): on each date of ``dates`` [(date, position)], the delivery's own
+    B08 frame at ``off`` (the template) is registered in its full B8A arrays
+    (REGISTRATION_20M_BAND, nearest-resampled from 20 m; ``offset_of``, r >=
+    REGISTRATION_20M_MIN_R). Returns the record: per date, the dates whose
+    peak passes AT ``off`` (``confirmed``) and those whose peak passes
+    ELSEWHERE (``contradicted``: the 20 m layer is displaced against the 10 m
+    one). A date that does not measure (r too low, a flat peak) is neither."""
+    b20, b10 = REGISTRATION_20M_BAND, REGISTRATION_BANDS[0]
+    rec = {"band": b20, "against": b10, "checked": False, "confirmed": [], "contradicted": {},
+           "per_date": {}}
+    if b20 not in interp.bands or b10 not in interp.bands:
+        return dict(rec, why=f"{b20} or {b10} not delivered")
+    if not dates:
+        return dict(rec, why="no usable date")
+    H, W = (int(v) for v in frame_shape)
+    dy, dx = (int(v) for v in off)
+    for d, i in dates:
+        img = np.asarray(interp.bands[b20].data[int(i)])
+        tpl = np.asarray(interp.bands[b10].data[int(i)])[dy:dy + H, dx:dx + W]
+        v = offset_of(img, _valid_px(img, interp.fills.get(b20)), tpl,
+                      _valid_px(tpl, interp.fills.get(b10)), REGISTRATION_20M_MIN_R)
+        del img, tpl
+        rec["per_date"][d] = v
+        if v.get("pass") and v["offset"] == [dy, dx]:
+            rec["confirmed"].append(d)
+        elif v.get("pass"):
+            rec["contradicted"][d] = v["offset"]
+    return dict(rec, checked=True)
+
+
+def layer_20m_line(rec):
+    """A line on ``check_20m_layer``'s record."""
+    if not rec.get("checked"):
+        return f"20 m layer: not checked ({rec.get('why')})"
+    n = len(rec["per_date"])
+    if rec["contradicted"]:
+        where = "; ".join(f"{d} at {tuple(o)}" for d, o in rec["contradicted"].items())
+        return (f"20 m layer DISPLACED: {rec['band']} against the delivery's own {rec['against']} "
+                f"frame peaks elsewhere ({where})")
+    if rec["confirmed"]:
+        rs = [rec["per_date"][d]["r"] for d in rec["confirmed"]]
+        return (f"20 m layer confirmed: {rec['band']} against the delivery's own {rec['against']} "
+                f"frame peaks at the offset on {len(rec['confirmed'])} of {n} date(s) (r "
+                f"{min(rs):.3f}..{max(rs):.3f})")
+    why = "; ".join(f"{d}: {v.get('why') or 'no offset'}"
+                    for d, v in list(rec["per_date"].items())[:3])
+    return (f"20 m layer: {rec['band']} against {rec['against']} does not measure on {n} date(s) "
+            f"({why})")
+
+
+def phase_check(interp, idx):
+    """The 20 m PHASE of the placed frame (REGISTRATION_PHASE_*): per 20 m
+    spectral band, the share of valid pixel pairs inside one 20 m cell of
+    the UTM lattice holding equal values (``block_equal_counts``) at the
+    four phases of that lattice ("00"; "01": x shifted by 10 m; "10": y;
+    "11": both), on the dates ``idx`` (positions). A band whose phase (0, 0)
+    is beaten by REGISTRATION_PHASE_MIN_GAIN (with at least
+    REGISTRATION_PHASE_MIN_PAIRS pairs) is listed in ``contradicted``: its
+    20 m cells sit an odd number of pixels away from where they should."""
+    x = np.asarray(interp.x, dtype="float64")
+    y = np.asarray(interp.y, dtype="float64")
+    idx = [int(i) for i in idx]
+    dts = zc._dates_of(interp.t)
+    out = {"dates": [dts[i] for i in idx], "bands": {}, "contradicted": []}
+    for b in REGISTRATION_PHASE_BANDS:
+        if b not in interp.bands or not idx:
+            continue
+        a = np.asarray(interp.bands[b].isel(t=idx).values)
+        ok = _valid(a, interp.fills.get(b))
+        shares, pairs = {}, 0
+        for py, px in ((0, 0), (0, 1), (1, 0), (1, 1)):
+            eq, n = block_equal_counts(a, x + 10.0 * px, y - 10.0 * py, ok)
+            shares[f"{py}{px}"] = round(eq / n, 4) if n else None
+            if (py, px) == (0, 0):
+                pairs = n
+        del a, ok
+        out["bands"][b] = {"shares": shares, "pairs": pairs}
+        s0 = shares["00"]
+        other = [v for k, v in shares.items() if k != "00" and v is not None]
+        if (s0 is not None and other and pairs >= REGISTRATION_PHASE_MIN_PAIRS
+                and max(other) - s0 >= REGISTRATION_PHASE_MIN_GAIN):
+            out["contradicted"].append(b)
+    return out
+
+
+def phase_line(chk):
+    """A line on ``phase_check``'s record."""
+    if not chk["bands"]:
+        return "20 m phase: not checked (no 20 m spectral band or no date)"
+    parts = "; ".join(f"{b} " + " ".join(f"{k} {'-' if v is None else f'{v:.3f}'}"
+                                         for k, v in s["shares"].items())
+                      for b, s in chk["bands"].items())
+    head = ("20 m phase CONTRADICTED for " + ", ".join(chk["contradicted"]) if chk["contradicted"]
+            else "20 m phase check passed")
+    return (f"{head}: share of equal pixel pairs inside one 20 m cell of the lattice at the phases "
+            f"00 (the frame's) / 01 / 10 / 11 on {chk['dates']}: {parts}")
+
+
+def median_composite(band, idx, fill, rows=None, cols=None, block=REGISTRATION_COMPOSITE_ROWS):
+    """The per-pixel MEDIAN (float32; NaN where no date has data) of the (t,
+    y, x) ``band`` (DataArray, dask or numpy) over the dates ``idx``
+    (positions), in the window ``rows`` x ``cols`` (default: everything),
+    computed in blocks of ``block`` rows that read the dates together (a
+    chunk is decoded once per block). Invalid values (the fill, 0, NaN) are
+    left out of the median."""
+    import warnings
+
+    data = band.data if hasattr(band, "dims") else band
+    _, Hr, Wr = (int(v) for v in data.shape)
+    r0, r1 = (0, Hr) if rows is None else (int(rows.start), int(rows.stop))
+    c0, c1 = (0, Wr) if cols is None else (int(cols.start), int(cols.stop))
+    idx = sorted(int(i) for i in idx)
+    out = np.full((r1 - r0, c1 - c0), np.nan, "float32")
+    for a in range(r0, r1, int(block)):
+        b = min(r1, a + int(block))
+        raw = np.asarray(data[idx, a:b, c0:c1])
+        stack = raw.astype("float32")
+        stack[~_valid_px(raw, fill)] = np.nan
+        del raw
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)       # pixels without any date
+            out[a - r0:b - r0] = np.nanmedian(stack, axis=0)
+        del stack
+    return out
+
+
+def register_with_netcdf(interp, frame, plan, log=print):
+    """Measure the offset of ``frame`` (its axes ``x``, ``y``) in the
+    delivered arrays against the reference netCDF ``plan.reference``.
+
+    The common dates (within the period the reference was requested for)
+    whose DELIVERED SCL is usable (``usable_dates``, counted in the
+    always-inside core of the arrays, ``core_window``) are tried clearest
+    first, at most REGISTRATION_MAX_TRIED, until REGISTRATION_DATES COUNT: per
+    date, ``offset_of`` of the reference's frame in the full delivered array
+    for every band of REGISTRATION_BANDS (B08 measures, B03 confirms), r >=
+    REGISTRATION_MIN_R_ANY. A date counts when every band passes; a date that
+    does not measure (its reference frame without data, r too low, a peak
+    not unique or not centred) is SET ASIDE with the reason. Passed when no
+    two passing results disagree on the offset, at least
+    REGISTRATION_MIN_DATES dates count, at least REGISTRATION_MIN_DATES of
+    them reach B08 r >= REGISTRATION_MIN_R, and the delivered SCL (20 m) does
+    not match the reference's better at another offset within
+    REGISTRATION_SCL_SEARCH_PX (``scl_offset_check``) on any counted date.
+    Returns the record (``measured``: the offsets of the passing results;
+    ``positions``: the counted dates' positions in the delivery;
+    ``usable_positions``: the clearest usable ones)."""
+    import xarray as xr
+
+    fx = np.asarray(frame["x"], dtype="float64")
+    fy = np.asarray(frame["y"], dtype="float64")
+    H, W = len(fy), len(fx)
+    _, Hr, Wr = (int(v) for v in next(iter(interp.bands.values())).shape)
+    name = Path(plan.reference).name
+    b0 = REGISTRATION_BANDS[0]
+    rec = {"reference": str(plan.reference), "passed": False, "offset": None, "measured": [],
+           "dates": [], "positions": [], "usable_positions": []}
+    with xr.open_dataset(plan.reference, mask_and_scale=False) as r:
+        tdim = zc._time_dim(r)
+        ox = zc._overlap(fx, np.asarray(r["x"].values))
+        oy = zc._overlap(fy, np.asarray(r["y"].values))
+        if ox is None or oy is None or tuple(ox[:2]) != (0, W) or tuple(oy[:2]) != (0, H):
+            return dict(rec, why=f"the frame ({H} x {W} px) is not inside the grid of {name}")
+        c0, r0 = int(ox[2]), int(oy[2])
+        missing = [b for b in REGISTRATION_BANDS + ("SCL",) if b not in interp.bands
+                   or (b != "SCL" and b not in r.data_vars)]
+        if missing:
+            return dict(rec, why=f"bands {missing} missing from the delivery or from {name}")
+        p0, p1 = plan.reference_period or ("0000", "9999")
+        rpos = {}
+        for j, d in enumerate(zc._dates_of(r[tdim].values)):
+            if p0 <= d < p1:
+                rpos.setdefault(d, j)
+        common = [(d, i, rpos[d]) for i, d in enumerate(zc._dates_of(interp.t)) if d in rpos]
+        rec["common_dates"] = len(common)
+        if not common:
+            return dict(rec, why=f"no date in common with {name}")
+        rows, cols = core_window((Hr, Wr), (H, W))
+        nv, nc = clear_counts(interp.bands["SCL"], [i for _, i, _ in common],
+                              interp.fills.get("SCL"), rows, cols)
+        cands, n_ok = usable_dates([d for d, _, _ in common], nv, nc,
+                                   _window_px(rows, cols, (H, W)), n=None)
+        rec.update(usable_dates=n_ok,
+                   clear_window=[[rows.start, rows.stop], [cols.start, cols.stop]],
+                   usable_positions=[[d, int(common[k][1])] for d, k in cands[:REGISTRATION_DATES]])
+        if n_ok < REGISTRATION_MIN_DATES:
+            return dict(rec, why=(
+                f"{n_ok} usable date(s) among the {len(common)} in common with {name} (delivered "
+                f"SCL clear on >= {REGISTRATION_MIN_CLEAR:.0%} of its valid pixels, valid on >= "
+                f"{REGISTRATION_MIN_COVER:.0%} of the always-inside core of the arrays, rows "
+                f"{rows.start}:{rows.stop} cols {cols.start}:{cols.stop}); {REGISTRATION_MIN_DATES} "
+                f"needed: a cloudy delivery is refused, not guessed"))
+
+        def frame_of(b, j):
+            return np.asarray(r[b].isel({tdim: j, "y": slice(r0, r0 + H),
+                                         "x": slice(c0, c0 + W)}).values)
+
+        per, counted, aside, tried = {}, [], {}, 0
+        for d, k in cands:
+            if len(counted) >= REGISTRATION_DATES or tried >= REGISTRATION_MAX_TRIED:
+                break
+            _, i, j = common[k]
+            tpls = {b: frame_of(b, j) for b in REGISTRATION_BANDS}
+            cover = min(float(_valid_px(t, zc.fill_of(r[b])).mean()) for b, t in tpls.items())
+            if cover < REGISTRATION_MIN_COVER:
+                aside[d] = (f"the reference frame holds data on {cover:.0%} of its pixels (< "
+                            f"{REGISTRATION_MIN_COVER:.0%})")
+                continue
+            tried += 1
+            per[d] = {}
+            for b in REGISTRATION_BANDS:
+                img = np.asarray(interp.bands[b].data[i])
+                per[d][b] = offset_of(img, _valid_px(img, interp.fills.get(b)), tpls[b],
+                                      _valid_px(tpls[b], zc.fill_of(r[b])), REGISTRATION_MIN_R_ANY)
+                del img
+            del tpls
+            bad = [f"{b} {v.get('why') or 'no offset'}" for b, v in per[d].items()
+                   if not v.get("pass")]
+            if bad:
+                aside[d] = "; ".join(bad)
+            else:
+                counted.append((d, k))
+        measured = sorted({tuple(v["offset"]) for res in per.values() for v in res.values()
+                           if v.get("pass")})
+        rec.update(dates=[d for d, _ in counted],
+                   positions=[[d, int(common[k][1])] for d, k in counted],
+                   clear={d: [int(nv[k]), int(nc[k])] for d, k in counted}, dates_tried=tried,
+                   set_aside=aside, per_date=per, r=_r_table({d: per[d] for d, _ in counted}),
+                   measured=[list(o) for o in measured])
+        if len(measured) > 1:
+            listed = "; ".join(
+                f"{d} " + ", ".join(f"{b} {tuple(v['offset']) if v.get('offset') else '-'}"
+                                    for b, v in res.items())
+                for d, res in per.items())
+            return dict(rec, why=f"the dates / bands disagree on the offset ({listed})")
+        if len(counted) < REGISTRATION_MIN_DATES:
+            return dict(rec, why=(
+                f"{len(counted)} of the {tried} date(s) tried measure the offset "
+                f"({REGISTRATION_MIN_DATES} needed; the usable dates are tried clearest first, at "
+                f"most {REGISTRATION_MAX_TRIED}): "
+                + "; ".join(f"{d}: {w}" for d, w in aside.items())))
+        off = list(measured[0])
+        strong = [d for d, _ in counted if (per[d][b0].get("r") or 0.0) >= REGISTRATION_MIN_R]
+        rec["dates_min_r"] = strong
+        if len(strong) < REGISTRATION_MIN_DATES:
+            return dict(rec, why=(
+                f"the {len(counted)} counted dates agree on {tuple(off)}, but only {len(strong)} "
+                f"reach {b0} r >= {REGISTRATION_MIN_R} ({REGISTRATION_MIN_DATES} needed): "
+                + ", ".join(f"{d} r {per[d][b0].get('r')}" for d, _ in counted)))
+        if "SCL" in r.data_vars:
+            scl = {}
+            for d, k in counted:
+                _, i, j = common[k]
+                scl[d] = scl_offset_check(np.asarray(interp.bands["SCL"].data[i]),
+                                          interp.fills.get("SCL"), frame_of("SCL", j),
+                                          zc.fill_of(r["SCL"]), off, (H, W))
+            rec.update(scl=scl, scl_equal={d: v["at_offset"] for d, v in scl.items()},
+                       scl_confirmed=[d for d, v in scl.items() if v["verdict"] == "confirmed"])
+            bad = {d: v for d, v in scl.items() if v["verdict"] == "contradicted"}
+            if bad:
+                return dict(rec, why=(
+                    f"the delivered SCL (20 m) matches the reference's better elsewhere than at "
+                    f"{tuple(off)}: " + "; ".join(
+                        f"{d} equal on {v['at_offset']:.4f} at the offset, {v['best_other']:.4f} at "
+                        f"{tuple(v['best_other_at'])}" for d, v in bad.items())
+                    + " (the 20 m layer is displaced against the 10 m one)"))
+    return dict(rec, passed=True, offset=off, why="")
+
+
+def _json_attr(v):
+    if isinstance(v, (dict, list)):
+        return v
+    try:
+        return json.loads(v) if v else None
+    except (TypeError, ValueError):
+        return None
+
+
+def backend_version(results_meta):
+    """The backend's version in a job's results metadata ('' when absent)."""
+    m = results_meta or {}
+    return str(m.get("openeo:version", "") or (m.get("properties") or {}).get("openeo:version", ""))
+
+
+def input_tiles(meta):
+    """The MGRS tiles of the Sentinel-2 L2A products a job read, sorted, from
+    the product names in its results metadata (recorded with the
+    registration: a year read from other tiles may be laid out otherwise)."""
+    blob = json.dumps(meta or {}, default=str)
+    return sorted(set(re.findall(r"S2[A-D]_MSIL2A_\d{8}T\d{6}_N\d{4}_R\d{3}_T(\w{5})_\d{8}T\d{6}",
+                                 blob)))
+
+
+def sibling_candidates(req, frame, raw_shape, version, root, same_request=True):
+    """Complete main stores of ``req.site`` under ``root`` (other years)
+    whose own registration against a reference netCDF passed (``registration``
+    attribute: method "netcdf", verified), with the same requested extent and
+    the same grid (the frame's axes); ``same_request`` (TAKING a sibling's
+    offset): also the same delivered array shape. Without it (CHECKING an
+    --offset-px, or a frame-sized delivery) any delivered shape: the
+    composites search the frame in THIS delivery's arrays. The backend
+    version (``version``) is recorded by the caller, never compared: it
+    changes every week or two (0.73.0a16.dev20260805 ... 0.73.0a17.
+    dev20260915 in the legacy cubes) and only the correlation tells whether
+    its layout changed. Returns ``(candidates nearest year first, [(year, why
+    skipped)])``."""
+    out, skipped = [], []
+    want = _json_attr(json.dumps(req.spatial_extent))
+    fx = np.asarray(frame["x"], dtype="float64")
+    fy = np.asarray(frame["y"], dtype="float64")
+    for year in zc.list_years(req.site, root):
+        if year == req.year:
+            continue
+        path = zc.store_path(req.site, year, root)
+        attrs = zc.store_attrs(path)
+        rec = _json_attr(attrs.get("registration"))
+        why = None
+        if not isinstance(rec, dict) or rec.get("method") != "netcdf" or not rec.get("verified"):
+            why = "not registered against a reference netCDF"
+        elif _json_attr(attrs.get("spatial_extent")) != want:
+            why = f"another requested extent ({attrs.get('spatial_extent')})"
+        elif same_request and list(rec.get("delivered_shape") or []) != list(raw_shape):
+            why = (f"its delivery was {rec.get('delivered_shape')} px, this one "
+                   f"{list(raw_shape)}")
+        else:
+            ds = zc.open_store(path, bands=["SCL"])
+            try:
+                same = (np.array_equal(np.asarray(ds["x"].values, dtype="float64"), fx)
+                        and np.array_equal(np.asarray(ds["y"].values, dtype="float64"), fy))
+            finally:
+                ds.close()
+            if not same:
+                why = "another grid"
+        if why:
+            skipped.append((year, why))
+        else:
+            out.append({"year": year, "path": str(path), "offset": list(rec["offset"]),
+                        "delivered_shape": list(rec.get("delivered_shape") or []),
+                        "backend_version": str(attrs.get("backend_version") or "")})
+    out.sort(key=lambda c: (abs(c["year"] - req.year), c["year"]))
+    return out, skipped
+
+
+def recorded_delivered_shapes(req, root):
+    """``{(rows, cols): [years]}``: the delivered array shapes recorded by the
+    complete main stores of ``req.site`` under ``root`` (other years) with
+    the same requested extent."""
+    out = {}
+    if root is None:
+        return out
+    want = _json_attr(json.dumps(req.spatial_extent))
+    for year in zc.list_years(req.site, root):
+        if year == req.year:
+            continue
+        attrs = zc.store_attrs(zc.store_path(req.site, year, root))
+        shp = _json_attr(attrs.get("delivered_shape_px"))
+        if (_json_attr(attrs.get("spatial_extent")) == want and isinstance(shp, list)
+                and len(shp) == 2):
+            out.setdefault((int(shp[0]), int(shp[1])), []).append(year)
+    return out
+
+
+def register_with_sibling(interp, frame, cand, log=print, want=None, pad=0):
+    """Check an offset (``want``; default the sibling's own) on this delivery
+    against a registered store of the site (``cand``: another year,
+    registered against its reference netCDF): the per-pixel MEDIAN
+    COMPOSITES of the REGISTRATION_SIBLING_DATES clearest usable dates of
+    this delivery (its full arrays; dates chosen in the always-inside core)
+    and of the sibling store (its frame), per band of REGISTRATION_BANDS,
+    registered with ``offset_of`` (the peak rules; r >=
+    REGISTRATION_SIBLING_MIN_R). ``pad``: the delivery's composite gets an
+    invalid margin of ``pad`` pixels (a frame-sized delivery, searched within
+    ``pad`` px of (0, 0)); the offsets reported are those of the unpadded
+    arrays. Returns the record; ``outcome``: 'confirmed' (every band passes
+    at ``want``), 'contradicted' (a band passes ELSEWHERE: ``measured``) or
+    'unmeasured' (``why``); ``positions``: this delivery's clearest dates
+    (for the 20 m check)."""
+    H, W = len(frame["y"]), len(frame["x"])
+    want = [int(v) for v in (cand["offset"] if want is None else want)]
+    rec = {"reference": cand["path"], "sibling_year": cand["year"],
+           "sibling_offset": cand["offset"], "want": want, "pad": int(pad), "passed": False,
+           "offset": None, "outcome": "unmeasured", "measured": None, "dates": [],
+           "sibling_dates": [], "positions": []}
+    if "SCL" not in interp.bands or any(b not in interp.bands for b in REGISTRATION_BANDS):
+        return dict(rec, why="the delivery lacks SCL or a registration band")
+    _, Hr, Wr = (int(v) for v in next(iter(interp.bands.values())).shape)
+    rows, cols = core_window((Hr, Wr), (H, W))
+    mine_dates = zc._dates_of(interp.t)
+    nv, nc = clear_counts(interp.bands["SCL"], range(len(mine_dates)), interp.fills.get("SCL"),
+                          rows, cols)
+    mine, n_mine = usable_dates(mine_dates, nv, nc, _window_px(rows, cols, (H, W)),
+                                n=REGISTRATION_SIBLING_DATES)
+    ds = zc.open_store(cand["path"], bands=list(REGISTRATION_BANDS) + ["SCL"])
+    try:
+        sib_dates = zc.dates(ds)
+        sv, sc = clear_counts(ds["SCL"], range(len(sib_dates)), zc.fill_of(ds["SCL"]))
+        theirs, n_theirs = usable_dates(sib_dates, sv, sc, H * W, n=REGISTRATION_SIBLING_DATES)
+        rec.update(usable_dates=n_mine, sibling_usable_dates=n_theirs,
+                   dates=[d for d, _ in mine], sibling_dates=[d for d, _ in theirs],
+                   positions=[[d, int(i)] for d, i in mine[:REGISTRATION_DATES]])
+        if len(mine) < REGISTRATION_MIN_DATES or len(theirs) < REGISTRATION_MIN_DATES:
+            return dict(rec, why=(f"{len(mine)} usable date(s) in this delivery and {len(theirs)} "
+                                  f"in the {cand['year']} store ({REGISTRATION_MIN_DATES} needed in "
+                                  f"each)"))
+        per = {}
+        for b in REGISTRATION_BANDS:
+            img = median_composite(interp.bands[b], [i for _, i in mine], interp.fills.get(b))
+            tpl = median_composite(ds[b], [j for _, j in theirs], zc.fill_of(ds[b]))
+            ok_i, ok_t = np.isfinite(img), np.isfinite(tpl)
+            img, tpl = np.nan_to_num(img), np.nan_to_num(tpl)
+            if pad:
+                img, ok_i = np.pad(img, int(pad)), np.pad(ok_i, int(pad))
+            v = offset_of(img, ok_i, tpl, ok_t, REGISTRATION_SIBLING_MIN_R)
+            del img, tpl, ok_i, ok_t
+            if pad:
+                for k in ("offset", "second_at"):
+                    if v.get(k) is not None:
+                        v[k] = [v[k][0] - int(pad), v[k][1] - int(pad)]
+            per[b] = v
+    finally:
+        ds.close()
+    rec["per_band"] = per
+    rec["r"] = {b: {"composite": v.get("r")} for b, v in per.items()}
+    passing = {b: tuple(v["offset"]) for b, v in per.items() if v.get("pass")}
+    if len(passing) == len(per) and all(o == tuple(want) for o in passing.values()):
+        return dict(rec, passed=True, offset=want, outcome="confirmed", why="")
+    other = {b: o for b, o in passing.items() if o != tuple(want)}
+    if other:
+        return dict(rec, outcome="contradicted", measured=list(next(iter(other.values()))),
+                    why="; ".join(f"the {b} composites peak at {o} (r {per[b]['r']}, margin "
+                                  f"{per[b]['margin']})" for b, o in other.items()))
+    return dict(rec, why="; ".join(f"{b}: {v.get('why') or 'no offset'}"
+                                   + (f" (peak at {tuple(v['offset'])})" if v.get("offset") else "")
+                                   for b, v in per.items() if not v.get("pass")))
+
+
+def _composite_line(got):
+    """``B08 r 0.97 (margin 0.08), B03 ...`` of a sibling record."""
+    return ", ".join(f"{b} r {v.get('r')} (margin {v.get('margin')})"
+                     for b, v in (got.get("per_band") or {}).items())
+
+
+def _frame_of(target, interp):
+    if target is not None:
+        return target
+    return {"x": interp.x, "y": interp.y, "path": "the delivered grid"}
+
+
+class _Refused(Exception):
+    """Internal: a registration rule says no (``register_delivery``)."""
+
+
+def register_delivery(interp, req, target, plan, results_meta=None, log=print):
+    """Where the frame sits in the delivered (padded) arrays: the record kept
+    in the store's attributes (``offset`` [rows, cols] of the frame's first
+    pixel, ``method``, the dates and r values, the reference used, the 20 m
+    layer's check). The frame is ``target`` (``placement_target``), or the
+    delivered grid itself when its extent is the frame. The rules (module
+    docstring):
+
+    * arrays smaller than the frame: no offset puts the frame inside them;
+      the coordinates place the pixels (method "none"; the padding rules of
+      ``put_on_target`` apply);
+    * arrays of the frame's shape whose x/y put the frame at (0, 0): the only
+      offset there is (method "frame-sized"); in a year without reference it
+      is checked within REGISTRATION_FRAME_SIZED_PX of (0, 0) against a
+      registered store when there is one (refused when the composites peak
+      elsewhere);
+    * otherwise the offset must be established: against the reference netCDF
+      covering the window (``register_with_netcdf``; method "netcdf";
+      --offset-px must agree with it, and stands unconfirmed when the
+      registration cannot measure without contradicting it, the verification
+      after writing deciding); without one, --offset-px checked against a
+      registered store of the site when there is one (method "expert
+      --offset-px": refused when the composites peak elsewhere; unconfirmed
+      when they cannot measure; refused, unless --accept-unverified-offset,
+      when nothing checks it and the delivered shape is not the one the
+      site's stores were delivered in), else the offset of a registered store
+      of the same request confirmed by the composites (method "sibling
+      store");
+    * with an offset established, the 20 m layer must not contradict it
+      (``check_20m_layer``; against the reference also ``scl_offset_check``);
+      unconfirmed, it is a warning.
+
+    What the rules do not establish raises RegistrationRefused (production,
+    nothing written) or, for --test, is a warning and the coordinates place
+    the pixels (offset None)."""
+    first = next(iter(interp.bands.values()))
+    _, Hr, Wr = (int(v) for v in first.shape)
+    frame = _frame_of(target, interp)
+    fx = np.asarray(frame["x"], dtype="float64")
+    fy = np.asarray(frame["y"], dtype="float64")
+    H, W = len(fy), len(fx)
+    res = float(req.spec.resolution)
+    cy = int(round((float(interp.y[0]) - float(fy[0])) / res)) if len(interp.y) and H else 0
+    cx = int(round((float(fx[0]) - float(interp.x[0])) / res)) if len(interp.x) and W else 0
+    rec = {"method": None, "offset": None, "verified": False, "checked": None,
+           "delivered_shape": [Hr, Wr], "frame_shape": [H, W],
+           "frame_first_centre": [float(fx[0]), float(fy[0])], "coordinate_offset": [cy, cx],
+           "offsets_searched": [max(0, Hr - H + 1), max(0, Wr - W + 1)],
+           "expert": list(plan.expert) if plan.expert else None, "reference": None,
+           "backend_version": backend_version(results_meta), "input_tiles": input_tiles(results_meta),
+           "positions": [], "rule": registration_rule(), "utc": utcnow().isoformat(timespec="seconds")}
+    hint = (f" (the measurements are in {req.sidecar('format.txt').name}; --offset-px ROWS,COLS "
+            f"gives the offset by hand, for one site: recorded, and checked against the reference "
+            f"netCDF or a registered store of the site when there is one)")
+
+    def done(method, offset, verified, why):
+        rec.update(method=method, offset=None if offset is None else [int(v) for v in offset],
+                   verified=bool(verified), why=why)
+        o = rec["offset"]
+        log(f"registration ({method}): " + (
+            f"the frame ({H} x {W} px) starts at row {o[0]}, col {o[1]} of the delivered {Hr} x "
+            f"{Wr} px arrays (their x/y put it at row {cy}, col {cx}); {why}" if o is not None
+            else why))
+        return rec
+
+    def refuse(why):
+        done(rec["method"] or "none", None, False, why)
+        if plan.strict:
+            raise RegistrationRefused(
+                f"{req.tag}: the place of the frame ({H} x {W} px) in the delivered {Hr} x {Wr} px "
+                f"arrays is not established: {why}; nothing written" + hint)
+        interp.warnings.append(f"NOT REGISTERED: {why}; the delivered x/y place the pixels "
+                               f"(--test only; a production year is refused)")
+        return rec
+
+    def clear_positions():
+        """The delivery's clearest usable dates [(date, position)] (the 20 m check)."""
+        if "SCL" not in interp.bands:
+            return []
+        rows, cols = core_window((Hr, Wr), (H, W))
+        dts = zc._dates_of(interp.t)
+        nv, nc = clear_counts(interp.bands["SCL"], range(len(dts)), interp.fills.get("SCL"),
+                              rows, cols)
+        return usable_dates(dts, nv, nc, _window_px(rows, cols, (H, W)))[0]
+
+    def layer(off, positions, confirmed_otherwise=False):
+        """The 20 m check at ``off``: refuses on a contradiction, warns when
+        nothing confirms the 20 m layer; returns its line."""
+        positions = [(str(d), int(i)) for d, i in positions]
+        rec["positions"] = [[d, i] for d, i in positions]
+        chk = check_20m_layer(interp, off, (H, W), positions)
+        rec["layer_20m"] = chk
+        line = layer_20m_line(chk)
+        if chk["contradicted"]:
+            raise _Refused(line)
+        if not chk["confirmed"] and not confirmed_otherwise:
+            interp.warnings.append(f"the 20 m layer is not confirmed at the offset {tuple(off)} ("
+                                   f"{line}; nothing else checks it in this year)")
+        return line
+
+    def siblings(same_request):
+        if plan.root is None:
+            return [], []
+        cands, skipped = sibling_candidates(req, frame, (Hr, Wr), rec["backend_version"],
+                                            plan.root, same_request=same_request)
+        rec["siblings_skipped"] = [[y, w] for y, w in skipped]
+        return cands, skipped
+
+    try:
+        if Hr < H or Wr < W:
+            return done("none", None, False,
+                        f"the delivered arrays ({Hr} x {Wr} px) are smaller than the frame ({H} x "
+                        f"{W} px): no offset puts the frame inside them; the coordinates place the "
+                        f"pixels and the padding rules apply")
+        ex = plan.expert
+        if ex is not None and not (0 <= ex[0] <= Hr - H and 0 <= ex[1] <= Wr - W):
+            raise _Refused(f"--offset-px {ex[0]},{ex[1]} puts the frame outside the delivered "
+                           f"arrays (offsets 0..{Hr - H} x 0..{Wr - W})")
+        if (Hr, Wr) == (H, W) and (cy, cx) == (0, 0) and ex in (None, (0, 0)):
+            why = ("the delivered arrays have the frame's shape and their x/y put the frame at "
+                   "(0, 0): there is no other offset")
+            cands = [] if plan.reference else siblings(False)[0]
+            if cands:
+                cand, pad = cands[0], REGISTRATION_FRAME_SIZED_PX
+                got = register_with_sibling(interp, frame, cand, log, want=(0, 0), pad=pad)
+                rec.update(sibling=got, reference=cand["path"])
+                if got["outcome"] == "contradicted":
+                    m = got["measured"]
+                    raise _Refused(f"a delivery of the frame's shape whose composites against the "
+                                   f"registered {cand['year']} store peak at ({m[0]}, {m[1]}), not "
+                                   f"(0, 0) (searched within {pad} px): {got['why']}")
+                if got["outcome"] == "confirmed":
+                    rec["checked"] = (f"(0, 0) confirmed within {pad} px by the median composites "
+                                      f"against the registered {cand['year']} store")
+                    why += f"; {rec['checked']} ({_composite_line(got)})"
+                else:
+                    why += (f"; not confirmed by the composites against the registered "
+                            f"{cand['year']} store ({got['why']})")
+            return done("frame-sized", (0, 0), False, why)
+        if plan.reference:
+            name = Path(plan.reference).name
+            rec["reference"] = plan.reference
+            got = register_with_netcdf(interp, frame, plan, log)
+            rec["netcdf"] = got
+            rec["dates"], rec["r"] = got.get("dates"), got.get("r")
+            if got.get("passed"):
+                off = got["offset"]
+                if ex is not None and list(ex) != list(off):
+                    raise _Refused(f"--offset-px {ex[0]},{ex[1]} contradicts the registration "
+                                   f"against {name}: ({off[0]}, {off[1]})")
+                line = layer(off, got["positions"],
+                             confirmed_otherwise=bool(got.get("scl_confirmed")))
+                rs = ", ".join(f"{b} r >= {min(v for v in t.values() if v is not None):.5f}"
+                               for b, t in (got.get("r") or {}).items())
+                aside = "; ".join(f"{d}: {w}" for d, w in (got.get("set_aside") or {}).items())
+                scl = (f"SCL best at the offset on {len(got.get('scl_confirmed') or [])} of "
+                       f"{len(got.get('scl') or {})} date(s)" if "scl" in got else "no reference SCL")
+                return done("netcdf", off, True,
+                            f"registered against {name} on {len(got['dates'])} clear common dates "
+                            f"{got['dates']}: {rs}"
+                            + (f"; {len(got['set_aside'])} date(s) set aside ({aside[:600]})"
+                               if aside else "")
+                            + f"; {scl}; {line}"
+                            + (f"; --offset-px {ex[0]},{ex[1]} confirmed" if ex is not None else ""))
+            if ex is not None:
+                other = [tuple(o) for o in got.get("measured") or [] if list(o) != list(ex)]
+                if other:
+                    raise _Refused(f"--offset-px {ex[0]},{ex[1]} contradicts the registration "
+                                   f"against {name}, whose passing dates put the frame at {other} "
+                                   f"({got.get('why')})")
+                line = layer(ex, got.get("usable_positions") or [])
+                interp.warnings.append(
+                    f"--offset-px {ex[0]},{ex[1]} NOT confirmed by the registration against {name} "
+                    f"({got.get('why')}): the verification after writing decides")
+                return done("expert --offset-px", ex, False,
+                            f"--offset-px, not confirmed by the registration against {name}: "
+                            f"{got.get('why')}; {line}")
+            raise _Refused(f"the registration against {name}: {got.get('why')}")
+        if ex is not None:
+            cands, skipped = siblings(False)
+            if cands:
+                cand = cands[0]
+                rec["reference"] = cand["path"]
+                got = register_with_sibling(interp, frame, cand, log, want=ex)
+                rec["sibling"] = got
+                rec["dates"], rec["r"] = got.get("dates"), got.get("r")
+                if got["outcome"] == "contradicted":
+                    m = got["measured"]
+                    raise _Refused(f"--offset-px {ex[0]},{ex[1]} contradicts the median composites "
+                                   f"against the registered {cand['year']} store, which put the "
+                                   f"frame at ({m[0]}, {m[1]}): {got['why']}")
+                if got["outcome"] == "confirmed":
+                    line = layer(ex, got["positions"])
+                    rec["checked"] = (f"confirmed by the median composites against the registered "
+                                      f"{cand['year']} store")
+                    return done("expert --offset-px", ex, False,
+                                f"--offset-px {ex[0]},{ex[1]}: confirmed by the median composites "
+                                f"of {len(got['dates'])} clear dates of this delivery and "
+                                f"{len(got['sibling_dates'])} of the registered {cand['year']} "
+                                f"store ({_composite_line(got)}); not verified against a reference "
+                                f"netCDF ({plan.no_reference}); {line}")
+                same_shape = list(cand.get("delivered_shape") or []) == [Hr, Wr]
+                if not same_shape and not plan.accept_unverified:
+                    raise _Refused(f"--offset-px {ex[0]},{ex[1]} cannot be checked against the "
+                                   f"registered {cand['year']} store ({got['why']}) and this "
+                                   f"delivery's arrays ({Hr} x {Wr} px) are not that store's "
+                                   f"({cand.get('delivered_shape')}): the backend's layout may have "
+                                   f"changed, and its offset with it (--accept-unverified-offset "
+                                   f"takes it anyway, recorded)")
+                line = layer(ex, got.get("positions") or clear_positions())
+                rec["checked"] = (f"NOT confirmed by the composites against the registered "
+                                  f"{cand['year']} store ({got['why']})"
+                                  + ("" if same_shape else "; --accept-unverified-offset"))
+                interp.warnings.append(f"--offset-px {ex[0]},{ex[1]} {rec['checked']}: taken "
+                                       f"unverified")
+                return done("expert --offset-px", ex, False,
+                            f"--offset-px, {rec['checked']}; not verified ({plan.no_reference}); "
+                            f"{line}")
+            shapes = recorded_delivered_shapes(req, plan.root)
+            if shapes and (Hr, Wr) not in shapes and not plan.accept_unverified:
+                raise _Refused(f"--offset-px {ex[0]},{ex[1]} cannot be checked (no store of "
+                               f"{req.site} registered against a reference netCDF with this extent "
+                               f"and grid) and this delivery's arrays ({Hr} x {Wr} px) are not "
+                               f"those the site's stores were delivered in ("
+                               + "; ".join(f"{list(s)}: {y}" for s, y in shapes.items())
+                               + "): the backend's layout may have changed, and its offset with it "
+                                 "(--accept-unverified-offset takes it anyway, recorded)")
+            line = layer(ex, clear_positions())
+            rec["checked"] = ("nothing to check it against"
+                              + ("; --accept-unverified-offset" if shapes and (Hr, Wr) not in shapes
+                                 else ""))
+            return done("expert --offset-px", ex, False,
+                        f"--offset-px, not verified ({plan.no_reference}; no store of {req.site} "
+                        f"registered against a reference netCDF to check it against"
+                        + (f": {'; '.join(f'{y}: {w}' for y, w in skipped)}" if skipped else "")
+                        + f"); {line}")
+        if plan.root is None:
+            raise _Refused(f"no reference netCDF ({plan.no_reference}) and no registered store to "
+                           f"take the offset from")
+        cands, skipped = siblings(True)
+        if not cands:
+            raise _Refused(f"no reference netCDF ({plan.no_reference}) and no registered store of "
+                           f"{req.site} from the same request"
+                           + (f" (skipped: {'; '.join(f'{y}: {w}' for y, w in skipped)})" if skipped
+                              else " (none complete)"))
+        cand = cands[0]
+        rec["reference"] = cand["path"]
+        got = register_with_sibling(interp, frame, cand, log)
+        rec["sibling"] = got
+        rec["dates"], rec["r"] = got.get("dates"), got.get("r")
+        if got["outcome"] != "confirmed":
+            m = got.get("measured")
+            raise _Refused(f"no reference netCDF ({plan.no_reference}); the offset "
+                           f"({cand['offset'][0]}, {cand['offset'][1]}) of the registered "
+                           f"{cand['year']} store is not confirmed on this delivery: {got['why']}"
+                           + (f" (the composites put the frame at ({m[0]}, {m[1]}); --offset-px "
+                              f"{m[0]},{m[1]} would be checked against them the same way)" if m
+                              else ""))
+        line = layer(got["offset"], got["positions"])
+        return done("sibling store", got["offset"], False,
+                    f"no reference netCDF ({plan.no_reference}): the offset of the {cand['year']} "
+                    f"store ({Path(cand['path']).name}, registered against its reference), "
+                    f"confirmed by the median composites of {len(got['dates'])} clear dates of "
+                    f"this delivery and {len(got['sibling_dates'])} of that store "
+                    f"({_composite_line(got)}); {line}")
+    except _Refused as exc:
+        return refuse(str(exc))
+
+
+def angles_data_extent(interp, band="sunZenithAngles", n=REPORT_DATES):
+    """``[[first row, last row], [first col, last col]]`` of the DELIVERED
+    cells holding a valid ``band`` value on up to ``n`` dates spread over the
+    year (before the placement; None without such a cell or band)."""
+    a = interp.bands.get(band)
+    if a is None or not a.shape[0]:
+        return None
+    T = int(a.shape[0])
+    idx = [int(i) for i in np.unique(np.linspace(0, T - 1, min(T, n)).round())]
+    v = np.asarray(a.isel(t=idx).values)
+    ok = _valid(v, interp.fills.get(band))
+    if v.dtype.kind == "i":
+        ok &= v != zc.FILL
+    rows, cols = np.flatnonzero(ok.any(axis=(0, 2))), np.flatnonzero(ok.any(axis=(0, 1)))
+    if not rows.size:
+        return None
+    return [[int(rows[0]), int(rows[-1])], [int(cols[0]), int(cols[-1])]]
+
+
+def angles_placement(interp, req, delivered, log=print):
+    """How an angles delivery was placed (they carry no band to register them
+    with; module docstring, "Registration"): ``interp.placement``, written to
+    the store as ``delivered_shape_cells`` and ``placement``. ``delivered``:
+    the delivered ``(shape, x0, y0, data extent)`` before the placement
+    (``angles_data_extent``). A delivery larger than the frame (padded, like
+    the main product's, whose x/y were wrong by up to (288, 271) px in
+    2026-10) is placed by its x/y and NOT registered: a WARNING, and
+    ``verify_angles`` lists it as a problem (not for the sensing-time
+    inversion until registered). Where the sampled sun zeniths show the data
+    SHIFTED against the x/y (starting after the frame's first row / column
+    and running past its last one: a padded, displaced block), a production
+    year stops (FormatError); --test warns."""
+    (Hr, Wr), x0, y0, extent = delivered
+    H, W = len(interp.y), len(interp.x)
+    res = float(req.spec.resolution)
+    cy = int(round((y0 - float(interp.y[0])) / res)) if H else 0
+    cx = int(round((float(interp.x[0]) - x0) / res)) if W else 0
+    rec = {"method": "coordinates", "registered": False, "delivered_shape_cells": [Hr, Wr],
+           "frame_shape_cells": [H, W], "coordinate_offset_cells": [cy, cx],
+           "data_extent_cells": extent, "padded": bool(Hr > H or Wr > W)}
+    interp.placement = rec
+    if not rec["padded"]:
+        rec["why"] = ("the delivered arrays are not larger than the frame: placed by their x/y "
+                      "(no other offset)")
+        return rec
+    if extent is None:
+        seen = "no valid sun zenith on the sampled dates: where the data sit is unknown"
+    else:
+        (r0, r1), (c0, c1) = extent
+        shifted = ((r0 > cy and r1 > cy + H - 1) or (c0 > cx and c1 > cx + W - 1))
+        if shifted:
+            msg = (f"the sampled sun zeniths of the padded angles delivery ({Hr} x {Wr} cells) "
+                   f"occupy rows {r0}..{r1}, cols {c0}..{c1}, but its x/y put the {H} x {W} cell "
+                   f"frame at rows {cy}..{cy + H - 1}, cols {cx}..{cx + W - 1}: the data are "
+                   f"SHIFTED against the x/y, as the main product's were")
+            rec["why"] = msg
+            if not req.test:
+                raise FormatError(msg + "; nothing written")
+            interp.warnings.append(msg + " (--test only; a production year stops)")
+            return rec
+        if (r0, c0) == (0, 0) and (r1, c1) == (Hr - 1, Wr - 1):
+            seen = ("the sampled sun zeniths fill the whole delivered arrays, so they cannot tell "
+                    "where the frame sits")
+        elif r0 > cy or c0 > cx or r1 < cy + H - 1 or c1 < cx + W - 1:
+            seen = (f"the sampled sun zeniths (rows {r0}..{r1}, cols {c0}..{c1}) do not cover the "
+                    f"whole frame where the x/y put it (rows {cy}..{cy + H - 1}, cols "
+                    f"{cx}..{cx + W - 1})")
+        else:
+            seen = (f"the sampled sun zeniths (rows {r0}..{r1}, cols {c0}..{c1}) cover the frame "
+                    f"where the x/y put it and nothing past it: consistent with the x/y")
+    rec["why"] = (f"padded angles delivery ({Hr} x {Wr} cells for the {H} x {W} cell frame) placed "
+                  f"by its x/y (the frame at row {cy}, col {cx}), NOT registered (the angles carry "
+                  f"no band to register; the main product's padded deliveries were displaced "
+                  f"against their x/y in 2026-10); {seen}")
+    interp.warnings.append(rec["why"] + ": not for the sensing-time inversion until registered")
+    log(f"angles placement: {rec['why']}")
+    return rec
+
+
+def phase_gate(interp, req, plan, log=print):
+    """After the placement: ``phase_check`` of the placed frame on the dates
+    the registration used (else up to REPORT_DATES spread over the year),
+    recorded in ``interp.registration['phase_20m']`` and noted. A 20 m band
+    at another phase of the 20 m lattice refuses a production year
+    (RegistrationRefused, nothing written); --test warns."""
+    reg = interp.registration
+    T = len(interp.t)
+    pos = [int(i) for _, i in (reg.get("positions") or [])]
+    if not pos and T:
+        pos = [int(i) for i in np.unique(np.linspace(0, T - 1, min(T, REPORT_DATES)).round())]
+    chk = phase_check(interp, pos)
+    reg["phase_20m"] = chk
+    line = phase_line(chk)
+    log(line)
+    if not chk["contradicted"]:
+        interp.notes.append(line)
+        return chk
+    msg = (f"{line}: the 20 m layer is displaced by an odd number of pixels against the frame "
+           f"(the offset {reg.get('offset')} of the {reg.get('method')} registration does not hold "
+           f"for it)")
+    if plan.strict:
+        raise RegistrationRefused(f"{req.tag}: {msg}; nothing written")
+    interp.warnings.append(f"{msg} (--test only; a production year is refused)")
+    return chk
+
+
+def place_at_offset(interp, target, rec, why=None):
+    """Crop every band (the 10 m ones, the nearest-resampled 20 m ones, SCL,
+    CLD) at the registered offset onto the frame: ``raw[dy:dy + H, dx:dx +
+    W]`` with the frame's axes (an index shift; values untouched); the
+    cropped-away margin is summarised as a note."""
+    dy, dx = (int(v) for v in rec["offset"])
+    first = next(iter(interp.bands.values()))
+    _, Hr, Wr = (int(v) for v in first.shape)
+    frame = _frame_of(target, interp)
+    fx = np.asarray(frame["x"], dtype="float64").copy()
+    fy = np.asarray(frame["y"], dtype="float64").copy()
+    H, W = len(fy), len(fx)
+    cy, cx = rec.get("coordinate_offset", [dy, dx])
+    lead = f"{why}; " if why else ""
+    if (dy, dx, H, W) == (0, 0, Hr, Wr):
+        interp.notes.append(f"{lead}the delivered grid is the frame ({H} x {W} px): offset (0, 0) "
+                            f"({rec['method']})")
+        interp.x, interp.y = fx, fy
+        return None
+    margin = margin_summary(interp, dy, dy + H, dx, dx + W)
+    for b, a in list(interp.bands.items()):
+        interp.bands[b] = a.isel(y=slice(dy, dy + H), x=slice(dx, dx + W))
+    interp.x, interp.y = fx, fy
+    interp.notes.append(
+        f"{lead}delivered grid {Hr} x {Wr} px put on the frame {H} x {W} px from ({fx[0]}, {fy[0]}) "
+        f"at the registered offset ({rec['method']}): cropped rows {dy}:{dy + H} cols {dx}:{dx + W}"
+        + ("" if (cy, cx) == (dy, dx) else
+           f"; the delivered x/y put the frame at row {cy}, col {cx}: not used"))
+    if margin:
+        interp.notes.append(format_margin(margin, interp.fills, how="the registered offset")[0])
+    return margin
 
 
 def _store_date_hint(part, store_path, files):
@@ -4275,10 +6048,19 @@ def largest_chunk(raws):
 
 def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_all=False,
               backend_format=BACKEND_FORMAT, allow_offset=False, nodata=None,
-              allow_padding=False):
+              allow_padding=False, registration=None, dry_run=False):
     """Everything between the download and the store: extract, find, read,
     report, interpret. Returns ``(canonical dataset, interpretation, report
     lines)``; the report is also written to ``<year>.format.txt``.
+
+    ``registration``: a ``RegistrationPlan`` (``registration_plan``; every
+    main request of ``run_request`` and --renormalise has one): after the
+    lattice check the frame's place in the delivered arrays is established by
+    ``register_delivery`` and every band cropped at that offset
+    (``place_at_offset``); the record travels in ``interp.registration``.
+    None (the layout tests): the coordinates place the pixels, as before
+    2026-10-19. ``dry_run``: stop once the pixels are placed; no report
+    written, no dataset (``(None, interp, lines)``).
 
     Whatever goes wrong (an unknown codec, an unreadable time coordinate, a
     bad zip, a layout the interpreter does not know), the report gathered
@@ -4325,7 +6107,7 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
         else:
             lines.append("input products: none named in the results metadata (processing "
                          "baselines unknown)")
-        extracted = extract_zips(part, log) if files else []
+        extracted = extract_zips(part, log, dry_run=dry_run) if files else []
         for d in extracted:
             lines.append(f"zip extracted to {d}:")
             lines += report_tree(d)
@@ -4428,7 +6210,23 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
             raise FormatError(err + "; nothing written (run again with --allow-grid-offset to "
                               "write the store anyway)")
         else:
-            put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=allow_padding)
+            reg = None
+            if registration is not None and main:
+                target, _ = placement_target(interp, req, guard, rgrid, extent)
+                reg = register_delivery(interp, req, target, registration, results_meta, log)
+                interp.registration = reg
+            delivered = (tuple(int(v) for v in next(iter(interp.bands.values())).shape[1:]),
+                         float(interp.x[0]), float(interp.y[0]),
+                         None if main else angles_data_extent(interp))
+            put_on_target(interp, req, guard, rgrid, extent, ref_grid, allow_padding=allow_padding,
+                          registered=reg)
+            if reg is not None:             # the 20 m layer's phase on the placed frame
+                phase_gate(interp, req, registration, log)
+            if not main:                    # the angles are placed by their x/y: say so
+                angles_placement(interp, req, delivered, log)
+        if dry_run:
+            lines.append("=> dry run: placed, nothing written")
+            return None, interp, lines
         if main:
             ds = canonical_dataset(interp, req.bands)
             lines += report_interp(interp, ds)
@@ -4473,13 +6271,14 @@ def normalise(req, log, job_info=None, results_meta=None, ref_grid=None, report_
             lines += ["   " + ln for ln in traceback.format_exc().splitlines()[-20:]]
         lines.append(f"   the backend's files stay in {req.part}; nothing was written to {req.store}")
         lines.append("=" * 76)
-        path = _write_format_report(req, lines)
+        path = req.sidecar("format.txt") if dry_run else _write_format_report(req, lines)
         for ln in lines:
             log(ln)
         if is_fmt:
             raise
         raise FormatError(f"{type(exc).__name__} while reading the delivered output: {exc} "
-                          f"(FORMAT REPORT in {path})") from exc
+                          + ("(dry run: no FORMAT REPORT written)" if dry_run else
+                             f"(FORMAT REPORT in {path})")) from exc
     lines.append("=" * 76)
     _write_format_report(req, lines)
     return ds, interp, lines
@@ -4513,8 +6312,7 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
         "job_options": json.dumps(job_options or ctx.job_options),
         "backend_format": ctx.backend_format,
         "backend_format_options": json.dumps(ctx.format_options or {}),
-        "backend_version": str((results_meta or {}).get("openeo:version", "") or
-                               (results_meta or {}).get("properties", {}).get("openeo:version", "")),
+        "backend_version": backend_version(results_meta),
         "processing_date": utcnow().isoformat(timespec="seconds") + "Z",
         "bands": json.dumps(list(req.bands)),
         "resampling": RESAMPLING,
@@ -4537,6 +6335,17 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
         attrs["spatial_extent_lonlat"] = json.dumps(req.bbox)
     if req.extent_source:
         attrs["spatial_extent_source"] = req.extent_source
+    reg = interp.registration
+    if reg:                         # where the frame sat in the delivered arrays (register_delivery)
+        attrs.update({
+            "delivered_offset_px": json.dumps(reg.get("offset")),
+            "delivered_shape_px": json.dumps(reg.get("delivered_shape")),
+            "registration_method": str(reg.get("method")),
+            "registration_reference": str(reg.get("reference") or ""),
+            "registration_dates": json.dumps(reg.get("dates") or []),
+            "registration_r": json.dumps(reg.get("r") or {}),
+            "registration": json.dumps(reg, default=str),
+        })
     if req.is_angles:
         attrs.update({
             "title": (f"Sentinel-2 L2A sun and view angles, {req.site} {req.year}"
@@ -4552,6 +6361,11 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
             "purpose": ("sun angles at the site, to recompute the time the satellite passed over "
                         "it (the scene labels are datatake starts); view angles for diagnostics"),
         })
+        if interp.placement:        # placed by the x/y, not registered (angles_placement)
+            attrs.update({
+                "delivered_shape_cells": json.dumps(interp.placement.get("delivered_shape_cells")),
+                "placement": json.dumps(interp.placement, default=str),
+            })
     return attrs
 
 
@@ -4639,10 +6453,14 @@ def run_request(ctx, req, log):
         ds = zc.open_store(req.store)
         dates = zc.dates(ds)
         ds.close()
+        old = pre_registration_warning(req)
+        if old:
+            log(old)
         if not req.sidecar("verify.json").is_file():
             verify_request(req, log)
         still = update_overpass(req, dates, log, network=ctx.network)
-        return {"status": "skipped", "dates": len(dates), "missing_overpass": still}
+        return dict({"status": "skipped", "dates": len(dates), "missing_overpass": still},
+                    **({"pre_registration": True} if old else {}))
     why = refuse_snapped(req)
     if why and not ctx.allow_snapped:
         raise FrameRefused(why)
@@ -4676,6 +6494,9 @@ def run_request(ctx, req, log):
         log(f"results of job {info.get('id', cur.get('job_id'))} already downloaded in {part}")
         meta = json.loads((part / "job-results.json").read_text(encoding="utf-8")) \
             if (part / "job-results.json").is_file() else {}
+        reuse, _ = reusable_pending(req, info.get("id") or cur.get("job_id"))
+        if reuse:                   # e.g. the rerun with --accept-differences after a refusal
+            return finish_pending(ctx, req, log, part, info, t0)
     else:
         if req.test:
             describe_output_format(ctx.connection(), ctx.backend_format, part, log)
@@ -4700,32 +6521,29 @@ def run_request(ctx, req, log):
     ref_root = req.root.parent if req.test else req.root
     ref = (angles_reference_grid(req.site, root=ref_root, log=log) if angles else
            reference_grid(req.site, root=ref_root, log=log))
+    plan = None if angles else registration_plan(req, ctx, ref)
     ds, interp, lines = normalise(req, log, job_info=info, results_meta=meta, ref_grid=ref,
                                   allow_offset=ctx.allow_offset, nodata=ctx.nodata,
                                   allow_padding=ctx.allow_padding,
-                                  report_all=req.test, backend_format=ctx.backend_format)
-    if req.test:
-        for ln in lines:
-            log(ln)
-    else:
-        for ln in lines:
-            if ln.startswith(("=", "found:", "store ", "  WARNING", "interpretation", "  CRS",
-                              "  time:", "  grid:", "input products", "largest delivered",
-                              "resampling check", "  no-data", "  AMBIGUOUS")):
-                log(ln)
+                                  report_all=req.test, backend_format=ctx.backend_format,
+                                  registration=plan)
+    log_report(req, lines, log)
     attrs = provenance(req, info, meta, interp, ctx, graph, graph_source=gsrc, ref_grid=ref,
                        job_options=cur.get("job_options"))
     log(f"writing {req.store} ({ds.sizes['t']} dates, {ds.sizes['y']} x {ds.sizes['x']} "
         + (f"cells of {req.spec.resolution} m, {len(req.bands)} angles as float32)" if angles else
            f"px, {len(req.bands)} bands)"))
+    # the main store is completed only once its verification accepts it (verify_and_complete)
     write_store(ds, store_fills(interp, req.spec), req.store, attrs, log=log, groups=interp.groups,
-                chunks=req.spec.chunks, format_id=req.spec.format_id)
-    size = sum(f.stat().st_size for f in Path(req.store).rglob("*") if f.is_file())
-    log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk)" if not angles else
-        f"store complete: {req.store} ({size / 1e6:.2f} MB on disk)")
+                chunks=req.spec.chunks, format_id=req.spec.format_id, complete=angles)
     job_side = {"ledger": json.loads(led_path.read_text(encoding="utf-8"))
                 if led_path.is_file() else {}, "job": info, "results_metadata": meta}
     zc.write_json(job_side, req.sidecar("job.json"))
+    if not angles:              # raises VerificationRefused (store not complete, raw kept)
+        rep = verify_and_complete(ctx, req, log)
+    size = sum(f.stat().st_size for f in Path(req.store).rglob("*") if f.is_file())
+    log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk)" if not angles else
+        f"store complete: {req.store} ({size / 1e6:.2f} MB on disk)")
     if req.test and angles:
         cube = zc.open_angles(req.site, req.start, req.end, root=req.root)
         names = zc.band_names(cube)
@@ -4757,26 +6575,349 @@ def run_request(ctx, req, log):
         rep = verify_angles(req, log)
         dates, still = zc.dates(ds), []
     else:
-        rep = verify_request(req, log)
         dates = zc.dates(ds)
         still = update_overpass(req, dates, log, network=ctx.network)
-    if not (ctx.keep_raw or req.test):
+    raw_after_store(ctx, req, part, None if angles else rep, log)
+    log(f"done in {(time.time() - t0) / 60:.0f} min")
+    if angles:
+        return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
+                "mb": round(size / 1e6, 2), "job": info.get("id")}
+    reg = interp.registration or {}
+    return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
+            "accepted": (rep.get("acceptance") or {}).get("how"),
+            "registration": f"{reg.get('method')} {reg.get('offset')}",
+            "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id"),
+            "radiometry": (rep.get("radiometry") or {}).get("offset_state")}
+
+
+def raw_after_store(ctx, req, part, rep, log):
+    """Remove the raw download (and the superseded part folders) once a
+    store is complete, unless --keep-raw or --test; a MAIN store accepted as
+    anything but 'identical' or 'near-identical' (not verified: a sibling's
+    or an expert offset, no reference; or --accept-differences) keeps it:
+    it is the only way to register that year again without a new job.
+    ``rep``: the main store's verification (None for the angles)."""
+    keep = "--keep-raw" if ctx.keep_raw else "--test" if req.test else None
+    how = ((rep or {}).get("acceptance") or {}).get("how")
+    if keep is None and rep is not None and how not in ("identical", "near-identical"):
+        keep = (f"the store was accepted as {how!r}: the raw delivery is the only way to register "
+                f"it again without a new job")
+    if keep is None:
         shutil.rmtree(part, ignore_errors=True)
         log(f"raw download removed ({part}); the store keeps the provenance")
         for old in superseded_parts(req):
             shutil.rmtree(old, ignore_errors=True)
             log(f"superseded folder removed ({old})")
-    else:
-        log(f"raw download kept in {part}"
-            + (f"; superseded folders kept: {[p.name for p in superseded_parts(req)]}"
-               if superseded_parts(req) else ""))
+        return False
+    log(f"raw download kept in {part} ({keep})"
+        + (f"; superseded folders kept: {[p.name for p in superseded_parts(req)]}"
+           if superseded_parts(req) else ""))
+    return True
+
+
+def reusable_pending(req, job_id):
+    """``(True, why)`` when the MAIN store at ``req.store`` was written whole
+    from this very delivery but not completed (its verification refused it,
+    or the run stopped before deciding): not complete, its ``verification``
+    pending, written from job ``job_id`` under the current registration rule
+    (``registration_rule``). It is then verified again (``finish_pending``:
+    --accept-differences completes it in minutes and no second copy is
+    written); move it aside to have it written again."""
+    store = Path(req.store)
+    if req.is_angles or req.test or not store.exists() or req.complete():
+        return False, "no pending store"
+    attrs = zc.store_attrs(store)
+    if not str(attrs.get("verification", "")).startswith("pending"):
+        return False, f"{store.name} is not pending its verification"
+    if not job_id or str(attrs.get("job_id")) != str(job_id):
+        return False, f"{store.name} was written from job {attrs.get('job_id')!r}, not {job_id!r}"
+    rec = _json_attr(attrs.get("registration"))
+    if not isinstance(rec, dict) or rec.get("rule") != _json_attr(json.dumps(registration_rule())):
+        return False, f"{store.name} was written under another registration rule"
+    return True, (f"{store.name} was written whole from this delivery (job {job_id}) and is pending "
+                  f"its verification")
+
+
+def finish_pending(ctx, req, log, part, info, t0, note=None):
+    """Verify again and complete (``verify_and_complete``) a pending main
+    store of this delivery (``reusable_pending``) instead of writing it
+    again; then the overpass times and the raw download as after a write.
+    ``note``: a ledger note to fill (--renormalise). Returns the summary."""
+    log(f"{req.store.name} was written whole from this delivery (job {info.get('id')}) and is "
+        f"pending its verification: it is verified again, NOT rewritten (move it aside to have it "
+        f"written again)")
+    rep = verify_and_complete(ctx, req, log)
+    if note is not None:
+        note["verification"] = rep.get("acceptance")
+    ds = zc.open_store(req.store)
+    dates = zc.dates(ds)
+    ds.close()
+    # --renormalise (a note to fill) makes no network call: the overpass file offline
+    still = update_overpass(req, dates, log, network=ctx.network and note is None)
+    size = sum(f.stat().st_size for f in Path(req.store).rglob("*") if f.is_file())
+    log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk)")
+    if note is None:
+        raw_after_store(ctx, req, part, rep, log)
     log(f"done in {(time.time() - t0) / 60:.0f} min")
-    if angles:
-        return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
-                "mb": round(size / 1e6, 2), "job": info.get("id")}
-    return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
+    attrs = zc.store_attrs(req.store)
+    off = _json_attr(attrs.get("delivered_offset_px"))
+    return {"status": "verified again", "dates": len(dates), "verdict": rep.get("verdict"),
+            "accepted": (rep.get("acceptance") or {}).get("how"),
+            "registration": f"{attrs.get('registration_method')} {off}",
             "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id"),
             "radiometry": (rep.get("radiometry") or {}).get("offset_state")}
+
+
+def pre_registration_warning(req):
+    """The warning for a complete MAIN store written before the registration
+    (2026-10-19: no ``registration_method`` attribute), or None: its pixels
+    may be displaced against the reference grid."""
+    if req.is_angles or "registration_method" in zc.store_attrs(req.store):
+        return None
+    return (f"WARNING: {req.store.name} was written before the registration (2026-10-19): its "
+            f"pixels may be displaced against the reference grid (padded deliveries were cut by "
+            f"their x/y); rebuild it with --renormalise from its kept raw delivery, or move it aside "
+            f"and download the year again")
+
+
+#: the report lines a production run logs (--test logs them all)
+LOGGED_REPORT = ("=", "found:", "store ", "  WARNING", "interpretation", "  CRS", "  registration",
+                 "  time:", "  grid:", "input products", "largest delivered", "resampling check",
+                 "  no-data", "  AMBIGUOUS")
+
+
+def log_report(req, lines, log):
+    """The FORMAT REPORT in the log: whole for --test, its main lines otherwise."""
+    for ln in lines:
+        if req.test or ln.startswith(LOGGED_REPORT):
+            log(ln)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  --renormalise: a store rebuilt from its kept raw delivery (no network, no job)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _raw_of(ctx, req):
+    """The kept raw delivery of ``req``, checked: ``(part, title, ledger,
+    current job entry, job info, results metadata, process graph, its
+    source)``. RawMissing when ``<year>.part`` holds no complete download;
+    FormatError when it was made for another request (another job title:
+    extent, bands, format or its options)."""
+    part = Path(req.part)
+    if not (part / ASSETS_DONE).is_file():
+        raise RawMissing(
+            f"{req.tag}: no raw delivery to rebuild {req.store.name} from: {part} "
+            + ("holds no complete download" if part.exists() else "does not exist")
+            + f" (it is removed once a store is complete unless --keep-raw); a new job is "
+              f"needed: move {req.store.name} aside and run the download again")
+    flat = build_process(req, None, ctx.backend_format, ctx.format_options).flat_graph()
+    title = job_title(req, graph_hash(flat))
+    made = recorded_title(part)
+    if made != title:
+        raise FormatError(f"{req.tag}: {part} was made for the job title {made!r}, the current "
+                          f"request is {title!r} (another extent, bands, format or format "
+                          f"options): it is not this request's delivery; nothing done")
+    led = Ledger(part)
+    cur = led.current() or {}
+    info = cur.get("info") or {"id": cur.get("job_id")}
+    meta_path = part / "job-results.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+    if cur.get("process_graph"):
+        graph, gsrc = cur["process_graph"], f"submitted with job {cur.get('job_id')}"
+    else:
+        graph, gsrc = flat, "built offline (the submitted graph was not recorded)"
+    return part, title, led, cur, info, meta, graph, gsrc
+
+
+def _tree_size(path):
+    """Bytes of the files under ``path`` (0 when absent)."""
+    path = Path(path)
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.exists() else 0
+
+
+def keep_sidecars(req, aside, log=print):
+    """Copy the sidecars of the store about to be superseded (``verify.json``,
+    ``format.txt``, ``job.json``) beside them as ``<name>.superseded-<stamp>``
+    with the stamp of ``aside`` (the store's own superseded name), before
+    anything rewrites them: the evidence of the old store (e.g. its verify.json
+    saying 'differs') survives the rebuild. Returns the copies."""
+    stamp = Path(aside).name.split(".superseded-", 1)[1]
+    out = []
+    for k in ("verify.json", "format.txt", "job.json"):
+        p = Path(req.sidecar(k))
+        if p.is_file():
+            dst = p.with_name(f"{p.name}.superseded-{stamp}")
+            shutil.copy2(p, dst)
+            out.append(dst)
+    if out:
+        log(f"sidecars of {req.store.name} kept as {[p.name for p in out]}")
+    return out
+
+
+def _ledger_note(led, note, req, info, meta):
+    """Append ``note`` to the part's ledger and rewrite ``<year>.job.json``."""
+    led.data.setdefault("notes", []).append(note)
+    led.save()
+    zc.write_json({"ledger": led.data, "job": info, "results_metadata": meta},
+                  req.sidecar("job.json"))
+
+
+def renormalise_request(ctx, req, log, dry_run=False):
+    """--renormalise one main store: rebuild it from its kept raw delivery
+    (``<year>.part``) with the registration, WITHOUT any network call or job.
+
+    The raw is normalised again (``normalise`` with ``registration_plan``)
+    and written; the store there (complete or not) is moved aside to
+    ``<year>.zarr.superseded-<UTC>`` (never deleted) only once the new one is
+    written whole (``write_store``): a refusal, an error or an interruption
+    before leaves it in place. Its sidecars (``verify.json``, ``format.txt``,
+    ``job.json``) are first copied with the same suffix (``keep_sidecars``).
+    The new store is verified (``verify_and_complete``: refused -> not
+    complete) and ``<year>.verify.json``, ``<year>.format.txt``, a note in the
+    part's ledger (``job.json``: ``notes``, also on failure) and
+    ``<year>.job.json`` updated. A store written whole from this delivery but
+    pending its verification (``reusable_pending``: e.g. refused before, and
+    now --accept-differences) is verified again instead of written again.
+    The free disk space must hold 1.2 times the store there (it is kept). The
+    raw is kept. ``dry_run``: only the measurement (the offset, its dates and
+    r, the 20 m checks) and what would be done; nothing written. Refused when
+    the raw is missing (RawMissing) or was made for another request."""
+    t0 = time.time()
+    if req.is_angles:
+        log("--renormalise: the angles stores are not registered (no B08): skipped")
+        return {"status": "skipped", "why": "angles"}
+    part, title, led, cur, info, meta, graph, gsrc = _raw_of(ctx, req)
+    log(f"--renormalise{' --dry-run' if dry_run else ''}: rebuilding {req.store.name} from the raw "
+        f"delivery of job {info.get('id')} in {part} (no network, no job)")
+    old = Path(req.store) if Path(req.store).exists() else None
+    state = ("complete" if old is not None and req.complete() else
+             "NOT complete" if old is not None else None)
+    reuse, reuse_why = reusable_pending(req, info.get("id") or cur.get("job_id"))
+    need = _tree_size(old) if old is not None else 0
+    free = shutil.disk_usage(zc.site_dir(req.site, req.root)).free
+    space = f"~{_size(need)} needed beside the kept store, {_size(free)} free"
+    short = old is not None and not reuse and free < 1.2 * need
+    if dry_run and reuse:
+        log(f"DRY RUN: {reuse_why}: it would be verified again (not rewritten) and completed if "
+            f"accepted; nothing done")
+        return {"status": "dry run", "would": "verify the pending store again"}
+    ref = reference_grid(req.site, root=req.root, log=log)
+    plan = registration_plan(req, ctx, ref)
+    kw = dict(job_info=info, results_meta=meta, ref_grid=ref, allow_offset=ctx.allow_offset,
+              nodata=ctx.nodata, allow_padding=ctx.allow_padding,
+              backend_format=ctx.backend_format, registration=plan)
+    if dry_run:
+        _, interp, _ = normalise(req, log, dry_run=True, **kw)
+        reg = interp.registration or {}
+        log(f"DRY RUN: registration {reg.get('method')}: offset {reg.get('offset')} of the frame "
+            f"{reg.get('frame_shape')} in the delivered {reg.get('delivered_shape')} px (their x/y: "
+            f"{reg.get('coordinate_offset')})" + (f"; dates {reg.get('dates')}" if reg.get('dates')
+                                                  else "")
+            + (f"; r {reg.get('r')}" if reg.get("r") else ""))
+        log(f"DRY RUN: {layer_20m_line(reg.get('layer_20m') or {'why': 'no offset measured'})}; "
+            + (phase_line(reg["phase_20m"]) if reg.get("phase_20m") else "20 m phase: not checked"))
+        for w in interp.warnings:
+            log(f"DRY RUN: WARNING: {w}")
+        log("DRY RUN: would move " + (f"{old} ({state}) to {old.name}.superseded-<UTC> once a new "
+                                      f"{req.store.name} is written whole from {part}" if old
+                                      else f"nothing ({req.store.name} absent); would write a new "
+                                           f"{req.store.name} from {part}")
+            + f" ({space}" + ("; NOT ENOUGH: it would be refused" if short else "")
+            + f"), verify it against the reference and update {req.sidecar('verify.json').name}, "
+              f"{req.sidecar('format.txt').name}, {req.sidecar('job.json').name} (the old ones "
+              f"kept as <name>.superseded-<UTC>) and the ledger's notes; nothing done")
+        return {"status": "dry run", "offset": reg.get("offset"), "method": reg.get("method"),
+                "would_move": str(old) if old else None}
+    note = {"utc": utcnow().isoformat(timespec="seconds"), "action": "--renormalise",
+            "superseded_store": None}
+    if reuse:
+        note["action"] = "--renormalise (the pending store verified again, not rewritten)"
+        try:
+            res = finish_pending(ctx, req, log, part, info, t0, note=note)
+        except BaseException as exc:
+            note["failed"] = f"{type(exc).__name__}: {exc}"[:2000]
+            raise
+        finally:
+            _ledger_note(led, note, req, info, meta)
+        return dict(res, status="renormalised (pending store verified again)")
+    if short:
+        raise RuntimeError(f"{req.tag}: {space}: not enough to write the new store beside the kept "
+                           f"one; nothing done")
+    aside = superseded_name(req.store) if old is not None else None
+    if aside is not None:
+        note["sidecars_kept"] = [str(p) for p in keep_sidecars(req, aside, log)]
+    try:
+        ds, interp, lines = normalise(req, log, **kw)
+        log_report(req, lines, log)
+        reg = interp.registration or {}
+        note.update(registration_method=reg.get("method"), delivered_offset_px=reg.get("offset"))
+        attrs = provenance(req, info, meta, interp, ctx, graph, graph_source=gsrc, ref_grid=ref,
+                           job_options=cur.get("job_options"))
+        attrs.update({"renormalised_utc": note["utc"], "renormalised_from": str(part),
+                      "superseded_store": str(aside) if aside else ""})
+        log(f"writing {req.store} ({ds.sizes['t']} dates, {ds.sizes['y']} x {ds.sizes['x']} px, "
+            f"{len(req.bands)} bands) from the raw delivery"
+            + (f"; {old.name} stays in place until the new one is written whole, then moves to "
+               f"{aside.name}" if aside else ""))
+        write_store(ds, store_fills(interp, req.spec), req.store, attrs, log=log,
+                    groups=interp.groups, chunks=req.spec.chunks, format_id=req.spec.format_id,
+                    complete=False, supersede_to=aside)
+        if aside is not None and aside.exists():
+            note["superseded_store"] = str(aside)
+        rep = verify_and_complete(ctx, req, log)
+        note["verification"] = rep.get("acceptance")
+    except BaseException as exc:             # KeyboardInterrupt too: the note says it failed
+        note["failed"] = f"{type(exc).__name__}: {exc}"[:2000]
+        raise
+    finally:
+        _ledger_note(led, note, req, info, meta)
+    dates = zc.dates(ds)
+    still = update_overpass(req, dates, log, network=False)
+    size = _tree_size(req.store)
+    log(f"store complete: {req.store} ({size / 1e9:.2f} GB on disk); the raw delivery stays in "
+        f"{part}; done in {(time.time() - t0) / 60:.0f} min")
+    return {"status": "renormalised", "dates": len(dates), "verdict": rep.get("verdict"),
+            "accepted": (rep.get("acceptance") or {}).get("how"),
+            "registration": f"{reg.get('method')} {reg.get('offset')}",
+            "superseded": note["superseded_store"], "missing_overpass": still}
+
+
+def renormalise_run(reqs, ctx, dry_run=False):
+    """--renormalise [--dry-run] over the requests (main products; one site
+    lock each, as a download run): the summary, exit code 0 / 1."""
+    results, failed = {}, {}
+    by_site = {}
+    for r in reqs:
+        by_site.setdefault(r.site, []).append(r)
+    for site, site_reqs in by_site.items():
+        lock = None
+        if not dry_run:
+            try:
+                lock = SiteLock(zc.site_dir(site, site_reqs[0].root))
+                lock.__enter__()
+            except LockedError as exc:
+                make_log(site_reqs[0])(str(exc))
+                for r in site_reqs:
+                    failed[r.tag] = str(exc)
+                continue
+        try:
+            for req in site_reqs:
+                log = make_log(req) if not dry_run else (lambda m, _t=req.tag: print(
+                    f"[{_t}] {m}", flush=True))
+                try:
+                    results[req.tag] = renormalise_request(ctx, req, log, dry_run=dry_run)
+                except Exception as exc:          # one year never stops the others
+                    failed[req.tag] = f"{type(exc).__name__}: {exc}"
+                    log(f"FAILED: {type(exc).__name__}: {exc}")
+        finally:
+            if lock is not None:
+                lock.__exit__(None, None, None)
+    print("\nSUMMARY (--renormalise" + (" --dry-run)" if dry_run else ")"), flush=True)
+    for tag, r in results.items():
+        print(f"  {tag}: {r}", flush=True)
+    for tag, e in failed.items():
+        print(f"  {tag}: FAILED {e}", flush=True)
+    return 1 if failed else 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4958,7 +7099,25 @@ def verify_only(reqs):
             if verify_angles(req, log)["problems"]:
                 bad += 1
             continue
+        old = pre_registration_warning(req)
+        if old:
+            log(old)
         rep = verify_request(req, log)
+        ok, how, why = verification_decision(rep)
+        was = _json_attr(zc.store_attrs(req.store).get("verification"))
+        flagged = (not ok and isinstance(was, dict)
+                   and was.get("how") == "accepted with --accept-differences")
+        # the decision goes into verify.json again, with the one made at writing
+        rep["acceptance"] = {"accepted": ok or flagged, "how": was.get("how") if flagged else how,
+                             "why": why, "rule": dict(VERIFY_MIN_EQUAL),
+                             "verdict": rep.get("verdict"), "checked_utc": rep.get("checked_utc"),
+                             "at_writing": was, "by": "--verify-only"}
+        zc.write_json(rep, req.sidecar("verify.json"))
+        log(f"verification decision: {how} ({why})"
+            + (f"; the store was accepted at writing: {was.get('how')}"
+               if not ok and isinstance(was, dict) else "")
+            + ("; accepted with --accept-differences, as recorded: not counted as a failure"
+               if flagged else ""))
         ds = zc.open_store(req.store)
         dates = zc.dates(ds)
         ds.close()
@@ -4966,7 +7125,7 @@ def verify_only(reqs):
         miss = [d for d in dates if d not in have]
         log(f"overpass times: {len(dates) - len(miss)} of {len(dates)} dates"
             + (f"; missing {miss[:10]}" if miss else ""))
-        if rep.get("verdict") == "differs" or miss:
+        if (not ok and not flagged) or miss:
             bad += 1
     return 1 if bad else 0
 
@@ -5045,6 +7204,34 @@ def parse_args(argv=None):
     ap.add_argument("--format-options", default=None,
                     help="JSON save_result options for the format (the --test report lists "
                          "the ones the backend declares for Zarr)")
+    ap.add_argument("--renormalise", action="store_true",
+                    help="rebuild the main stores of the sites / years from their kept raw "
+                         "delivery (<year>.part, see --keep-raw) with the registration, without "
+                         "any network call or job: the store there is moved aside to "
+                         "<year>.zarr.superseded-<UTC> (never deleted) once the new one is written "
+                         "whole, the new one verified; refused when the raw is missing or the disk "
+                         "cannot hold a second copy. A store of the same delivery pending its "
+                         "verification is verified again, not rewritten. With --dry-run: the "
+                         "measured offsets, the 20 m checks and what would be moved, nothing done")
+    ap.add_argument("--offset-px", default=None, metavar="ROWS,COLS",
+                    help="expert: the row and column of the frame's first pixel in the delivered "
+                         "(padded) arrays, for ONE site. Recorded in the store; with a reference "
+                         "netCDF covering the year the registration must agree with it (and the "
+                         "verification after writing still decides); without one it is checked "
+                         "against the median composites of a store of the site registered against "
+                         "its reference (refused when they put the frame elsewhere), else taken "
+                         "unverified")
+    ap.add_argument("--accept-unverified-offset", action="store_true",
+                    help="with --offset-px: take it although nothing can check it and the "
+                         "delivered arrays are not the shape the site's stores were delivered in "
+                         "(recorded; default: refused, the backend's layout may have changed)")
+    ap.add_argument("--accept-differences", action="store_true",
+                    help="complete a main store although its verification against the reference "
+                         "netCDF refuses it (VERIFY_MIN_EQUAL): differing VALUES (another mosaic, a "
+                         "reprocessed product), never a store whose geometry is not the "
+                         "reference's; recorded in the store and in <year>.verify.json. A store "
+                         "written from the same delivery and refused is verified again, not "
+                         "rewritten")
     a = ap.parse_args(argv)
     a.sites = [s.lower() for s in a.sites] or list(SITES)
     unknown = sorted(set(a.sites) - set(SITES))
@@ -5065,10 +7252,22 @@ def parse_args(argv=None):
                 json.loads(v)
             except ValueError as exc:
                 ap.error(f"--{opt.replace('_', '-')} is not JSON: {exc}")
-    if sum([a.test, a.verify_only, a.login]) > 1:
-        ap.error("--test, --verify-only and --login exclude each other")
+    if sum([a.test, a.verify_only, a.login, a.renormalise]) > 1:
+        ap.error("--test, --verify-only, --login and --renormalise exclude each other")
     if a.odd_window and (not a.test or a.lonlat_extent):
         ap.error("--odd-window goes with --test (the UTM extent), not with --lonlat-extent")
+    if a.renormalise and (a.new_job or a.lonlat_extent):
+        ap.error("--renormalise uses the kept raw delivery: no --new-job, no --lonlat-extent")
+    if a.offset_px is not None:
+        m = re.fullmatch(r"\s*(\d+)\s*,\s*(\d+)\s*", str(a.offset_px))
+        if not m:
+            ap.error(f"--offset-px {a.offset_px!r}: two non-negative integers ROWS,COLS expected")
+        a.offset_px = (int(m.group(1)), int(m.group(2)))
+        if a.test or a.verify_only or len(a.sites) != 1:
+            ap.error("--offset-px is the offset of ONE site's production deliveries: give exactly "
+                     "one site, without --test or --verify-only")
+    if a.accept_unverified_offset and a.offset_px is None:
+        ap.error("--accept-unverified-offset goes with --offset-px")
     return a
 
 
@@ -5083,9 +7282,14 @@ def main(argv=None):
         return 0
     root = zc.cubes_root(a.root)
     ctx = Context(a)
-    reqs = (test_requests(root, a.products, lonlat=a.lonlat_extent, odd=a.odd_window) if a.test
-            else year_requests(a.sites, a.years, root, a.products, lonlat=a.lonlat_extent,
+    # --renormalise: the main stores only (the angles carry no B08 to register), so the angles
+    # requests (and their reference grids) are never built
+    products = [MAIN.name] if a.renormalise else a.products
+    reqs = (test_requests(root, products, lonlat=a.lonlat_extent, odd=a.odd_window) if a.test
+            else year_requests(a.sites, a.years, root, products, lonlat=a.lonlat_extent,
                                extents=not a.verify_only))
+    if a.renormalise:
+        return renormalise_run(reqs, ctx, dry_run=a.dry_run)
     if a.dry_run:
         return dry_run(reqs, ctx)
     if a.verify_only:

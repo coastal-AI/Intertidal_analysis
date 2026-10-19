@@ -122,6 +122,10 @@ CHUNKS = {"t": 16, "y": 256, "x": 256}
 #: 3/5/7 x shuffle/bitshuffle/none, blosc-lz4} on real B03/B08/SCL blocks;
 #: level 7 adds <1 % on reflectance at twice the time
 COMPRESSOR = {"cname": "zstd", "clevel": 5, "shuffle": "shuffle"}
+#: ``compare_with_netcdf`` reports the share of differing pixel-dates per
+#: block of this many columns / rows (where the differences are: e.g. the
+#: westernmost ~90 columns of Villaviciosa, mosaicked from another tile)
+DIFF_BLOCK_PX = 100
 
 #: the angle bands of the angles stores, in store order (float32 degrees)
 ANGLE_BANDS = ("sunZenithAngles", "sunAzimuthAngles", "viewZenithMean", "viewAzimuthMean")
@@ -983,6 +987,8 @@ def compare_with_netcdf(store, nc_path, bands=("B03", "B08", "SCL"), start=None,
         stats = {b: {"pixels": 0, "equal": 0, "value_differs": 0, "nodata_only_store": 0,
                      "nodata_only_reference": 0, "nodata_both": 0, "max_abs_diff": 0.0}
                  for b in cmp_bands}
+        col_bad = {b: np.zeros(zx1 - zx0, "int64") for b in cmp_bands}
+        row_bad = {b: np.zeros(H, "int64") for b in cmp_bands}
         per_date = {}
         zfill = {b: fill_of(z[b]) for b in cmp_bands}
         rfill = {b: fill_of(r[b]) for b in cmp_bands}
@@ -1017,19 +1023,33 @@ def compare_with_netcdf(store, nc_path, bands=("B03", "B08", "SCL"), start=None,
                     if nd:
                         d_ = np.abs(a[diff].astype("float64") - c[diff].astype("float64"))
                         s["max_abs_diff"] = max(s["max_abs_diff"], float(d_.max()))
-                    bad = (diff | (fa ^ fc)).sum(axis=(1, 2))
+                    badm = diff | (fa ^ fc)
+                    col_bad[b] += badm.sum(axis=(0, 1))
+                    row_bad[b][row:row + n] += badm.sum(axis=(0, 2))
+                    bad = badm.sum(axis=(1, 2))
                     for j, cnt in enumerate(bad):
                         if cnt:
                             dd = common[k + j]
                             per_date.setdefault(dd, {}).setdefault(b, 0)
                             per_date[dd][b] += int(cnt)
             say(f"compared {min(k + tb, len(common))}/{len(common)} common dates")
+        nt, Wc = len(common), zx1 - zx0
         for b, s in stats.items():
             bad = s["value_differs"] + s["nodata_only_store"] + s["nodata_only_reference"]
             s["differing_pixels"] = bad
             s["share_differing"] = bad / s["pixels"] if s["pixels"] else None
             valid = s["equal"] + s["value_differs"]
             s["share_value_differs_of_valid"] = s["value_differs"] / valid if valid else None
+            # where the differences are: share of differing pixel-dates per block of
+            # DIFF_BLOCK_PX columns / rows of the common window (e.g. one mosaic strip)
+            s["differing_by_block"] = {
+                "block_px": DIFF_BLOCK_PX,
+                "columns": [round(float(col_bad[b][k:k + DIFF_BLOCK_PX].sum())
+                                  / max(1, nt * H * len(col_bad[b][k:k + DIFF_BLOCK_PX])), 4)
+                            for k in range(0, Wc, DIFF_BLOCK_PX)],
+                "rows": [round(float(row_bad[b][k:k + DIFF_BLOCK_PX].sum())
+                               / max(1, nt * Wc * len(row_bad[b][k:k + DIFF_BLOCK_PX])), 4)
+                         for k in range(0, H, DIFF_BLOCK_PX)]}
         rep["bands"] = stats
         worst = sorted(per_date.items(), key=lambda kv: -sum(kv[1].values()))
         rep["dates_with_differences"] = len(per_date)

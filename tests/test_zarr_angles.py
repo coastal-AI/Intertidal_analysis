@@ -640,6 +640,55 @@ def test_angles_grid_guard(tmp_path, wkt, monkeypatch):
         dcz.normalise(req_d, lambda m: None)
 
 
+def test_padded_angles_are_placed_by_their_xy_and_flagged(tmp_path, wkt, monkeypatch):
+    """The angles carry no band to register them (2026-10-19): a delivery
+    larger than the 300 m frame (padded, like the main product's, whose x/y
+    were wrong) is placed by its x/y and recorded so (``delivered_shape_cells``
+    and ``placement``), with a WARNING, and verify_angles lists it as a
+    problem (not for the sensing-time inversion until registered); a store
+    written before (no ``placement``) is recognised by its notes. Sampled sun
+    zeniths SHIFTED against the x/y (NaN on the frame's first rows, data past
+    its last ones) stop a production year; --test warns."""
+    monkeypatch.setitem(dcz.SITE_CONFIG, "villaviciosa", dict(
+        dcz.SITE_CONFIG["villaviciosa"], reference=str(tmp_path / "absent.nc")))
+    root = tmp_path / "cubes"
+    ref = dcz.angles_reference_grid("villaviciosa", root=root)
+    assert (len(ref["y"]), len(ref["x"])) == (31, 31)
+    t, y, x, data = angle_cube(2025, H=40, W=40, x0=ref["x"][0], y0=ref["y"][0])
+    req = angles_request(root)
+    place(req, [("p.zarr", write_angles_v2(tmp_path / "src" / "p.zarr", t, y, x, data, wkt), "x")])
+    interp, _ = write_angles_store(req, ref_grid=ref)
+    rec = interp.placement
+    assert rec["padded"] and rec["registered"] is False and rec["method"] == "coordinates"
+    assert rec["delivered_shape_cells"] == [40, 40] and rec["frame_shape_cells"] == [31, 31]
+    assert rec["coordinate_offset_cells"] == [0, 0] and rec["data_extent_cells"] == [[0, 39], [0, 39]]
+    assert "fill the whole delivered arrays" in rec["why"]
+    assert any("NOT registered" in w and "not for the sensing-time inversion" in w
+               for w in interp.warnings)
+    a = zc.store_attrs(req.store)
+    assert json.loads(a["delivered_shape_cells"]) == [40, 40]
+    assert json.loads(a["placement"])["padded"] is True
+    rep = dcz.verify_angles(req, lambda m: None)
+    assert any("placed by its x/y, NOT registered" in p for p in rep["problems"])
+    old = {"delivered_notes": json.dumps([
+        "same 300 m lattice as x but another extent; delivered grid 40 x 40 px from (1.0, 2.0) put "
+        "on the reference grid 31 x 31 px from (1.0, 2.0): cropped rows 0:31 cols 0:31, padded with "
+        "the fill top 0 bottom 0 left 0 right 0"])}
+    assert dcz.unregistered_angles(old).startswith("written before 2026-10-19 from a padded delivery")
+    assert dcz.unregistered_angles({"placement": json.dumps({"padded": False})}) is None
+    # the data 3 rows down in NaN-padded arrays: shifted against the x/y
+    t2, y2, x2, d2 = angle_cube(2024, H=40, W=40, x0=ref["x"][0], y0=ref["y"][0])
+    for b in ANGLES:
+        d2[b][:, 3:] = d2[b][:, :-3].copy()
+        d2[b][:, :3] = np.nan
+    raw2 = write_angles_v2(tmp_path / "src" / "s.zarr", t2, y2, x2, d2, wkt)
+    req2 = angles_request(tmp_path / "c2", year=2024)
+    place(req2, [("s.zarr", raw2, "x")])
+    with pytest.raises(dcz.FormatError, match=r"occupy rows 3\.\.39, cols 0\.\.39, but its x/y put "
+                                              r"the 31 x 31 cell frame at rows 0\.\.30.*SHIFTED"):
+        dcz.normalise(req2, lambda m: None, ref_grid=ref)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  the checks: dates against the main store, ranges, spread, frame centre
 # ─────────────────────────────────────────────────────────────────────────────

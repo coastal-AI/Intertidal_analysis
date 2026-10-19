@@ -12,6 +12,7 @@ synthetic netCDF cubes. Jobs run against a fake connection.
 import ast
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -234,20 +235,40 @@ def frame_dict(frame, wkt, epsg=32630, res=10.0):
             "crs_wkt": wkt, "source": "a synthetic frame", "kind": "netcdf", "origin": "synthetic"}
 
 
-def lattice_values(b, n, x, y):
+def _mix(*ints):
+    """A 64-bit integer hash (splitmix64 rounds) of integer arrays, elementwise:
+    pseudo-random values of the position with no periodic structure."""
+    h = np.uint64(0x9E3779B97F4A7C15)
+    with np.errstate(over="ignore"):
+        for v in ints:
+            h = (h ^ np.asarray(v).astype(np.int64).astype(np.uint64)) * np.uint64(0xBF58476D1CE4E5B9)
+            h = (h ^ (h >> np.uint64(31))) * np.uint64(0x94D049BB133111EB)
+            h = h ^ (h >> np.uint64(29))
+    return h
+
+
+def lattice_values(b, n, x, y, scl_clear=False):
     """Deterministic int16 values of band ``b`` on ``n`` dates at pixel
     centres ``x`` (columns) by ``y`` (rows), a function of the UTM position
     only, so any two grids on the lattice agree where they overlap. The 20 m
     bands are constant on the 20 m cells of the lattice (nearest neighbour
-    from the native grid); date 0 has no data on two 20 m rows (y 4821005..35)."""
+    from the native grid); date 0 has no data on two 20 m rows (y 4821005..35).
+    A hash of the position (``_mix``), not a linear congruence: the field of
+    before 2026-10-19 ((X * 7919 + Y * 104729 + ...) mod 10000) repeated itself
+    exactly at some shifts ((32, 33) px), which a registration rightly refuses
+    as not unique. ``scl_clear``: SCL in the clear classes 4/5/6 only (the
+    registration chooses its dates by them)."""
     res = float(zc.NATIVE_RES_M[b])
     xv, yv = np.asarray(x, dtype="float64"), np.asarray(y, dtype="float64")
-    X = np.floor(xv / res)[None, None, :]
-    Y = np.floor(yv / res)[None, :, None]
-    k = np.arange(n, dtype="float64")[:, None, None]
-    hi = 12 if b == "SCL" else 101 if b == "CLD" else 10000
-    out = np.mod(X * 7919 + Y * 104729 + k * 1299709 + (BANDS.index(b) + 1) * 15485863,
-                 hi).astype("int16")
+    X = np.floor(xv / res).astype("int64")[None, None, :]
+    Y = np.floor(yv / res).astype("int64")[None, :, None]
+    k = np.arange(n, dtype="int64")[:, None, None]
+    h = _mix(X, Y, k, BANDS.index(b) + 1)
+    if b == "SCL" and scl_clear:
+        out = (4 + h % np.uint64(3)).astype("int16")
+    else:
+        hi = 12 if b == "SCL" else 101 if b == "CLD" else 10000
+        out = (h % np.uint64(hi)).astype("int16")
     out[0, (yv > 4821000) & (yv < 4821040), :] = FILL
     return out
 
@@ -1140,6 +1161,11 @@ def test_run_request_end_to_end_and_resume(tmp_path, wkt, monkeypatch, fake_buil
     assert ds.attrs["process_graph_source"] == "submitted with job j-1"   # not rebuilt offline
     assert ds.attrs["grid_reference"].startswith("netcdf: ")
     assert json.loads(ds.attrs["job_options"]) == dcz.JOB_OPTIONS
+    # a delivery of the frame's shape whose x/y agree: (0, 0) is the only offset (as before)
+    assert ds.attrs["registration_method"] == "frame-sized"
+    assert json.loads(ds.attrs["delivered_offset_px"]) == [0, 0]
+    assert json.loads(ds.attrs["verification"])["how"] == "identical"
+    assert res["accepted"] == "identical" and res["registration"] == "frame-sized [0, 0]"
     ds.close()
     ver = json.loads(req.sidecar("verify.json").read_text())
     assert ver["radiometry"]["offset_state"] in ("no offset", "+1000 in the values", "unclear")
@@ -1187,10 +1213,16 @@ def test_format_test_run(tmp_path, wkt, monkeypatch, fake_build):
     the fill): the store is the 204 x 204 px window, bitwise (axes = the
     lattice's float64 values, values = the delivered ones); report, a store
     opened through open_cube, comparison on the common window of the
-    reference cube, raw download kept."""
+    reference cube, raw download kept.
+
+    Since 2026-10-19 the window is REGISTERED against the reference (the
+    three dates, SCL clear: ``scl_clear``, so the registration has its dates):
+    the delivered data sit at row 0, col 0 of the padded arrays here, so the
+    registration finds (0, 0) and the store is the one the naive crop made
+    (the golden of before), now established by the data, not the x/y."""
     t = pd.date_range("2025-06-02", periods=3, freq="5D")
     rx, ry = axes_of(TEST_FRAME)
-    nc = write_nc(tmp_path / "ref.nc", t, ry, rx, {b: lattice_values(b, 3, rx, ry)
+    nc = write_nc(tmp_path / "ref.nc", t, ry, rx, {b: lattice_values(b, 3, rx, ry, scl_clear=True)
                                                   for b in ("B03", "B08", "SCL")}, wkt)
     monkeypatch.setitem(dcz.SITE_CONFIG, "villaviciosa", dict(
         dcz.SITE_CONFIG["villaviciosa"], reference=str(nc),
@@ -1204,7 +1236,7 @@ def test_format_test_run(tmp_path, wkt, monkeypatch, fake_build):
     data = {}
     for b in BANDS:
         a = np.full((3, 256, 256), FILL, "int16")
-        a[:, :204, :204] = lattice_values(b, 3, wx, wy)
+        a[:, :204, :204] = lattice_values(b, 3, wx, wy, scl_clear=True)
         data[b] = a
     xf, yf = f32_like_the_backend(dx, dy)
     raw = write_server_zarr(tmp_path / "src" / "out.zarr", t, yf, xf, data, wkt, extent=TEST_WIN)
@@ -1234,7 +1266,10 @@ def test_format_test_run(tmp_path, wkt, monkeypatch, fake_build):
                "requested extent",
                "x delivered as >f4 (float32)", "the lattice's exact float64 values are used",
                "'milliseconds since 01/01/1970 - 00:00:00' decoded explicitly",
-               "global attribute '_CRS'", "=> normalisable: YES"):
+               "global attribute '_CRS'", "=> normalisable: YES",
+               "registration (netcdf): the frame (204 x 204 px) starts at row 0, col 0 of the "
+               "delivered 256 x 256 px arrays (their x/y put it at row 0, col 0)",
+               "at the registered offset (netcdf)", "marked complete"):
         assert s_ in text, s_
     assert "WARNING" not in text.split("=> normalisable")[0].split("interpretation:")[-1]
     # the store IS the window: the lattice's exact axes and the delivered values, bitwise
@@ -1245,7 +1280,12 @@ def test_format_test_run(tmp_path, wkt, monkeypatch, fake_build):
     assert [str(d) for d in pd.DatetimeIndex(ds["t"].values).date] == [str(d.date()) for d in t]
     for b in BANDS:
         assert ds[b].dtype == np.int16 and zc.fill_of(ds[b]) == FILL
-        np.testing.assert_array_equal(ds[b].values, lattice_values(b, 3, wx, wy))
+        np.testing.assert_array_equal(ds[b].values, lattice_values(b, 3, wx, wy, scl_clear=True))
+    assert json.loads(ds.attrs["delivered_offset_px"]) == [0, 0]
+    assert ds.attrs["registration_method"] == "netcdf"
+    assert ds.attrs["registration_reference"] == str(nc)
+    assert len(json.loads(ds.attrs["registration_dates"])) == 3
+    assert json.loads(ds.attrs["verification"])["how"] == "identical"
     assert json.loads(ds.attrs["spatial_extent"]) == req.extent
     assert json.loads(ds.attrs["spatial_extent_lonlat"]) == dcz.test_bbox()
     assert ds.attrs["spatial_extent_source"].startswith("the --test window, 2040 x 2040 m")
@@ -1955,30 +1995,43 @@ def test_a_delivery_like_the_backends_lands_bitwise_on_the_reference_grid(tmp_pa
     centres in whole metres), time in ms since 01/01/1970, padded to whole
     chunks: 384 x 384 px): cropped onto the frame, the store's axes are the
     reference's float64 values and its values the delivered ones, bitwise,
-    in native int16; the cropped margin held only the fill, so no warning."""
-    t = pd.date_range("2025-06-02", periods=2, freq="5D")
-    _ref_site(monkeypatch, frame_nc(tmp_path / "ref.nc", TEST_FRAME, wkt))
+    in native int16; the cropped margin held only the fill, so no warning.
+
+    Since 2026-10-19 production REGISTERS the delivery (``registration_plan``
+    -> ``register_delivery``) against the reference netCDF, which therefore
+    holds the delivery's three dates (with clear SCL) instead of one
+    constant 2024 date: the data sit at row 0, col 0 of the padded arrays
+    here, the registration finds (0, 0), and the store is bitwise the one
+    the coordinate crop of before made ("cropped rows 0:300 cols 0:300"); the
+    note no longer speaks of padding (a registered crop never pads)."""
+    t = pd.date_range("2025-06-02", periods=3, freq="5D")
+    rx, ry = axes_of(TEST_FRAME)
+    nc = write_nc(tmp_path / "ref.nc", t, ry, rx,
+                  {b: lattice_values(b, 3, rx, ry, scl_clear=True) for b in ("B03", "B08", "SCL")},
+                  wkt)
+    _ref_site(monkeypatch, nc)
     root = tmp_path / "cubes"
     req = dcz.year_requests(["villaviciosa"], [2025], root)[0]
     assert req.extent == {"west": 305000, "south": 4820000, "east": 308000, "north": 4823000,
                           "crs": 32630}
     assert req.extent_origin == "reference netCDF ref.nc"
-    rx, ry = axes_of(TEST_FRAME)
     data = {}
     for b in BANDS:
-        a = np.full((2, 384, 384), FILL, "int16")
-        a[:, :300, :300] = lattice_values(b, 2, rx, ry)
+        a = np.full((3, 384, 384), FILL, "int16")
+        a[:, :300, :300] = lattice_values(b, 3, rx, ry, scl_clear=True)
         data[b] = a
     xf, yf = f32_like_the_backend(*server_axes(TEST_FRAME[0], TEST_FRAME[3], 384, 384))
     assert xf.dtype == yf.dtype == np.float32
     raw = write_server_zarr(tmp_path / "src" / "out.zarr", t, yf, xf, data, wkt, extent=TEST_FRAME)
     place(req, [("out.zarr.zip", zip_store(raw, tmp_path / "src" / "out.zarr"), "application/zip")])
     ref = dcz.reference_grid("villaviciosa", root=root)
-    interp, rep, lines = normalise_and_write(req, ref_grid=ref)
+    plan = dcz.registration_plan(req, None, ref)
+    assert plan.reference == str(nc) and plan.strict and plan.expert is None
+    interp, rep, lines = normalise_and_write(req, ref_grid=ref, registration=plan)
     assert interp.warnings == []
     notes = "\n".join(interp.notes)
     for s_ in ("same 10 m lattice as ref.nc but another extent: 384 x 384 px",
-               "cropped rows 0:300 cols 0:300", "padded with the fill top 0 bottom 0 left 0 right 0",
+               "at the registered offset (netcdf): cropped rows 0:300 cols 0:300",
                "cropped-away margin", ": only the fill (-32768) / NaN",
                "time units 'milliseconds since 01/01/1970 - 00:00:00' decoded explicitly",
                "x (delivered as >f4) 0.000 m (0.000 px) from the 10 m lattice of ref.nc: exactly "
@@ -1996,7 +2049,14 @@ def test_a_delivery_like_the_backends_lands_bitwise_on_the_reference_grid(tmp_pa
     for b in BANDS:
         assert ds[b].dtype == np.dtype("int16") and ds[b].dtype.byteorder in "=|<"
         assert zc.fill_of(ds[b]) == FILL
-        np.testing.assert_array_equal(ds[b].values, lattice_values(b, 2, rx, ry))
+        np.testing.assert_array_equal(ds[b].values, lattice_values(b, 3, rx, ry, scl_clear=True))
+    assert json.loads(ds.attrs["delivered_offset_px"]) == [0, 0]
+    assert json.loads(ds.attrs["delivered_shape_px"]) == [384, 384]
+    assert ds.attrs["registration_method"] == "netcdf"
+    # clearest first: date 0 has two no-data 20 m rows, so it comes last
+    assert json.loads(ds.attrs["registration_dates"]) == [str(d.date()) for d in t[[1, 2, 0]]]
+    assert all(r == 1.0 for band in json.loads(ds.attrs["registration_r"]).values()
+               for r in band.values())
     assert json.loads(ds.attrs["spatial_extent"]) == req.extent
     assert json.loads(ds.attrs["spatial_extent_lonlat"]) == dcz.site_bbox("villaviciosa")
     assert ds.attrs["spatial_extent_source"] == "the frame of the reference netCDF ref.nc (300 x 300 px)"
@@ -2356,3 +2416,928 @@ def test_the_margin_line_is_a_note_and_says_when_dates_are_sampled(tmp_path, wkt
     assert any("cropped rows 3:20 cols 2:36" in n for n in interp.notes)
     assert any(n.startswith("cropped-away margin") and "holds data" in n for n in interp.notes)
     np.testing.assert_array_equal(ds["B03"].values, d["B03"][:, 3:20, 2:36])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  registration (2026-10-19): the backend's padded arrays carry x/y labelled
+#  from the frame's corner while the frame's data start at row dy, col dx of
+#  them; the store must land on the true pixels, or not be written
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: a 64 x 64 px frame on the Villaviciosa lattice: the reference netCDF of these tests
+FRAME64 = (305000.0, 4822360.0, 305640.0, 4823000.0)
+D24 = pd.date_range("2024-06-02", periods=4, freq="5D")
+D23 = pd.date_range("2023-06-03", periods=4, freq="5D")
+D22 = pd.date_range("2022-06-04", periods=4, freq="5D")
+D21 = pd.date_range("2021-06-05", periods=4, freq="5D")
+
+
+#: the bands that reach 10 m by nearest neighbour from 20 m
+TWENTY_M = ("B8A", "B11", "B12", "SCL", "CLD")
+
+
+class World:
+    """A synthetic piece of the Villaviciosa lattice: per band a STATIC field
+    (the geography, the same on every date) plus a smaller part that changes
+    with the date, all hashes of the UTM position (``_mix``: no periodic
+    structure), so a reference frame, a padded delivery and another year cut
+    from it agree wherever they overlap on one date, and correlate across
+    dates. A 10 m band = a 20 m-cell field + 10 m detail + the date's part;
+    B08 shares its 20 m field with B8A (the NIR: B8A against B08 r ~ 0.97),
+    as the 20 m check of the registration expects of real data. The 20 m
+    bands are constant on the 20 m cells of the lattice; SCL is clear
+    (4/5/6) except on the ``cloudy`` dates (9 there); ``period`` > 0 repeats
+    every band every ``period`` (even) pixels in x (a correlation without a
+    unique peak)."""
+
+    def __init__(self, seed=0, cloudy=(), period=0):
+        self.seed, self.period = int(seed), int(period)
+        self.cloudy = {str(pd.Timestamp(d).date()) for d in cloudy}
+
+    def values(self, b, date, x, y):
+        X10 = np.floor(np.asarray(x, dtype="float64") / 10.0).astype("int64")
+        Y10 = np.floor(np.asarray(y, dtype="float64") / 10.0).astype("int64")
+        if self.period:
+            X10 = X10 % self.period
+        X20, Y20 = X10 // 2, Y10 // 2                   # the 20 m cells (x, y multiples of 20 m)
+        c, f = (X20[None, :], Y20[:, None]), (X10[None, :], Y10[:, None])
+        bi, s = BANDS.index(b) + 1, self.seed
+        day = pd.Timestamp(date).toordinal()
+        u = np.uint64
+        if b == "SCL":
+            v = (np.full((len(Y20), len(X20)), 9) if str(pd.Timestamp(date).date()) in self.cloudy
+                 else 4 + _mix(*c, s, bi) % u(3))
+        elif b == "CLD":
+            v = _mix(*c, s, bi) % u(20) + u(70 if str(pd.Timestamp(date).date()) in self.cloudy else 0)
+        elif zc.NATIVE_RES_M[b] == 10:
+            v = u(500) + _mix(*c, s, bi) % u(3000) + _mix(*f, s, bi) % u(600) + _mix(*f, s, bi, day) % u(300)
+        elif b == "B8A":                                # the 20 m field of B08 (band 4)
+            nir = BANDS.index("B08") + 1
+            v = u(500) + _mix(*c, s, nir) % u(3000) + _mix(*c, s, bi) % u(300) + _mix(*c, s, bi, day) % u(300)
+        else:
+            v = u(500) + _mix(*c, s, bi) % u(4000) + _mix(*c, s, bi, day) % u(300)
+        return np.asarray(v).astype("int16")
+
+    def cube(self, b, dates, x, y):
+        return np.stack([self.values(b, d, x, y) for d in dates])
+
+
+def padded_delivery(world, dates, offset, shape, frame=FRAME64, fill_margin=False, offset20=None,
+                    bands20=TWENTY_M):
+    """A delivery of ``frame`` like the backend's of 2026-10: per band (t,
+    rows, cols) arrays of ``shape`` whose frame starts at ``offset`` (dy, dx)
+    (or a list, one per date), holding the true pixels of ``world`` there
+    (data outside the frame too, or the fill with ``fill_margin``); and the
+    x/y the backend labels them with: from the FRAME's corner, float32.
+    ``offset20``: the ``bands20`` (default every 20 m band) at that offset
+    instead (a 20 m layer displaced against the 10 m one)."""
+    west, _, _, north = frame
+    Hr, Wr = shape
+    fx, fy = axes_of(frame)
+    H, W = len(fy), len(fx)
+    offs = list(offset) if isinstance(offset, list) else [offset] * len(dates)
+    data = {b: np.empty((len(dates), Hr, Wr), "int16") for b in BANDS}
+    for k, (d, off) in enumerate(zip(dates, offs)):
+        for b in BANDS:
+            dy, dx = offset20 if offset20 is not None and b in bands20 else off
+            tx = west + 5.0 - 10.0 * dx + 10.0 * np.arange(Wr)
+            ty = north - 5.0 + 10.0 * dy - 10.0 * np.arange(Hr)
+            a = world.values(b, d, tx, ty)
+            if fill_margin:
+                m = np.full(a.shape, FILL, "int16")
+                m[dy:dy + H, dx:dx + W] = a[dy:dy + H, dx:dx + W]
+                a = m
+            data[b][k] = a
+    xf, yf = f32_like_the_backend(*server_axes(west, north, Wr, Hr))
+    return data, xf, yf
+
+
+def frame_values(world, dates, frame=FRAME64):
+    """Every band of ``world`` on ``frame``: what a registered store holds."""
+    fx, fy = axes_of(frame)
+    return {b: world.cube(b, dates, fx, fy) for b in BANDS}
+
+
+class Site:
+    """villaviciosa with a reference netCDF on FRAME64 (B03 B08 SCL of
+    ``world`` on ``ref_dates``, requested for ``period``; ``tweak(data)``
+    may alter it), and production years run through ``run_request`` with a
+    fake job and download (``deliver`` sets what a year's job delivers)."""
+
+    def __init__(self, tmp_path, monkeypatch, wkt, world, ref_dates,
+                 period=("2024-01-01", "2025-01-01"), tweak=None):
+        self.tmp, self.wkt, self.root = tmp_path, wkt, tmp_path / "cubes"
+        fx, fy = axes_of(FRAME64)
+        ref = {b: world.cube(b, ref_dates, fx, fy) for b in ("B03", "B08", "SCL")}
+        if tweak:
+            tweak(ref)
+        self.nc = write_nc(tmp_path / "ref.nc", ref_dates, fy, fx, ref, wkt)
+        monkeypatch.setitem(dcz.SITE_CONFIG, "villaviciosa", dict(
+            dcz.SITE_CONFIG["villaviciosa"], reference=str(self.nc), reference_period=period,
+            pipeline_overpass=str(tmp_path / "none.json")))
+        self.deliveries = {}
+        self.conn = FakeConn()
+        self.ctx, _ = _ctx(self.conn)
+        self.ctx.network, self.ctx.keep_raw = False, True
+
+        def fake_download(job, req, log, workers=4):
+            place(req, [("out.zarr.zip", self.deliveries[req.year], "application/zip")])
+            meta = {"assets": {"out.zarr.zip": {"href": "https://h/out.zarr.zip",
+                                                "type": "application/zip"}}}
+            zc.write_json(meta, Path(req.part) / "job-results.json")
+            return meta
+
+        monkeypatch.setattr(dcz, "download_results", fake_download)
+
+    def deliver(self, year, world, dates, offset, shape, fill_margin=False, tweak=None, **kw):
+        data, xf, yf = padded_delivery(world, dates, offset, shape, fill_margin=fill_margin, **kw)
+        if tweak:
+            tweak(data)
+        src = self.tmp / "src" / str(year)
+        raw = write_server_zarr(src / "out.zarr", dates, yf, xf, data, self.wkt, extent=FRAME64)
+        self.deliveries[year] = zip_store(raw, src / "out.zarr")
+        return data
+
+    def request(self, year, root=None):
+        return dcz.year_requests(["villaviciosa"], [year], root or self.root, ["main"])[0]
+
+    def run(self, year, msgs=None, root=None):
+        req = self.request(year, root)
+        msgs = [] if msgs is None else msgs
+        res = dcz.run_request(self.ctx, req, msgs.append)
+        return req, res, "\n".join(msgs)
+
+
+def _attrs(store):
+    return zc.store_attrs(store)
+
+
+@pytest.mark.parametrize("offset,shape,fill_margin", [
+    ((72, 72), (192, 192), False),          # Villaviciosa's offset; data around the frame
+    ((288, 271), (384, 384), False),        # Ems's
+    ((0, 5), (128, 128), True),             # Wadden's; the margin holds the fill
+])
+def test_a_padded_delivery_is_registered_and_lands_bitwise(tmp_path, monkeypatch, wkt, fake_build,
+                                                           offset, shape, fill_margin):
+    """The frame's data start at ``offset`` of the padded arrays while the
+    delivered x/y put it at (0, 0): the registration against the reference
+    netCDF finds the offset (B08, B03 confirming, on the clear dates), every
+    band is cropped there, and the store is bitwise the reference frame (and
+    the true pixels of the bands the reference lacks); the naive crop of
+    before would have been another place."""
+    world = World(seed=1)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    data = site.deliver(2024, world, D24, offset, shape, fill_margin)
+    want = frame_values(world, D24)
+    dy, dx = offset
+    if offset != (0, 0):
+        assert not np.array_equal(data["B08"][:, :64, :64], want["B08"])     # raw[0:H, 0:W]
+    req, res, text = site.run(2024)
+    assert res["status"] == "done" and res["verdict"] == "identical", text
+    assert res["accepted"] == "identical" and res["registration"] == f"netcdf [{dy}, {dx}]"
+    ds = zc.open_store(req.store)
+    fx, fy = axes_of(FRAME64)
+    np.testing.assert_array_equal(ds["x"].values, fx)
+    np.testing.assert_array_equal(ds["y"].values, fy)
+    for b in BANDS:
+        assert ds[b].dtype == np.int16
+        np.testing.assert_array_equal(ds[b].values, want[b], err_msg=b)
+    ds.close()
+    a = _attrs(req.store)
+    assert a["complete"] == 1 and json.loads(a["verification"])["how"] == "identical"
+    assert json.loads(a["delivered_offset_px"]) == [dy, dx]
+    assert json.loads(a["delivered_shape_px"]) == list(shape)
+    assert a["registration_method"] == "netcdf" and a["registration_reference"] == str(site.nc)
+    rec = json.loads(a["registration"])
+    assert rec["coordinate_offset"] == [0, 0] and rec["verified"] is True
+    assert rec["offsets_searched"] == [shape[0] - 63, shape[1] - 63]
+    assert rec["rule"]["min_r"] == dcz.REGISTRATION_MIN_R
+    assert sorted(json.loads(a["registration_dates"])) == [str(d.date()) for d in D24]
+    r = json.loads(a["registration_r"])
+    assert sorted(r) == ["B03", "B08"] and all(v == 1.0 for t_ in r.values() for v in t_.values())
+    assert all(v == 1.0 for v in rec["netcdf"]["scl_equal"].values())     # the 20 m SCL too
+    assert sorted(rec["netcdf"]["scl_confirmed"]) == sorted(r["B08"])     # best AT the offset
+    per = rec["netcdf"]["per_date"]
+    assert all(v["second"] < 0.2 and v["overlap"] == 64 * 64 and v["centred"]
+               and max(abs(s) for s in v["subpixel"] if s is not None) < 0.1   # None: offset 0
+               for d in per.values() for v in d.values())
+    # the 20 m layer: B8A against the delivery's own B08 frame peaks at the offset; the 20 m
+    # cells of the placed frame are at phase (0, 0) of the lattice
+    assert sorted(rec["layer_20m"]["confirmed"]) == sorted(r["B08"])
+    assert not rec["layer_20m"]["contradicted"]
+    ph = rec["phase_20m"]
+    assert ph["contradicted"] == [] and sorted(ph["bands"]) == ["B11", "B12", "B8A"]
+    assert all(s["shares"]["00"] == 1.0 and max(v for k, v in s["shares"].items() if k != "00") < 0.6
+               for s in ph["bands"].values())
+    assert (f"registration (netcdf): the frame (64 x 64 px) starts at row {dy}, col {dx} of the "
+            f"delivered {shape[0]} x {shape[1]} px arrays (their x/y put it at row 0, col 0)") in text
+    fmt = req.sidecar("format.txt").read_text(encoding="utf-8")
+    assert (f"at the registered offset (netcdf): cropped rows {dy}:{dy + 64} cols {dx}:{dx + 64}; "
+            f"the delivered x/y put the frame at row 0, col 0: not used") in fmt
+    assert ((": only the fill" in fmt) if fill_margin else
+            ("holds data" in fmt and "cut off by the registered offset" in fmt))
+    rep = json.loads(req.sidecar("verify.json").read_text())
+    assert rep["acceptance"]["accepted"] and rep["registration"]["delivered_offset_px"] == [dy, dx]
+
+
+def test_a_cloudy_delivery_is_refused_not_guessed(tmp_path, monkeypatch, wkt, fake_build):
+    """No date of the delivery is clear enough (SCL 9 everywhere): the offset
+    is not guessed; nothing is written, the raw stays, the FORMAT REPORT
+    says why."""
+    world = World(seed=2, cloudy=D24)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    with pytest.raises(dcz.RegistrationRefused, match="a cloudy delivery is refused, not guessed"):
+        site.run(2024)
+    req = site.request(2024)
+    assert not req.store.exists() and (Path(req.part) / dcz.ASSETS_DONE).is_file()
+    fmt = req.sidecar("format.txt").read_text(encoding="utf-8")
+    assert "NOT NORMALISABLE" in fmt and "0 usable date(s) among the 4 in common" in fmt
+
+
+def test_dates_disagreeing_on_the_offset_are_refused(tmp_path, monkeypatch, wkt, fake_build):
+    world = World(seed=3)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, [(72, 72), (70, 72), (72, 72), (72, 72)], (192, 192))
+    with pytest.raises(dcz.RegistrationRefused, match=r"disagree on the offset .*B08 \(70, 72\)"):
+        site.run(2024)
+    assert not site.request(2024).store.exists()
+
+
+def test_an_offset_without_a_unique_peak_is_refused(tmp_path, monkeypatch, wkt, fake_build):
+    """A scene repeating every 16 px in x correlates perfectly at several
+    offsets: not clearly above the second best, refused."""
+    world = World(seed=4, period=16)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    with pytest.raises(dcz.RegistrationRefused, match=r"not unique: r 1\.00000 at offset"):
+        site.run(2024)
+
+
+D20 = pd.date_range("2020-06-06", periods=5, freq="5D")
+D19 = pd.date_range("2019-06-07", periods=4, freq="5D")
+
+
+def test_a_year_without_reference_takes_a_registered_siblings_offset_and_checks_it(
+        tmp_path, monkeypatch, wkt, fake_build):
+    """2023 is not covered by the reference (2024 only): the offset of the
+    registered 2024 store of the same request is taken once the MEDIAN
+    COMPOSITES of the clear dates of the two years (this delivery's full
+    arrays, the store's frame) put the correlation peak there for B08 and B03
+    (r >= REGISTRATION_SIBLING_MIN_R, unique and centred); recorded as not
+    verified. Composites, not pairs of single dates: a year whose dates sit
+    1 px off one another (product geolocation) is still confirmed. A
+    delivery at another offset, or of another delivered shape, is refused."""
+    world = World(seed=5)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    req24, res24, _ = site.run(2024)
+    assert res24["registration"] == "netcdf [72, 72]"
+    site.deliver(2023, world, D23, (72, 72), (192, 192))
+    req, res, text = site.run(2023)
+    assert res["verdict"] == "no reference" and res["accepted"] == "not verified"
+    assert res["registration"] == "sibling store [72, 72]"
+    ds = zc.open_store(req.store)
+    want = frame_values(world, D23)
+    for b in BANDS:
+        np.testing.assert_array_equal(ds[b].values, want[b], err_msg=b)
+    ds.close()
+    a = _attrs(req.store)
+    assert a["registration_method"] == "sibling store"
+    assert json.loads(a["delivered_offset_px"]) == [72, 72]
+    assert a["registration_reference"] == str(req24.store)
+    rec = json.loads(a["registration"])
+    sib = rec["sibling"]
+    assert rec["verified"] is False and sib["sibling_year"] == 2024 and sib["outcome"] == "confirmed"
+    assert sib["dates"] == [str(d.date()) for d in D23]
+    assert sib["sibling_dates"] == [str(d.date()) for d in D24]
+    assert all(v["unique"] and v["centred"] for v in sib["per_band"].values())
+    rs = json.loads(a["registration_r"])
+    assert sorted(rs) == ["B03", "B08"]
+    assert all(t_["composite"] >= dcz.REGISTRATION_SIBLING_MIN_R for t_ in rs.values())
+    assert rec["layer_20m"]["confirmed"] and not rec["layer_20m"]["contradicted"]
+    assert "registration (sibling store)" in text
+    assert "confirmed by the median composites of 4 clear dates of this delivery and 4 of that store" \
+        in text
+    # dates 1 px off one another (2 of 5): single pairs would disagree, the composites do not
+    site.deliver(2020, world, D20, [(72, 72), (72, 73), (72, 72), (72, 71), (72, 72)], (192, 192))
+    _, res20, _ = site.run(2020)
+    assert res20["registration"] == "sibling store [72, 72]"
+    # another offset in 2022: the sibling's is not confirmed; the message says where the frame is
+    site.deliver(2022, world, D22, (70, 72), (192, 192))
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"offset \(72, 72\) of the registered 2024 store is not confirmed .*"
+                             r"the composites put the frame at \(70, 72\)"):
+        site.run(2022)
+    # another delivered shape in 2021: no sibling of the same request (2020, 2023: no reference)
+    site.deliver(2021, world, D21, (72, 72), (256, 256))
+    with pytest.raises(dcz.RegistrationRefused, match=r"2023: not registered against a reference "
+                                                      r"netCDF; 2024: its delivery was \[192, 192\]"):
+        site.run(2021)
+
+
+def test_offset_px_is_recorded_and_checked(tmp_path, monkeypatch, wkt, fake_build):
+    """--offset-px. With a reference covering the year the registration must
+    agree (a wrong one is refused, a right one recorded as confirmed).
+    Without one it is CHECKED against the median composites of a store of
+    the site registered against its reference: refused when they put the
+    frame elsewhere (the site's offset no longer holds), recorded as
+    confirmed when they agree; when they cannot measure (a cloudy delivery)
+    it is refused if the delivered arrays are not that store's shape, unless
+    --accept-unverified-offset (then taken, recorded, with a warning).
+    Outside the delivered arrays it is refused; without it, a year with
+    neither a reference nor a registered store is refused with the hint."""
+    world = World(seed=6)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    site.ctx.offset_px = (70, 72)
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"--offset-px 70,72 contradicts the registration against ref\.nc: "
+                             r"\(72, 72\)"):
+        site.run(2024)
+    site.ctx.offset_px = (72, 72)
+    req, res, _ = site.run(2024)
+    rec = json.loads(_attrs(req.store)["registration"])
+    assert rec["method"] == "netcdf" and rec["verified"] and rec["expert"] == [72, 72]
+    assert "--offset-px 72,72 confirmed" in rec["why"]
+    site.deliver(2023, world, D23, (72, 72), (192, 192))
+    req23, res23, _ = site.run(2023)
+    a = _attrs(req23.store)
+    assert a["registration_method"] == "expert --offset-px" and res23["accepted"] == "not verified"
+    rec23 = json.loads(a["registration"])
+    assert rec23["verified"] is False and rec23["sibling"]["outcome"] == "confirmed"
+    assert rec23["checked"] == "confirmed by the median composites against the registered 2024 store"
+    assert "not verified against a reference netCDF (ref.nc covers [2024-01-01, 2025-01-01)" \
+        in rec23["why"]
+    np.testing.assert_array_equal(zc.open_store(req23.store)["B08"].values,
+                                  frame_values(world, D23)["B08"])
+    # the frame elsewhere in this year's delivery: the site's offset is refused, the right one taken
+    site.deliver(2021, world, D21, (70, 72), (192, 192))
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"--offset-px 72,72 contradicts the median composites against the "
+                             r"registered 2024 store, which put the frame at \(70, 72\)"):
+        site.run(2021)
+    assert not site.request(2021).store.exists()
+    site.ctx.offset_px = (70, 72)
+    req21, res21, _ = site.run(2021)
+    assert res21["registration"] == "expert --offset-px [70, 72]"
+    np.testing.assert_array_equal(zc.open_store(req21.store)["B08"].values,
+                                  frame_values(world, D21)["B08"])
+    # a cloudy year delivered in other arrays: nothing can check the offset -> refused ...
+    cloudy = World(seed=6, cloudy=D19)
+    site.deliver(2019, cloudy, D19, (72, 72), (256, 256))
+    site.ctx.offset_px = (72, 72)
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"--offset-px 72,72 cannot be checked against the registered 2024 store "
+                             r".*not that store's \(\[192, 192\]\).*--accept-unverified-offset"):
+        site.run(2019)
+    # ... unless --accept-unverified-offset: taken, recorded, a warning
+    site.ctx.accept_unverified_offset = True
+    req19, res19, text19 = site.run(2019)
+    rec19 = json.loads(_attrs(req19.store)["registration"])
+    assert rec19["method"] == "expert --offset-px" and rec19["sibling"]["outcome"] == "unmeasured"
+    assert "--accept-unverified-offset" in rec19["checked"] and "NOT confirmed" in text19
+    site.ctx.accept_unverified_offset = False
+    site.deliver(2022, world, D22, (72, 72), (192, 192))
+    site.ctx.offset_px = (200, 0)
+    with pytest.raises(dcz.RegistrationRefused, match=r"puts the frame outside the delivered "
+                                                      r"arrays \(offsets 0\.\.128 x 0\.\.128\)"):
+        site.run(2022)
+    site.ctx.offset_px = None
+    with pytest.raises(dcz.RegistrationRefused, match=r"no registered store of villaviciosa from "
+                                                      r"the same request \(none complete\).*"
+                                                      r"--offset-px ROWS,COLS"):
+        site.run(2022, root=tmp_path / "elsewhere")
+    assert dcz.parse_args(["villaviciosa", "--offset-px", "72,72"]).offset_px == (72, 72)
+    assert dcz.parse_args(["villaviciosa", "--offset-px", "72,72",
+                           "--accept-unverified-offset"]).accept_unverified_offset
+    for bad in (["--offset-px", "72,72"], ["villaviciosa", "--offset-px", "72"],
+                ["villaviciosa", "--test", "--offset-px", "1,2"],
+                ["villaviciosa", "ems", "--offset-px", "1,2"], ["--renormalise", "--test"],
+                ["villaviciosa", "--renormalise", "--new-job"],
+                ["villaviciosa", "--accept-unverified-offset"]):
+        with pytest.raises(SystemExit):
+            dcz.parse_args(bad)
+
+
+def test_a_store_that_differs_from_the_reference_is_not_completed(tmp_path, monkeypatch, wkt,
+                                                                  fake_build):
+    """The registration passes (one reference date differs by +1 in B08: r
+    is blind to it), but the verification after writing finds B08 equal on
+    75 % of the pixel-dates: the store is NOT marked complete, the run stops
+    with a message pointing at verify.json, the raw stays; verify.json says
+    where the differences are (per block) and that every date is in place
+    (the geometry). With --accept-differences the store already written is
+    verified again (not rewritten: no second copy), completed and the
+    acceptance recorded; the raw is kept although --keep-raw is off (the
+    only way to register that year again)."""
+    world = World(seed=7)
+
+    def tweak(ref):
+        ref["B08"][1] += 1
+
+    site = Site(tmp_path, monkeypatch, wkt, world, D24, tweak=tweak)
+    site.ctx.keep_raw = False
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    with pytest.raises(dcz.VerificationRefused, match=r"NOT marked complete.*2024\.verify\.json.*"
+                                                      r"--accept-differences"):
+        site.run(2024)
+    req = site.request(2024)
+    assert req.store.exists() and not zc.is_complete(req.store)
+    assert zc.list_years("villaviciosa", site.root) == []
+    assert _attrs(req.store)["verification"].startswith("pending")
+    rep = json.loads(req.sidecar("verify.json").read_text())
+    assert rep["verdict"] == "differs" and rep["acceptance"]["accepted"] is False
+    why = rep["acceptance"]["why"]
+    assert "B08 equal on 75.0000% of 16384 pixel-dates valid in either store (< 99.9%)" in why
+    assert "geometry: the store's B08 is in place (peak at (0, 0) within 3 px" in why
+    geo = rep["geometry"]
+    assert geo["checked"] and geo["same"] == geo["dates_checked"] == 4 and not geo["displaced"]
+    blk = rep["bands"]["B08"]["differing_by_block"]
+    assert blk == {"block_px": 100, "columns": [0.25], "rows": [0.25]}
+    assert (Path(req.part) / dcz.ASSETS_DONE).is_file()                  # the raw is kept
+    site.ctx.accept_differences = True
+    req, res, text = site.run(2024)
+    assert res["status"] == "verified again" and zc.is_complete(req.store)
+    assert res["accepted"] == "accepted with --accept-differences"
+    assert "is verified again, NOT rewritten" in text
+    acc = json.loads(_attrs(req.store)["verification"])
+    assert acc["how"] == "accepted with --accept-differences" and "B08 equal on 75" in acc["why"]
+    assert sorted(req.store.parent.glob("2024.zarr.superseded-*")) == []  # no second copy
+    assert json.loads(req.sidecar("verify.json").read_text())["acceptance"]["accepted"] is True
+    assert (Path(req.part) / dcz.ASSETS_DONE).is_file() and "raw download kept" in text
+
+
+def test_dates_that_do_not_measure_are_set_aside(tmp_path, monkeypatch, wkt, fake_build):
+    """Against the reference, a usable date that does not measure is SET ASIDE
+    and the next clearest one taken. The reference here mosaics its six
+    westernmost columns from another product on every date (Villaviciosa's
+    strip: r below 1 at the true offset), strongly on one date (r between
+    REGISTRATION_MIN_R_ANY and REGISTRATION_MIN_R: counted, not one of the
+    REGISTRATION_MIN_DATES strong ones), has no data on another (set aside)
+    and differs beyond REGISTRATION_MIN_R_ANY on a third (set aside): four
+    dates count, three of them strong, all at the true offset: registered.
+    The verification then refuses the values (B08 equal on ~75 %), with every
+    checked date in place and the differences in the first 8-column block."""
+    dates = pd.date_range("2024-06-02", periods=6, freq="5D")
+    world = World(seed=13)
+    rng = np.random.default_rng(13)
+
+    def tweak(ref):
+        for b in ("B08", "B03"):
+            s = ref[b][:, :, :6]
+            amp = np.array([150, 800, 0, 3000, 150, 150])[:, None, None]
+            noise = rng.uniform(-1, 1, s.shape) * amp
+            ref[b][:, :, :6] = np.clip(s + noise, 1, 30000).astype("int16")
+        for b in ("B08", "B03", "SCL"):
+            ref[b][2] = FILL                                     # no data on date 2
+
+    site = Site(tmp_path, monkeypatch, wkt, world, dates, tweak=tweak)
+    site.deliver(2024, world, dates, (72, 72), (192, 192))
+    monkeypatch.setattr(zc, "DIFF_BLOCK_PX", 8)
+    with pytest.raises(dcz.VerificationRefused, match=r"B08 equal on"):
+        site.run(2024)
+    req = site.request(2024)
+    rec = json.loads(_attrs(req.store)["registration"])
+    net = rec["netcdf"]
+    d = [str(x.date()) for x in dates]
+    assert rec["method"] == "netcdf" and rec["offset"] == [72, 72]
+    assert net["dates"] == [d[0], d[1], d[4], d[5]] and net["dates_tried"] == 5
+    assert sorted(net["set_aside"]) == [d[2], d[3]]
+    assert "the reference frame holds data on 0%" in net["set_aside"][d[2]]
+    assert re.search(r"B08 r 0\.\d+ < 0\.98", net["set_aside"][d[3]])
+    assert dcz.REGISTRATION_MIN_R_ANY <= net["r"]["B08"][d[1]] < dcz.REGISTRATION_MIN_R
+    assert net["dates_min_r"] == [d[0], d[4], d[5]]
+    rep = json.loads(req.sidecar("verify.json").read_text())
+    geo = rep["geometry"]
+    assert geo["dates_checked"] == 5 and geo["skipped"] == 1 and not geo["displaced"]
+    assert geo["same"] == 4 and list(geo["undetermined"]) == [d[3]]
+    cols = rep["bands"]["B08"]["differing_by_block"]["columns"]
+    assert cols[0] > 0.5 > max(cols[1:])                       # the strip: the first 8 columns
+
+
+def test_accept_differences_never_accepts_a_displaced_date(tmp_path, monkeypatch, wkt, fake_build):
+    """One reference date sits 2 px east of the delivery's (a date the
+    registration does not use: its delivered SCL is cloudy): the
+    verification finds that date DISPLACED (its peak at (0, -2), r 1) and
+    refuses the store; --accept-differences does not accept it."""
+    dates = pd.date_range("2024-06-02", periods=6, freq="5D")
+    world = World(seed=14, cloudy=dates[5:])
+
+    def tweak(ref):
+        for b in ("B03", "B08", "SCL"):
+            ref[b][5] = np.roll(ref[b][5], 2, axis=1)
+
+    site = Site(tmp_path, monkeypatch, wkt, world, dates, tweak=tweak)
+    site.deliver(2024, world, dates, (72, 72), (192, 192))
+    with pytest.raises(dcz.VerificationRefused, match=r"GEOMETRY: DISPLACED on 1 date"):
+        site.run(2024)
+    req = site.request(2024)
+    assert json.loads(_attrs(req.store)["registration"])["offset"] == [72, 72]
+    rep = json.loads(req.sidecar("verify.json").read_text())
+    assert rep["geometry"]["displaced"] == {str(dates[5].date()): [0, -2, 1.0]}
+    site.ctx.accept_differences = True
+    with pytest.raises(dcz.VerificationRefused, match=r"--accept-differences was NOT applied"):
+        site.run(2024)
+    assert not zc.is_complete(req.store)
+    acc = json.loads(req.sidecar("verify.json").read_text())["acceptance"]
+    assert acc["accepted"] is False and "NOT applied" in acc["accept_differences"]
+
+
+def test_a_displaced_20m_layer_is_refused(tmp_path, monkeypatch, wkt, fake_build):
+    """The offset measured on B08 / B03 must hold for the 20 m layer (B8A
+    B11 B12 SCL CLD). Against the reference, the delivered SCL matching the
+    reference's better 2 px away refuses the year; against a registered
+    store, the delivery's B8A peaking 1 px away from its own B08 frame
+    refuses it; and a 20 m band at another phase of the 20 m lattice than the
+    placed frame refuses it whatever the source of the offset."""
+    world = World(seed=11)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, (72, 72), (192, 192), offset20=(72, 74))
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"the delivered SCL \(20 m\) matches the reference's better elsewhere "
+                             r"than at \(72, 72\).* at \(72, 74\)"):
+        site.run(2024)
+    req24 = site.request(2024)
+    assert not req24.store.exists()
+    shutil.rmtree(req24.part)                                  # a right delivery of 2024
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    site.run(2024)
+    site.deliver(2023, world, D23, (72, 72), (192, 192), offset20=(72, 73))
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"20 m layer DISPLACED: B8A against the delivery's own B08 frame peaks "
+                             r"elsewhere \(2023-06-03 at \(72, 73\)"):
+        site.run(2023)
+    # no reference, no registered store: --offset-px; B8A in place, B11 and B12 1 px east
+    site.deliver(2022, world, D22, (72, 72), (192, 192), offset20=(72, 73), bands20=("B11", "B12"))
+    site.ctx.offset_px = (72, 72)
+    with pytest.raises(dcz.RegistrationRefused, match=r"20 m phase CONTRADICTED for B11, B12"):
+        site.run(2022, root=tmp_path / "elsewhere")
+    assert not site.request(2022, root=tmp_path / "elsewhere").store.exists()
+
+
+def test_a_frame_sized_delivery_without_reference_is_checked(tmp_path, monkeypatch, wkt,
+                                                             fake_build):
+    """A delivery of the frame's shape has no other offset, but in a year
+    without reference its composites are searched within
+    REGISTRATION_FRAME_SIZED_PX of (0, 0) against a registered store: in
+    place, recorded as confirmed; its data 3 rows down, refused."""
+    world = World(seed=12)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    site.run(2024)
+    site.deliver(2023, world, D23, (0, 0), (64, 64))
+    req, res, _ = site.run(2023)
+    rec = json.loads(_attrs(req.store)["registration"])
+    assert rec["method"] == "frame-sized" and res["registration"] == "frame-sized [0, 0]"
+    assert rec["checked"].startswith("(0, 0) confirmed within 8 px by the median composites")
+    site.deliver(2022, world, D22, (3, 0), (64, 64))
+    with pytest.raises(dcz.RegistrationRefused,
+                       match=r"composites against the registered 2024 store peak at \(3, 0\), not "
+                             r"\(0, 0\)"):
+        site.run(2022)
+
+
+def test_a_near_identical_store_is_accepted(tmp_path, monkeypatch, wkt, fake_build):
+    """One pixel-date of B08 differs (1 / 16384 < 0.1 %): near-identical,
+    completed, and the decision says so. --verify-only applies the same rule
+    (exit 0) and writes its decision into verify.json with the one made at
+    writing."""
+    world = World(seed=8)
+
+    def tweak(ref):
+        ref["B08"][2, 10, 10] += 1
+
+    site = Site(tmp_path, monkeypatch, wkt, world, D24, tweak=tweak)
+    site.deliver(2024, world, D24, (72, 72), (192, 192))
+    req, res, _ = site.run(2024)
+    assert res["verdict"] == "differs" and res["accepted"] == "near-identical"
+    assert zc.is_complete(req.store)
+    assert "B08 99.9939%" in json.loads(_attrs(req.store)["verification"])["why"]
+    monkeypatch.setattr(dcz, "make_log", lambda r: (lambda m: None))
+    zc.write_json({str(d.date()): f"{d.date()}T11:00:00" for d in D24},
+                  zc.overpass_path("villaviciosa", site.root))       # --verify-only checks them too
+    assert dcz.verify_only([req]) == 0
+    acc = json.loads(req.sidecar("verify.json").read_text())["acceptance"]
+    assert acc["accepted"] and acc["how"] == "near-identical" and acc["by"] == "--verify-only"
+    assert acc["at_writing"]["how"] == "near-identical"
+
+
+def test_verification_decision_rule():
+    def rep(verdict, identical=True, dates=None, geometry=None, **shares):
+        bands = {b: {"pixels": 1000, "differing_pixels": round((1 - s) * 1000)}
+                 for b, s in shares.items()}
+        return {"verdict": verdict, "grid": {"identical": identical}, "bands": bands,
+                "reason": "why", "dates": dates or {}, "geometry": geometry or {}}
+
+    assert dcz.verification_decision(rep("identical"))[:2] == (True, "identical")
+    assert dcz.verification_decision(rep("identical on the common window"))[0]
+    assert dcz.verification_decision(rep("no reference"))[:2] == (True, "not verified")
+    ok = rep("differs", B03=1.0, B08=0.999, SCL=0.99)
+    assert dcz.verification_decision(ok)[:2] == (True, "near-identical")
+    for bad in (rep("differs", B03=1.0, B08=0.998, SCL=1.0),
+                rep("differs", B03=1.0, B08=1.0, SCL=0.98), rep("differs", B03=1.0, B08=1.0),
+                rep("differs", False, B03=1.0, B08=1.0, SCL=1.0), rep("not comparable")):
+        assert dcz.verification_decision(bad)[0] is False, bad
+    # the equal share counts the pixel-dates valid in either store (no data in both left out)
+    half = rep("differs", B03=1.0, B08=1.0, SCL=1.0)
+    half["bands"]["B08"].update(nodata_both=990, differing_pixels=2)
+    acc, how, why = dcz.verification_decision(half)
+    assert not acc and "B08 equal on 80.0000% of 10 pixel-dates valid in either store" in why
+    # a reference date missing from the store, or a displaced date: refused, whatever the values
+    miss = rep("differs", dates={"only_reference": ["2024-06-02"]}, B03=1.0, B08=1.0, SCL=1.0)
+    assert dcz.verification_decision(miss)[0] is False
+    assert "1 date(s) of the reference missing from the store" in dcz.verification_decision(miss)[2]
+    geo = {"checked": True, "band": "B08", "search_px": 3, "min_r": 0.98, "dates_checked": 4,
+           "same": 3, "displaced": {"2024-06-07": [0, -2, 1.0]}, "undetermined": {}, "skipped": 0}
+    disp = rep("differs", geometry=geo, B03=1.0, B08=0.9995, SCL=1.0)
+    acc, _, why = dcz.verification_decision(disp)
+    assert not acc and why.startswith("GEOMETRY: DISPLACED on 1 date(s) (2024-06-07 by (0, -2)")
+    assert dcz.geometry_blocks(geo) and not dcz.geometry_blocks(dict(geo, displaced={}))
+    assert dcz.geometry_blocks(dict(geo, displaced={}, same=1))       # in place on < half
+
+
+def test_masked_correlation_is_the_linear_one_at_every_offset():
+    """The FFT surface is Pearson r over the pixels valid in both, at every
+    offset of the frame inside the array (checked against the direct
+    computation), and never a cyclic shift: a frame that only matches when
+    wrapped around the array's edge is not found."""
+    rng = np.random.default_rng(9)
+    img = rng.integers(0, 3000, (23, 31)).astype("int16")
+    tpl = rng.integers(0, 3000, (9, 12)).astype("int16")
+    ok_i, ok_t = rng.random(img.shape) > 0.1, rng.random(tpl.shape) > 0.1
+    r, n = dcz.masked_correlation(img, ok_i, tpl, ok_t)
+    assert r.shape == n.shape == (15, 20)
+    for dy in range(15):
+        for dx in range(20):
+            rd, nd = dcz.window_r(img, ok_i, tpl, ok_t, dy, dx)
+            assert n[dy, dx] == nd and r[dy, dx] == pytest.approx(rd, abs=1e-9)
+    wrapped = np.roll(img, (-5, -27), axis=(0, 1))[:9, :12]       # columns 27..30 then 0..7
+    ok_w = np.ones(wrapped.shape, bool)
+    r2, _ = dcz.masked_correlation(img, np.ones(img.shape, bool), wrapped, ok_w)
+    assert np.nanmax(r2) < 0.6
+    res = dcz.offset_of(img, np.ones(img.shape, bool), wrapped, ok_w, dcz.REGISTRATION_MIN_R)
+    assert not res["pass"]
+
+
+def test_the_peak_must_be_centred_and_clear_pixels_are_counted_date_by_date():
+    """``_subpixel``: the parabola through the peak and its neighbours puts
+    a symmetric peak at 0 and a flat top (two equal best offsets) half a
+    pixel away, which ``offset_of`` refuses as not centred (the margin rule
+    alone cannot see it). ``clear_counts`` reads one date at a time, in the
+    window given, and equals the counts over the whole arrays;
+    ``core_window`` is the part inside the frame at every offset."""
+    import dask.array as da
+
+    assert dcz._subpixel(np.array([[0, .5, 0], [.5, 1, .5], [0, .5, 0]]), 1, 1) == [0.0, 0.0]
+    assert dcz._subpixel(np.array([[0, .5, 0], [.7, 1, .5], [0, .5, 0]]), 1, 1)[1] == -0.125
+    assert dcz._subpixel(np.array([[0, .5, 0], [1, 1, .5], [0, .5, 0]]), 1, 1)[1] == -0.5
+    assert dcz._subpixel(np.array([[1.0, 0.9]]), 0, 0) == [None, None]
+    rng = np.random.default_rng(4)
+    base = rng.integers(0, 3000, (40, 61)).astype("float64")
+    img = (base[:, :-1] + base[:, 1:]) / 2.0              # every column the mean of two
+    tpl = img[10:30, 20:40].copy()
+    tpl[:, :] = (base[10:30, 20:40] + base[10:30, 21:41] + base[10:30, 22:42]) / 3.0
+    res = dcz.offset_of(img, np.ones(img.shape, bool), tpl, np.ones(tpl.shape, bool), 0.5)
+    assert res["unique"] and abs(res["subpixel"][1]) > dcz.REGISTRATION_MAX_SUBPIXEL
+    assert not res["centred"] and not res["pass"] and "not centred" in res["why"]
+    scl = rng.integers(0, 12, (7, 40, 56)).astype("int16")
+    scl[2, :5] = FILL
+    arr = xr.DataArray(da.from_array(scl, chunks=(1, 8, 8)), dims=("t", "y", "x"))
+    nv, nc = dcz.clear_counts(arr, [0, 2, 6], FILL, slice(4, 30), slice(10, 50))
+    sub = scl[[0, 2, 6], 4:30, 10:50]
+    assert list(nv) == [int(((s != 0) & (s != FILL)).sum()) for s in sub]
+    assert list(nc) == [int(np.isin(s, (4, 5, 6)).sum()) for s in sub]
+    nv_all, _ = dcz.clear_counts(arr, range(7), FILL)
+    assert list(nv_all) == [int(((s != 0) & (s != FILL)).sum()) for s in scl]
+    assert dcz.core_window((1152, 1152), (915, 915)) == (slice(237, 915), slice(237, 915))
+    assert dcz.core_window((3840, 3968), (3206, 3413)) == (slice(634, 3206), slice(555, 3413))
+    assert dcz.core_window((192, 192), (64, 64)) == (slice(0, 192), slice(0, 192))
+
+
+def _displaced_store(tmp_path, monkeypatch, wkt, seed):
+    """The server's state on 2026-10-19: a COMPLETE store cut naively (by the
+    delivered x/y) from a padded delivery kept with --keep-raw (its ledger
+    made for the request's job title). Returns ``(site, req, world,
+    displaced B08)``."""
+    world = World(seed=seed)
+    site = Site(tmp_path, monkeypatch, wkt, world, D24)
+    data = site.deliver(2024, world, D24, (72, 72), (192, 192))
+    req = site.request(2024)
+    meta = dcz.download_results(None, req, lambda m: None)              # the kept raw
+    title = dcz.job_title(req, dcz.graph_hash(dcz.build_process(req).flat_graph()))
+    led = dcz.Ledger(req.part, title)
+    led.update(led.add("j-7", "finished", "created"), info={"id": "j-7", "title": title})
+    ref = dcz.reference_grid("villaviciosa", root=site.root)
+    ds, interp, _ = dcz.normalise(req, lambda m: None, job_info={"id": "j-7"}, results_meta=meta,
+                                  ref_grid=ref)                          # no registration: x/y
+    attrs = dcz.provenance(req, {"id": "j-7"}, meta, interp, dcz.Context(),
+                           dcz.build_process(req).flat_graph(), ref_grid=ref)
+    dcz.write_store(ds, interp.fills, req.store, attrs, log=lambda m: None)
+    zc.write_json({"verdict": "differs", "note": "the evidence of the bug"}, req.sidecar("verify.json"))
+    displaced = zc.open_store(req.store)["B08"].values
+    np.testing.assert_array_equal(displaced, data["B08"][:, :64, :64])  # raw[0:H, 0:W]: wrong
+    assert zc.is_complete(req.store) and "registration" not in _attrs(req.store)
+    return site, req, world, displaced
+
+
+def test_renormalise_rebuilds_a_displaced_store_from_its_raw_offline(tmp_path, monkeypatch, wkt,
+                                                                     fake_build, capsys):
+    """--renormalise --dry-run measures the offset and says what it would
+    move, changing nothing; --renormalise rebuilds the store from the part
+    with the registration, without any network call or job (a connection
+    that fails on any use), moves the old one aside (never deleted,
+    untouched) once the new one is written, keeps the old sidecars beside
+    it, verifies it and updates the sidecars; with the raw gone it refuses.
+    A run that skips the complete store before says it was written before
+    the registration."""
+    import socket
+
+    site, req, world, displaced = _displaced_store(tmp_path, monkeypatch, wkt, 10)
+    msgs = []
+    assert dcz.run_request(site.ctx, req, msgs.append)["pre_registration"] is True
+    assert any("2024.zarr was written before the registration (2026-10-19)" in m for m in msgs)
+
+    def no_network(*a, **k):
+        raise AssertionError("network used by --renormalise")
+
+    monkeypatch.setattr(dcz.Context, "connection", no_network)
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    monkeypatch.chdir(tmp_path)
+    site_dir = zc.site_dir("villaviciosa", site.root)
+
+    def snapshot():
+        return sorted((p.relative_to(site_dir).as_posix(), p.stat().st_size, p.stat().st_mtime_ns)
+                      for p in site_dir.rglob("*") if p.is_file())
+
+    before = snapshot()
+    argv = ["villaviciosa", "--years", "2024", "--renormalise", "--root", str(site.root)]
+    assert dcz.main(argv + ["--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert ("DRY RUN: registration netcdf: offset [72, 72] of the frame [64, 64] in the delivered "
+            "[192, 192] px (their x/y: [0, 0])") in out
+    assert "DRY RUN: would move" in out and "2024.zarr (complete) to 2024.zarr.superseded-<UTC>" in out
+    assert "DRY RUN: 20 m layer confirmed" in out and "20 m phase check passed" in out
+    assert "needed beside the kept store" in out
+    assert snapshot() == before                                        # nothing written
+    assert dcz.main(argv) == 0
+    aside = sorted(site_dir.glob("2024.zarr.superseded-*"))
+    assert len(aside) == 1 and zc.is_complete(aside[0])
+    np.testing.assert_array_equal(zc.open_store(aside[0])["B08"].values, displaced)   # untouched
+    stamp = aside[0].name.split(".superseded-")[1]
+    old_verify = site_dir / f"2024.verify.json.superseded-{stamp}"
+    assert json.loads(old_verify.read_text())["note"] == "the evidence of the bug"
+    assert (site_dir / f"2024.format.txt.superseded-{stamp}").is_file()
+    new = zc.open_store(req.store)
+    want = frame_values(world, D24)
+    for b in BANDS:
+        np.testing.assert_array_equal(new[b].values, want[b], err_msg=b)
+    new.close()
+    a = _attrs(req.store)
+    assert a["complete"] == 1 and json.loads(a["delivered_offset_px"]) == [72, 72]
+    assert a["registration_method"] == "netcdf" and a["job_id"] == "j-7"
+    assert a["renormalised_from"] == str(req.part) and a["superseded_store"] == str(aside[0])
+    rep = json.loads(req.sidecar("verify.json").read_text())
+    assert rep["verdict"] == "identical" and rep["acceptance"]["accepted"] is True
+    assert "cropped rows 72:136 cols 72:136" in req.sidecar("format.txt").read_text(encoding="utf-8")
+    notes = json.loads((Path(req.part) / "job.json").read_text())["notes"]
+    assert notes[-1]["action"] == "--renormalise" and notes[-1]["delivered_offset_px"] == [72, 72]
+    assert notes[-1]["superseded_store"] == str(aside[0]) and notes[-1]["verification"]["accepted"]
+    assert str(old_verify) in notes[-1]["sidecars_kept"]
+    assert json.loads(req.sidecar("job.json").read_text())["ledger"]["notes"] == notes
+    assert (Path(req.part) / dcz.ASSETS_DONE).is_file()                 # the raw is kept
+    assert site.conn.created == []                                       # no job
+    # the raw gone: refused, the store untouched
+    shutil.rmtree(req.part)
+    kept = snapshot()
+    assert dcz.main(argv) == 1
+    assert "no raw delivery to rebuild 2024.zarr" in capsys.readouterr().out
+    assert [f for f in snapshot() if not f[0].endswith("download.log")] == \
+        [f for f in kept if not f[0].endswith("download.log")]
+
+
+def test_renormalise_never_leaves_a_year_without_its_store(tmp_path, monkeypatch, wkt, fake_build,
+                                                          capsys):
+    """--renormalise refuses a part made for another job title, and refuses
+    to start without the disk space for a second copy: nothing changes. A
+    failure while writing (here: memory) leaves the old store where it was,
+    complete and untouched (it is moved aside only once the new one is
+    written whole), and the ledger's note says it failed; the next run
+    rebuilds the store."""
+    site, req, world, displaced = _displaced_store(tmp_path, monkeypatch, wkt, 15)
+    monkeypatch.chdir(tmp_path)
+    site_dir = zc.site_dir("villaviciosa", site.root)
+    argv = ["villaviciosa", "--years", "2024", "--renormalise", "--root", str(site.root)]
+
+    def snapshot():
+        return sorted((p.relative_to(site_dir).as_posix(), p.stat().st_size, p.stat().st_mtime_ns)
+                      for p in site_dir.rglob("*") if p.is_file() and p.name != "download.log")
+
+    led_path = Path(req.part) / "job.json"
+    good = led_path.read_text()
+    led = json.loads(good)
+    led["title"] = "zarr_cube_villaviciosa_2024_deadbeef"
+    led_path.write_text(json.dumps(led))
+    before = snapshot()
+    assert dcz.main(argv) == 1
+    assert "was made for the job title 'zarr_cube_villaviciosa_2024_deadbeef'" in capsys.readouterr().out
+    assert snapshot() == before
+    led_path.write_text(good)
+    # a dry run never extracts nor removes: a zip without its '.extracted' flag stops it
+    flag = Path(req.part) / "extracted" / "out.zarr.extracted"
+    kept_flag = flag.read_text()
+    flag.unlink()
+    before = snapshot()
+    assert dcz.main(argv + ["--dry-run"]) == 1
+    assert "dry run: out.zarr.zip is not extracted" in capsys.readouterr().out
+    assert snapshot() == before and (Path(req.part) / "extracted" / "out.zarr").is_dir()
+    flag.write_text(kept_flag)
+    real_usage = shutil.disk_usage
+    monkeypatch.setattr(dcz.shutil, "disk_usage",
+                        lambda p: real_usage(p)._replace(free=1000))
+    before = snapshot()
+    assert dcz.main(argv) == 1
+    assert "not enough to write the new store beside the kept one" in capsys.readouterr().out
+    assert snapshot() == before
+    monkeypatch.setattr(dcz.shutil, "disk_usage", real_usage)
+
+    def no_memory(*a, **k):
+        raise MemoryError("no memory for the test")
+
+    real_write = dcz.write_store
+    monkeypatch.setattr(dcz, "write_store", no_memory)
+    assert dcz.main(argv) == 1
+    assert "MemoryError: no memory for the test" in capsys.readouterr().out
+    assert zc.is_complete(req.store) and sorted(site_dir.glob("2024.zarr.superseded-*")) == []
+    np.testing.assert_array_equal(zc.open_store(req.store)["B08"].values, displaced)
+    note = json.loads(led_path.read_text())["notes"][-1]
+    assert note["failed"].startswith("MemoryError") and note["superseded_store"] is None
+    monkeypatch.setattr(dcz, "write_store", real_write)
+    assert dcz.main(argv) == 0
+    assert json.loads(_attrs(req.store)["delivered_offset_px"]) == [72, 72]
+    assert len(sorted(site_dir.glob("2024.zarr.superseded-*"))) == 1
+    # a store of this delivery left pending (e.g. refused, then --accept-differences): verified
+    # again, not rewritten, and still without any network call
+    import socket
+
+    import zarr as zarr_
+
+    def no_network(*a, **k):
+        raise AssertionError("network used by --renormalise")
+
+    monkeypatch.setattr(dcz.Context, "connection", no_network)
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    g = zarr_.open_group(str(req.store), mode="r+")
+    g.attrs["complete"], g.attrs["verification"] = 0, dcz.PENDING
+    zarr_.consolidate_metadata(str(req.store))
+    assert not zc.is_complete(req.store)
+    capsys.readouterr()
+    assert dcz.main(argv) == 0
+    assert "is verified again, NOT rewritten" in capsys.readouterr().out
+    assert zc.is_complete(req.store) and len(sorted(site_dir.glob("2024.zarr.superseded-*"))) == 1
+    note = json.loads(led_path.read_text())["notes"][-1]
+    assert note["action"].startswith("--renormalise (the pending store verified again")
+    assert note["verification"]["accepted"] and "failed" not in note
+
+
+def test_a_test_run_that_cannot_register_warns_and_keeps_the_coordinates(tmp_path, wkt,
+                                                                          monkeypatch, fake_build):
+    """--test is registered too, but a failure only warns: with no date clear
+    enough (SCL of every class) the warning says NOT REGISTERED, the
+    delivered x/y place the pixels (the 0:204 crop) and the store is
+    written."""
+    t = pd.date_range("2025-06-02", periods=3, freq="5D")
+    rx, ry = axes_of(TEST_FRAME)
+    nc = write_nc(tmp_path / "ref.nc", t, ry, rx, {b: lattice_values(b, 3, rx, ry)
+                                                  for b in ("B03", "B08", "SCL")}, wkt)
+    monkeypatch.setitem(dcz.SITE_CONFIG, "villaviciosa", dict(
+        dcz.SITE_CONFIG["villaviciosa"], reference=str(nc),
+        reference_period=("2016-01-01", "2025-12-31"), pipeline_overpass=str(tmp_path / "none.json")))
+    req = dcz.test_request(tmp_path / "cubes")
+    wx, wy = axes_of(TEST_WIN)
+    dx, dy = server_axes(TEST_WIN[0], TEST_WIN[3], 256, 256)
+    data = {}
+    for b in BANDS:
+        a = np.full((3, 256, 256), FILL, "int16")
+        a[:, :204, :204] = lattice_values(b, 3, wx, wy)
+        data[b] = a
+    xf, yf = f32_like_the_backend(dx, dy)
+    raw = write_server_zarr(tmp_path / "src" / "out.zarr", t, yf, xf, data, wkt, extent=TEST_WIN)
+    z = zip_store(raw, tmp_path / "src" / "out.zarr")
+
+    def fake_download(job, req, log, workers=4):
+        place(req, [("out.zarr.zip", z, "application/zip")])
+        return {}
+
+    monkeypatch.setattr(dcz, "download_results", fake_download)
+    ctx, _ = _ctx(FakeConn())
+    ctx.network = False
+    msgs = []
+    res = dcz.run_request(ctx, req, msgs.append)
+    text = "\n".join(msgs)
+    assert res["status"] == "done" and res["registration"] == "none None"
+    assert "WARNING: NOT REGISTERED: the registration against ref.nc: 0 usable date(s)" in text
+    assert "the delivered x/y place the pixels (--test only; a production year is refused)" in text
+    ds = zc.open_store(req.store)
+    np.testing.assert_array_equal(ds["B08"].values, lattice_values("B08", 3, wx, wy))
+    ds.close()
