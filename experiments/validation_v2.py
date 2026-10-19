@@ -1304,8 +1304,11 @@ def cmd_truth(args):
             log(f"[truth] {site}: record T = {pkg.T} over {pkg.years}, instants "
                 f"{_instants_line(pkg.record)}")
             os.makedirs(s2.truth_dir, exist_ok=True)
-            # the 1-min h_B series and its marks (resumable package step)
-            package.prepare_v2(s2, steps=["series"], provider=pkg.provider())
+            # the 1-min h_B series and its marks (resumable package step), on
+            # the record's own years: truth has no --years, and the default
+            # years would be refused at a site whose stores cover fewer years
+            package.prepare_v2(s2, steps=["series"], years=[int(y) for y in pkg.years],
+                               provider=pkg.provider())
             book = package._V2Book(s2)
             for step in ("geometry", "series"):
                 why = book.why_stale(step)
