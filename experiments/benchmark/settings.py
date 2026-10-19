@@ -29,7 +29,9 @@ Pre-registered rules (docs/validation_v2_spec.md §2, Appendix A sections
   the C1 pixel mask. No data never counts as cloud.
 * Band preprocessing (§2.3): floor0 (BASE) rho = max(DN - o_s, 0) / 10000;
   raw rho = (DN - o_s) / 10000; o_s in {0, 1000} is the scene's frozen
-  offset (``inputs.decide_offsets``).
+  offset (``inputs.decide_offsets``); the prep levels hash the whole offset
+  rule (:data:`OFFSET_RULE_IMPL`: ``inputs.OFFSET_RULE`` as JSON and every
+  function of the decision; amendment of 2026-10-19).
 * Spectral index (§2.4): I1 NDWI (BASE, bit-identical to production), I2
   MNDWI, I3 NIR, I4 AWEI_sh, I5 AWEI_nsh, I6 WRI, I7 NDWI@20; every index
   that uses a 20 m band is computed at 20 m on 2 x 2 means of its 10 m bands
@@ -332,7 +334,9 @@ class CurveSet(Entry):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def impl_source(dotted):
-    """CRLF-normalised source of the object ``package.module.name``.
+    """CRLF-normalised source of the object ``package.module.name``; for a
+    JSON-able module constant (e.g. ``inputs.OFFSET_RULE``, the parameters of
+    a rule) its canonical JSON instead.
 
     A name that cannot be resolved (a level whose builder is not written yet)
     gives ``"<missing dotted.name>"``, so writing it later changes the hash.
@@ -340,8 +344,16 @@ def impl_source(dotted):
     mod, _, name = str(dotted).rpartition(".")
     try:
         obj = getattr(importlib.import_module(mod), name)
+    except (ImportError, AttributeError):
+        return f"<missing {dotted}>"
+    if obj is None or isinstance(obj, (dict, list, tuple, str, int, float, bool)):
+        try:
+            return "<json>\n" + json.dumps(obj, sort_keys=True, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return f"<missing {dotted}>"
+    try:
         src = inspect.getsource(obj)
-    except (ImportError, AttributeError, OSError, TypeError):
+    except (OSError, TypeError):
         return f"<missing {dotted}>"
     return src.replace("\r\n", "\n")
 
@@ -475,8 +487,17 @@ SCENE_CLOUD = tuple(k for k, e in CLOUD.items() if e.kind == "scene")
 #  band preprocessing (§2.3)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_PREP_IMPL = (_OBS + "prep_band", _OBS + "decode", _OBS + "_offset_array",
-              "experiments.benchmark.inputs.decide_offsets")
+_INPUTS = "experiments.benchmark.inputs."
+#: what carries the per-scene offset rule o_s (amended 2026-10-19): its
+#: parameters and every function of the decision, so the prep levels' hash
+#: (and lock-A) covers the whole rule; ``inputs.offset_rule_sha256`` hashes
+#: the same list for the inputs report
+OFFSET_RULE_IMPL = tuple(_INPUTS + n for n in (
+    "OFFSET_RULE", "HARD_ZERO_TAGS", "IDENTITY_VERDICTS", "IDENTITY_BANDS", "_baseline_version",
+    "_baseline_class", "scene_offset_stats", "scl_cloud_counts", "_cloud_share",
+    "_water_counts", "_strong_rule", "_strong", "_identity_map", "decide_offsets", "_count",
+    "_bands_clean", "_per_date_counts", "_covers_store", "identity_from_verify"))
+_PREP_IMPL = (_OBS + "prep_band", _OBS + "decode", _OBS + "_offset_array") + OFFSET_RULE_IMPL
 
 PREP = types.MappingProxyType({e.id: e for e in (
     PrepLevel(id="floor0", floor=True,

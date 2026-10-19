@@ -554,6 +554,16 @@ def cmd_inputs(args):
         log(f"[inputs] {site}: {rep.get('source', {}).get('kind')} source, T = {r.get('T')} "
             f"({r.get('instant_source')} instants), grid {rep.get('grid', {}).get('H')} x "
             f"{rep.get('grid', {}).get('W')}, offsets {rep.get('offset_counts')}")
+        if rep.get("offset_rule_counts"):
+            log(f"[inputs] {site}: offset decisions by rule {rep['offset_rule_counts']}")
+        gz = rep.get("g_zarr") or {}
+        for y, g in sorted(gz.items()):   # rule (0) of the offset rule (amendment of 2026-10-19)
+            log(f"[inputs] {site}: G-zarr {y} {g.get('verdict')} ({g.get('scenes_identical', 0)} "
+                f"scenes decided by the identity with the legacy cube; "
+                f"{g.get('identity_check') or 'no identical record date'}); {g.get('identity')}")
+        if rep.get("identity_overrides"):
+            log(f"[inputs] {site}: the identity's scenes by rules (1)-(5) alone "
+                f"{rep['identity_overrides']}")
         log(f"[inputs] {site}: {'ok' if rep.get('ok') else 'NOT OK'} "
             f"({time.time() - t0:.0f} s) -> {report}")
         if not rep.get("ok"):
@@ -1069,6 +1079,11 @@ def check_env(sites, cubes_root=None, rscript=None, network=False, res=10):
                 (ck.ok if op.is_file() else ck.fail)(f"{site} catalogue times",
                                                      str(op) if op.is_file()
                                                      else f"{op} missing")
+                from experiments.benchmark import inputs as _inputs
+                for y in yrs:                 # rule (0) of the per-scene offset rule reads it
+                    v = _inputs.read_verify(site, y, cubes_root)
+                    ck.info(f"{site} {y}.verify.json (offset rule 0)",
+                            "missing" if v is None else v.get("verdict"))
             sd = zc.site_dir(site, cubes_root)
             sm = sd / "scene_meta.json"
             (ck.ok if sm.is_file() else ck.warn)(f"{site} scene_meta.json",

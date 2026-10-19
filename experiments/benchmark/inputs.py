@@ -44,17 +44,54 @@ user decisions of 2026-10-13 and 2026-10-14)
   (both phases exact, uniform data) is resolved by the grid geometry (20 m
   lattice lines at multiples of 20 m), else None.
 * Per-scene BOA offset o_s in {0, 1000} (:func:`decide_offsets`, the frozen
-  rule written before lock-A, :data:`OFFSET_RULE`), never by date: (1)
-  negative values in the delivered bands -> 0; (2) all processing
-  baselines < 04.00 -> 0 (unclear if the water says otherwise); (3) at least
-  1,000 SCL-water pixels with valid B12: a share of B12 DN < 500 >= 0.5 ->
-  0, <= 0.02 -> 1000, else unclear; (4) the frame share of B12 DN in
-  [1, 500) > 0.01 (on >= 1 % of the frame valid) -> 0; (5) otherwise the
-  regime of the year's strongly decided scenes if they agree, else the
-  store's year ``offset_state``, else unclear. 'unclear' is an error for
-  the observation (:class:`OffsetUnclear`) and fails the inputs check.
-  The legacy netCDF cubes are offset-harmonised (value = DN - 1000 >=
-  -1000): o_s = 0 for every scene.
+  rule written before lock-A, :data:`OFFSET_RULE`, amended 2026-10-19),
+  never by date. Strong decisions, labelled as in V1 and tested in this
+  order: (0) B03 and B08 identical to the offset-harmonised legacy netCDF
+  cube on the date (the store-year's ``<year>.verify.json``,
+  :func:`identity_from_verify`: its comparison covering the store's whole
+  frame, bound to the store by its date counts and per-date B12 counts)
+  -> 0, on a scene with B12 valid on >= 1 % of the frame, in a store-year
+  where an identical date also shows (1), (4) or the dark clear water of
+  (3); (1) >= 100 negative values in the delivered
+  bands -> 0; (4) the frame share of B12 DN in [1, 500) >= 0.002 (on >= 1 %
+  of the frame valid) -> 0; (2) all processing baselines < 04.00 -> 0
+  (unclear if the clear water says +1000); (3) at least 1,000 CLEAR-water
+  pixels (SCL 6 with CLD <= 10 % and a valid B12): a share of B12 DN < 500
+  >= 0.1 -> 0, <= 0.02 -> 1000 when the frame's SCL 8/9/10 share is <= 0.5
+  (under more cloud no strong evidence; mixed baselines unclear), in
+  between no strong evidence. (5) Per year (scenes whose baselines are not
+  all < 04.00): its strong 1000 become weak when it has >= 10 strong 0 and
+  they are <= 2 % of its strong decisions; when both values remain, the
+  strong decisions of the smaller side are 'unclear' (both sides on a tie,
+  and then its weak scenes too); every other scene takes the regime of the
+  year's strong decisions, else the store's year ``offset_state``, else
+  'unclear'. 'unclear' is an error for the observation
+  (:class:`OffsetUnclear`) and fails the inputs check. The legacy netCDF
+  cubes are offset-harmonised (value = DN - 1000 >= -1000): o_s = 0 for
+  every scene. :func:`offset_rule_sha256` (OFFSET_RULE and the code of the
+  decision, ``settings.OFFSET_RULE_IMPL``) is written into the inputs
+  report; ``prepare`` refuses a report written with another rule.
+* Amendment of 2026-10-19 (declared before lock-A, ``OFFSET_RULE
+  ["revision"]``; nothing tuned on truth data). The first inputs run on the
+  complete stores decided '+1000' on scenes without any offset: thick cloud
+  that Sen2Cor labelled water (SCL 6 inside a frame of SCL 8/9) and
+  clear-sky bright water; their years' decided scenes then disagreed, so
+  every weakly decided scene of those years became 'unclear' and the check
+  failed. New: rule (0); the clear-water filter and the cloud guard of
+  (2)-(3) (the guard does not depend on CLD); (4) before (2) and (3) at
+  0.002, the downloader's own '+1000' bound (dark pixels outrank bright
+  water); the dark-water bound 0.1 and a middle water share that is no
+  strong evidence instead of 'unclear'; at least 100 negatives for (1); the
+  demotion of an isolated strong '+1000' and the contradiction step of (5);
+  the baselines as the union of the scene metadata and the stores'
+  ``input_baselines``. The scene statistics keep the SCL-water counts
+  (``n_water``, ``n_water_low``), the clear-water counts (``n_water_clear``,
+  ``n_water_clear_low``, read in the same pass as B12 and SCL) and the SCL
+  cloud counts (``n_scl_cloud``, ``n_scl_valid``); statistics written before
+  the amendment have no clear-water counts and fall back to the SCL-water
+  counts, and the reason says so. Whether CLD <= 10 % removes the cloud
+  labelled water is not verified (no legacy cube has CLD): the report keeps
+  both counts for every scene.
 * Fingerprint of a store-year: sha256 of the consolidated metadata plus the
   sorted (chunk key, size) list; ``full=True`` adds a content hash.
 * Scene metadata sidecar ``cubes/<site>/scene_meta.json``
@@ -72,9 +109,11 @@ the cache (``cache_mb``); nothing holds a whole cube.
 from __future__ import annotations
 
 import collections
+import collections.abc
 import hashlib
 import json
 import os
+import re
 import shutil
 import time
 import warnings
@@ -121,24 +160,188 @@ INPUTS_REPORT = "results/validation_v2/common/inputs_report.json"
 #: the key of an instant in sensing_times.json
 INSTANT_KEY = "instant"
 
-#: the frozen per-scene offset rule (§1.10, §2.3); written before lock-A
+#: the per-scene offset rule as written before lock-A (milestone V1), kept in
+#: the amendment's record
+_OFFSET_RULE_V1 = (
+    "(1) negative values -> 0; (2) all baselines < 04.00 -> 0 (unclear if the water B12 says "
+    "+1000); (3) >= 1,000 SCL-water px with valid B12: share of B12 DN < 500 >= 0.5 -> 0, "
+    "<= 0.02 -> 1000, else unclear; (4) frame share of B12 DN in [1, 500) > 0.01 on >= 1 % of "
+    "the frame valid -> 0; (5) otherwise the regime of the year's strongly decided scenes if "
+    "they agree, else the store's year offset_state, else unclear")
+#: the V1 parameters the amendment of 2026-10-19 changed (kept in its record)
+_OFFSET_RULE_V1_PARAMETERS = {
+    "negative_values": "any (n_neg > 0)",
+    "water": "SCL 6 with a valid B12 (no CLD, no cloud guard)",
+    "water_low_none": 0.5,
+    "water_middle_band": "unclear",
+    "frame_low_none": "0.01, strictly above, tested after (2) and (3)",
+    "regime": "unanimous; a disagreement made every weak scene of the year unclear",
+    "baselines": "scene_meta.json, else the stores' input_baselines",
+}
+#: the verdicts of ``zarr_cubes.compare_with_netcdf`` under which every
+#: compared pixel of every common date is equal. Like 'differs', they grant
+#: identity only when the comparison covered the store's whole frame
+#: (:func:`_covers_store`: identical grids, or a common window that is the
+#: whole store frame): the per-date counts cover the common window only, so
+#: on a store that reaches beyond the legacy cube a date could be 'identical'
+#: with nothing compared
+IDENTITY_VERDICTS = ("identical", "identical on the common window")
+#: the bands whose identity with the offset-harmonised legacy cube proves
+#: 'no offset' (rule 0; the legacy cubes hold B03, B08 and SCL)
+IDENTITY_BANDS = ("B03", "B08")
+#: the reason of a rule-0 decision (the start of the string)
+IDENTITY_REASON = "identical to the offset-harmonised legacy cube"
+#: the store-year sidecar of the comparison with the legacy cube
+VERIFY_NAME = "verify.json"
+
+#: the frozen per-scene offset rule (§1.10, §2.3); written before lock-A,
+#: amended 2026-10-19 (``revision``). Rules are labelled as in V1 and tested in
+#: the order (0), (1), (4), (2), (3), then (5) per year.
 OFFSET_RULE = {
-    "rule": ("(1) negative values -> 0; (2) all baselines < 04.00 -> 0 (unclear if the water "
-             "B12 says +1000); (3) >= 1,000 SCL-water px with valid B12: share of B12 DN < 500 "
-             ">= 0.5 -> 0, <= 0.02 -> 1000, else unclear; (4) frame share of B12 DN in [1, 500) "
-             "> 0.01 on >= 1 % of the frame valid -> 0; (5) otherwise the regime of the year's "
-             "strongly decided scenes if they agree, else the store's year offset_state, else "
-             "unclear"),
+    "rule": ("(0) B03 and B08 identical to the offset-harmonised legacy netCDF cube on the "
+             "date (the store-year's verify.json, its comparison covering the store's whole "
+             "frame, bound to the store by its date counts and per-date B12 counts), on a "
+             "scene with B12 valid on >= 1 % of the frame, in a store-year where at least one "
+             "identical date also shows (1), (4) or the dark clear water of (3) -> 0; "
+             "(1) >= 100 negative values in the delivered bands -> 0; "
+             "(4) frame share of B12 DN in [1, 500) >= 0.002 on >= 1 % of the frame valid -> 0 "
+             "(tested before (2) and (3)); (2) all baselines < 04.00 -> 0 (unclear if the "
+             "clear-water B12 says +1000 under a clear sky, as in (3)); (3) >= 1,000 "
+             "CLEAR-water px (SCL 6, CLD <= 10 %, valid B12): share of B12 DN < 500 >= 0.1 -> 0; "
+             "<= 0.02 -> 1000 when the frame's SCL 8/9/10 share is <= 0.5 (under more cloud no "
+             "strong evidence; mixed baselines -> unclear); in between no strong evidence; "
+             "(5) per year, over the scenes whose baselines are not all < 04.00: its strong 1000 "
+             "become weak when it has >= 10 strong 0 and they are <= 2 % of its strong "
+             "decisions; when both values remain, the strong decisions of the smaller side -> "
+             "unclear (both sides on a tie, and then the year's weak scenes too); the other "
+             "scenes take the regime of the year's remaining strong decisions, else the store's "
+             "year offset_state, else unclear"),
     "low_dn": 500,
     "offset_baseline": "04.00",
+    "neg_min_px": 100,
     "water_scl": 6,
+    "water_cld_max": 10,
     "water_min_px": 1000,
-    "water_low_none": 0.5,
+    "water_low_none": 0.1,
     "water_low_offset": 0.02,
+    "cloud_scl": [8, 9, 10],
+    "water_offset_max_cloud_share": 0.5,
     "frame_min_valid_share": 0.01,
-    "frame_low_none": 0.01,
+    "frame_low_none": 0.002,
+    "regime_min_strong": 10,
+    "regime_outlier_share": 0.02,
+    "identity_bands": list(IDENTITY_BANDS),
+    "identity_verdicts": list(IDENTITY_VERDICTS),
+    "revision": {
+        "date": "2026-10-19",
+        "kind": ("declared amendment before lock-A: a defect that blocked the inputs check, "
+                 "not a change of method; nothing tuned on truth data (the new thresholds are "
+                 "the downloader's own '+1000' bound, 0.002, or declared round values: CLD 10 %, "
+                 "a cloud majority 0.5, a dark-water share 0.1, 100 negative pixels, 10 strong "
+                 "decisions and 2 %; checked, not fitted, on a negative control built from a "
+                 "legacy cube)"),
+        "previous_rule": _OFFSET_RULE_V1,
+        "previous_parameters": _OFFSET_RULE_V1_PARAMETERS,
+        "changes": [
+            ("(0) new, strongest: a scene whose B03 and B08 equal the offset-harmonised legacy "
+             "netCDF cube on its date -> 0. The per-date identity comes from the store-year's "
+             "<year>.verify.json (zarr_cubes.compare_with_netcdf): every common date when the "
+             "verdict is 'identical' or 'identical on the common window', or when the B03 and "
+             "B08 pixel counts show no difference; "
+             "with 'differs', a common date absent from the listed differing dates when that "
+             "list is complete (not truncated at max_dates_listed), or a listed date whose "
+             "differences are in SCL only. A verification grants nothing when its comparison "
+             "did not cover the store's whole frame (identical grids, or a common window that "
+             "is the whole store frame; 'identical on the common window' counts only then, "
+             "since the per-date counts cover the common window only), or when its date "
+             "counts or per-date B12 counts are not the store's (another download). Not "
+             "applied on a scene with B12 valid on < 1 % of the frame. The legacy "
+             "cubes come from the same backend, so the identity shows o_s(Zarr) = o_s(legacy): "
+             "a store-year uses it only when at least one of its identical dates also shows "
+             "negative or dark values (rules 1, 4 or the dark clear water of 3), impossible "
+             "with +1000 in both cubes. An identical date whose own pixels say '+1000' stays 0 "
+             "and is listed in the report's warnings"),
+            ("(3), (2): the water evidence counts only CLEAR water, SCL 6 with CLD <= "
+             "water_cld_max % (CLD present) and a valid B12 (n_water_clear, "
+             "n_water_clear_low; the SCL-water counts n_water, n_water_low stay in the "
+             "statistics). Statistics written before the amendment have no clear-water "
+             "counts: they fall back to the SCL-water counts, and the reason says so"),
+            ("(3), (2): bright clear water is '+1000' evidence only under a clear sky: the "
+             "frame's SCL 8/9/10 share (n_scl_cloud / n_scl_valid, codes 1-11) <= "
+             "water_offset_max_cloud_share; under more cloud it is no strong evidence. This "
+             "guard does not depend on CLD"),
+            ("(3): a clear-water share of B12 DN < 500 >= 0.1 (was 0.5) -> 0 (with +1000 such a "
+             "pixel is a reflectance below -0.05); a share between 0.02 and 0.1 is no strong "
+             "evidence (was 'unclear', which failed the check without trying (4) or the "
+             "regime)"),
+            ("(4) is tested right after (1), before (2) and (3), at a frame share >= 0.002 "
+             "(was > 0.01, after (3)): the downloader's own year-level '+1000' bound "
+             "(radiometry_summary: p90 < 0.002); a B12 DN in [1, 500) with +1000 would be a "
+             "reflectance below -0.05, so dark pixels outrank bright water"),
+            ("(1) needs >= 100 negative values (was any): with +1000 in the values a negative "
+             "int16 can only be an artefact (e.g. a wrapped saturation code)"),
+            ("(5) the regime step no longer spreads one false '+1000' to its year: a year's "
+             "strong 1000 become weak when it has >= regime_min_strong strong 0 and they are "
+             "<= regime_outlier_share of its strong decisions (listed in the report's "
+             "warnings). When both values remain, the strong decisions of the smaller side "
+             "are 'unclear' (both sides on a tie, and then the year's weak scenes too): the "
+             "contradiction fails the check on the contradicting scenes, also in a year without "
+             "weak scenes (before, such a year passed silently), and the weak scenes take the "
+             "regime of the strong decisions that remain. Strong 0 are never demoted: "
+             "negatives, dark pixels and the self-checked identity are impossible with +1000, "
+             "bright water is only the absence of dark water"),
+            ("the processing baselines of a date are the union of scene_meta.json and the "
+             "stores' input_baselines: a date on both sides of 04.00 is 'mixed' (no rule-(2) "
+             "shortcut) and is listed in the report's warnings; '0213' and 'N0213' read as "
+             "02.13"),
+        ],
+        "reason": ("The first inputs run on the complete Zarr stores decided '+1000' on scenes "
+                   "that have no offset: bright SCL 'water' that is in fact thick cloud (e.g. "
+                   "wadden 2025-12-15), and clear-sky bright water (glint, haze). Their year's "
+                   "decided scenes then disagreed, so every weakly decided scene of those years "
+                   "became 'unclear', which failed the inputs check (V1 rule: unanimous regime, "
+                   "dark pixels tested after bright water, a middle water share 'unclear')"),
+        "evidence": ("validation_v2 inputs on the complete Zarr stores (CDSE openEO, 2023-2025, "
+                     "9 bands, UTM-extent grid), 2026-10-18/19: villaviciosa offsets "
+                     "{'no offset': 235, 'unclear': 219, '+1000 in the values': 12} of T = 466, "
+                     "wadden {'no offset': 319, 'unclear': 122, '+1000 in the values': 21} of "
+                     "T = 462. Wadden 2025-12-15 (reason 'water B12 at or above 500 DN (share "
+                     "0.000)'): 7,240 SCL-water px, none below 500 DN; 84 of 9,507,800 valid "
+                     "frame px with B12 DN in [1, 500); no negative value. In the 20 m legacy "
+                     "cube (ndwi_cube_wadden_2023-2025_20m.nc) that date is 94.6 % SCL 9 and "
+                     "5.3 % SCL 8; its 1,810 SCL-6 px have B08 p5/50/95 = 3449/4554/6588 DN and "
+                     "a B03 median of 5114 DN (reflectance about 0.45-0.51): thick cloud "
+                     "labelled water, not an offset. The openEO --test format report of "
+                     "2026-10-13 found 'no offset' (the backend removes the +1000; processing "
+                     "baseline 05.11). The legacy cubes are offset-harmonised: in the 10-year "
+                     "Villaviciosa legacy cube (ndwi_cube_villaviciosa_grande_10y.nc, "
+                     "2016-2025) negative B08 values (impossible with +1000) occur on 10 to 46 "
+                     "dates of every year, and none of its 526 dates with >= 50,000 SCL-water "
+                     "px has a water B08 1st percentile >= 900 DN"),
+        "control": ("A negative control built from the harmonised Villaviciosa SWIR legacy cube "
+                    "(swir_cube_villaviciosa_2023-2025.nc, 465 scenes, B11 standing in for B12, "
+                    "every SCL-water pixel taken as clear water: the worst case for CLD): a first "
+                    "draft of this amendment (identity and clear water only) gave 21 false strong "
+                    "'+1000' and 226 'unclear' (the server's V1 run at Villaviciosa: 12 and 219); "
+                    "the amended rule gives 0 wrong and 0 'unclear' (2 isolated '+1000' "
+                    "demoted; without the cloud guard 14 '+1000' candidates, each 'unclear' by "
+                    "the contradiction step). The same pixels with the +1000 put back give 0 "
+                    "wrong and 0 'unclear' (177 strong 1000, the rest by the regime). Rule "
+                    "variants were compared on this control only to check them; the values kept "
+                    "are the declared ones of 'kind'; no truth data was used"),
+        "not_verified": ("CLD <= 10 % on the overcast scenes: no legacy cube has CLD. The rerun "
+                         "of inputs reports, per scene, n_water and n_water_clear (and "
+                         "n_scl_cloud, n_scl_valid); the cloud guard, rule (4) and the regime "
+                         "step do not depend on CLD"),
+    },
 }
 OFFSET_STATES = ("+1000 in the values", "no offset", "unclear")
+#: the per-scene statistics the rule reads (scan or store attributes)
+OFFSET_STAT_KEYS = ("n_px", "n_valid", "n_low", "n_water", "n_water_low", "n_water_clear",
+                    "n_water_clear_low", "n_neg", "n_scl_cloud", "n_scl_valid")
+#: the strong 0 that are impossible with +1000 in the values (the rule tags
+#: of :func:`_strong_rule`): they let a store-year use rule (0)
+HARD_ZERO_TAGS = ("negatives", "frame", "dark water")
 
 
 def log(msg):
@@ -498,15 +701,22 @@ def instants_identity(instants, labels, years=None):
 #  the per-scene offset (§1.10, §2.3)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _baseline_version(v):
+    """A processing baseline as a number (``"05.11"``, ``"N0511"``, ``"0511"``,
+    ``"5.11"`` or 5.11 -> 5.11), or None when it is not one."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return float(v)
+    s = str(v).strip()
+    m = re.fullmatch(r"N?(\d{1,2})\.(\d{1,2})", s) or re.fullmatch(r"N?(\d{2})(\d{2})", s)
+    if not m:
+        return None
+    return float(f"{int(m[1])}.{m[2]}")
+
+
 def _baseline_class(versions):
     """"offset" (every version >= 04.00), "none" (every one < 04.00),
     "mixed", or None (unknown)."""
-    vs = []
-    for v in versions or ():
-        try:
-            vs.append(float(str(v).lstrip("N")))
-        except ValueError:
-            continue
+    vs = [x for x in (_baseline_version(v) for v in (versions or ())) if x is not None]
     if not vs:
         return None
     lim = float(OFFSET_RULE["offset_baseline"])
@@ -517,14 +727,19 @@ def _baseline_class(versions):
     return "mixed"
 
 
-def scene_offset_stats(b12_raw, scl_u8, b_neg_raw=(), fill=obs.FILL):
+def scene_offset_stats(b12_raw, scl_u8, b_neg_raw=(), fill=obs.FILL, cld_u8=None):
     """The per-scene statistics of the offset rule (one scene or a block of
     scenes, (..., H, W)).
 
     Returns a dict of int arrays over the leading axes: ``n_px``,
     ``n_valid`` (B12 not fill, not 0), ``n_low`` (valid with 1 <= DN <
     500), ``n_water`` (SCL 6 with valid B12), ``n_water_low``, ``n_neg``
-    (values < 0, fill excluded, in B12 and every array of ``b_neg_raw``).
+    (values < 0, fill excluded, in B12 and every array of ``b_neg_raw``)
+    and, when ``cld_u8`` (the CLD of the same scenes, checked uint8 or raw)
+    is given, ``n_water_clear`` (SCL 6 with valid B12 and a present CLD <=
+    ``OFFSET_RULE["water_cld_max"]``) and ``n_water_clear_low`` (amendment
+    of 2026-10-19). Without CLD the clear-water counts are absent and the
+    rule falls back to the SCL-water counts (declared in the reason).
     """
     b = np.asarray(b12_raw)
     s = np.asarray(scl_u8)
@@ -537,94 +752,267 @@ def scene_offset_stats(b12_raw, scl_u8, b_neg_raw=(), fill=obs.FILL):
     for a in b_neg_raw:
         a = np.asarray(a)
         neg = neg + ((a < 0) & (a != fill)).sum(axis=ax)
-    return {"n_px": np.full(b.shape[:-2], b.shape[-2] * b.shape[-1], np.int64),
-            "n_valid": valid.sum(axis=ax), "n_low": lowv.sum(axis=ax),
-            "n_water": water.sum(axis=ax), "n_water_low": (water & lowv).sum(axis=ax),
-            "n_neg": neg}
+    out = {"n_px": np.full(b.shape[:-2], b.shape[-2] * b.shape[-1], np.int64),
+           "n_valid": valid.sum(axis=ax), "n_low": lowv.sum(axis=ax),
+           "n_water": water.sum(axis=ax), "n_water_low": (water & lowv).sum(axis=ax),
+           "n_neg": neg}
+    if cld_u8 is not None:
+        c = np.asarray(cld_u8)
+        if c.dtype != np.uint8:
+            c = obs.cld_u8(c, fill)
+        if c.shape != b.shape:
+            raise ValueError(f"CLD shape {c.shape} != B12 shape {b.shape}")
+        clear = water & (c != obs.CLD_NODATA_U8) & (c <= int(OFFSET_RULE["water_cld_max"]))
+        out["n_water_clear"] = clear.sum(axis=ax)
+        out["n_water_clear_low"] = (clear & lowv).sum(axis=ax)
+    return out
 
 
-def _strong(st, bl):
-    """The strong decision of one scene, or (None, reason)."""
+def scl_cloud_counts(scl):
+    """``{"n_scl_cloud", "n_scl_valid"}`` of one scene's SCL histogram (the 13
+    counts of ``obs.scl_counts``: codes 0..11, then no data): the pixels of
+    the cloud classes ``OFFSET_RULE["cloud_scl"]`` (8, 9, 10) and of the codes
+    1..11 (amendment of 2026-10-19: the cloud guard of rule 3)."""
+    sc = [int(x) for x in scl]
+    return {"n_scl_cloud": sum(sc[c] for c in OFFSET_RULE["cloud_scl"]),
+            "n_scl_valid": sum(sc[1:12])}
+
+
+def _cloud_share(st):
+    """The frame's SCL 8/9/10 share of one scene's statistics, or None
+    without SCL counts."""
+    nc, ns = st.get("n_scl_cloud"), st.get("n_scl_valid")
+    if nc is None or not ns:
+        return None
+    return int(nc) / int(ns)
+
+
+def _water_counts(st):
+    """``(n, n_low, what, note)`` of the water evidence of one scene: the
+    CLEAR-water counts (amendment of 2026-10-19), else, for statistics
+    written before it (no clear-water counts), the SCL-water counts as the
+    V1 rule read them (the note says so); ``(None, None, "", "")`` without
+    water counts."""
+    cmax = OFFSET_RULE["water_cld_max"]
+    if st.get("n_water_clear") is not None and st.get("n_water_clear_low") is not None:
+        n = int(st["n_water_clear"])
+        return n, int(st["n_water_clear_low"]), "clear water", f"of {n} px with CLD <= {cmax} %"
+    if st.get("n_water") is not None and st.get("n_water_low") is not None:
+        n = int(st["n_water"])
+        return (n, int(st["n_water_low"]), "water",
+                f"of {n} SCL-water px; statistics written before the 2026-10-19 amendment: "
+                "no clear-water counts, CLD not used")
+    return None, None, "", ""
+
+
+def _strong_rule(st, bl, ident=None):
+    """The strong decision of one scene: ``(value, reason, tag)`` with value
+    0, 1000, "unclear" or None (no strong evidence), and the tag of the rule
+    that decided ("identity", "negatives", "frame", "baseline", "dark water",
+    "bright water", "baseline vs water", "mixed baselines", or None).
+    Rules in the order (0), (1), (4), (2), (3) of :data:`OFFSET_RULE`.
+    ``ident``: the note of the scene's identity with the offset-harmonised
+    legacy cube (rule 0, :func:`identity_from_verify`), or None."""
     r = OFFSET_RULE
-    if st.get("n_neg") is not None and st["n_neg"] > 0:
-        return 0, "negative values in the delivered bands: no offset"
-    nw = st.get("n_water")
-    wshare = (st["n_water_low"] / nw) if nw else None
-    water_offset = nw is not None and nw >= r["water_min_px"] and wshare <= r["water_low_offset"]
-    if bl == "none":
-        if water_offset:
-            return "unclear", "baseline < 04.00 but the water B12 is >= 500 DN"
-        return 0, "processing baseline < 04.00"
-    if nw is not None and nw >= r["water_min_px"]:
-        if wshare >= r["water_low_none"]:
-            return 0, f"water B12 below {r['low_dn']} DN (share {wshare:.3f})"
-        if wshare <= r["water_low_offset"]:
-            if bl == "mixed":
-                return "unclear", "mixed baselines with the water B12 >= 500 DN"
-            return 1000, f"water B12 at or above {r['low_dn']} DN (share {wshare:.3f})"
-        return "unclear", f"water B12 share below {r['low_dn']} DN is {wshare:.3f}"
+    low = r["low_dn"]
     nv, npx = st.get("n_valid"), st.get("n_px")
-    if nv is not None and npx and nv >= r["frame_min_valid_share"] * npx and nv > 0:
-        if st["n_low"] / nv > r["frame_low_none"]:
-            return 0, f"frame: {st['n_low'] / nv:.3f} of B12 below {r['low_dn']} DN"
-    return None, "no strong evidence"
+    floor = r["frame_min_valid_share"]
+    # (0) the identity with the legacy cube; not on a frame with B12 valid on < 1 %
+    if ident and (nv is None or (nv > 0 and (not npx or nv >= floor * npx))):
+        return 0, f"{IDENTITY_REASON} ({ident})", "identity"
+    # (1) negative values: impossible with +1000 (beyond a few artefacts)
+    nneg = st.get("n_neg")
+    if nneg is not None and nneg >= r["neg_min_px"]:
+        return 0, (f"negative values in the delivered bands ({int(nneg)} px >= "
+                   f"{r['neg_min_px']}): no offset"), "negatives"
+    # (4) dark frame pixels: with +1000 a DN in [1, 500) is a reflectance below -0.05
+    if nv is not None and npx and nv > 0 and nv >= floor * npx and st.get("n_low") is not None:
+        fs = st["n_low"] / nv
+        if fs >= r["frame_low_none"]:
+            return 0, (f"frame B12 below {low} DN (share {fs:.4f} of {int(nv)} valid px >= "
+                       f"{r['frame_low_none']})"), "frame"
+    nw, nwl, what, note = _water_counts(st)
+    wshare = (nwl / nw) if nw else None
+    has_water = nw is not None and nw >= r["water_min_px"]
+    cs = _cloud_share(st)
+    sky = ("frame SCL 8/9/10 share unknown" if cs is None else
+           f"frame SCL 8/9/10 share {cs:.3f}")
+    bright = has_water and wshare <= r["water_low_offset"]
+    cloudy = cs is not None and cs > r["water_offset_max_cloud_share"]
+    # (2) every baseline < 04.00
+    if bl == "none":
+        if bright and not cloudy:
+            return "unclear", (f"baseline < 04.00 but the {what} B12 is >= {low} DN (share "
+                               f"{wshare:.3f} {note}; {sky})"), "baseline vs water"
+        return 0, "processing baseline < 04.00", "baseline"
+    # (3) the clear water
+    if has_water:
+        if wshare >= r["water_low_none"]:
+            return 0, f"{what} B12 below {low} DN (share {wshare:.3f} {note})", "dark water"
+        if bright:
+            if cloudy:
+                return None, (f"{what} B12 at or above {low} DN under cloud (share {wshare:.3f} "
+                              f"{note}; {sky} > {r['water_offset_max_cloud_share']}): no strong "
+                              "evidence"), None
+            if bl == "mixed":
+                return "unclear", (f"mixed baselines with the {what} B12 >= {low} DN (share "
+                                   f"{wshare:.3f} {note}; {sky})"), "mixed baselines"
+            return 1000, (f"{what} B12 at or above {low} DN (share {wshare:.3f} {note}; "
+                          f"{sky})"), "bright water"
+        return None, (f"{what} B12 partly below {low} DN (share {wshare:.3f} {note}, between "
+                      f"{r['water_low_offset']} and {r['water_low_none']}): no strong "
+                      "evidence"), None
+    return None, "no strong evidence", None
 
 
-def decide_offsets(stats, baselines=None, year_state=None):
+def _strong(st, bl, ident=None):
+    """The strong decision of one scene, or (None, reason): ``(value,
+    reason)`` of :func:`_strong_rule`."""
+    val, why, _ = _strong_rule(st, bl, ident)
+    return val, why
+
+
+def _identity_map(identical):
+    """``{date: note}`` from a mapping or an iterable of dates (a list, a
+    numpy array, a pandas Index; None: {})."""
+    if identical is None:
+        return {}
+    if isinstance(identical, collections.abc.Mapping):
+        return {str(k)[:10]: (str(v) if v else VERIFY_NAME) for k, v in identical.items()}
+    return {str(k)[:10]: VERIFY_NAME for k in identical}
+
+
+def decide_offsets(stats, baselines=None, year_state=None, identical=None):
     """The frozen per-scene offset decision (:data:`OFFSET_RULE`).
 
     Parameters
     ----------
     stats : dict
         ``{date: {"n_px", "n_valid", "n_low", "n_water", "n_water_low",
-        "n_neg"}}`` (:func:`scene_offset_stats`; keys may be missing, e.g.
-        from the store's ``radiometry`` counts only).
+        "n_water_clear", "n_water_clear_low", "n_neg", "n_scl_cloud",
+        "n_scl_valid"}}`` (:func:`scene_offset_stats`,
+        :func:`scl_cloud_counts`; keys may be missing, e.g. from the store's
+        ``radiometry`` counts only, or the clear-water counts in statistics
+        written before the amendment of 2026-10-19).
     baselines : dict, optional
-        ``{date: [processing versions]}`` (scene_meta.json, else the
-        store's ``input_baselines``).
+        ``{date: [processing versions]}`` (:meth:`ZarrSource.baselines`).
     year_state : dict, optional
         ``{year: offset_state}`` of the stores' ``radiometry`` attribute.
+    identical : dict or iterable, optional
+        ``{date: note}`` (or dates) whose B03 and B08 equal the
+        offset-harmonised legacy cube (rule 0, :func:`identity_from_verify`).
+        A year uses them only when one of its identical dates also shows
+        negative or dark values (:data:`HARD_ZERO_TAGS`).
 
     Returns
     -------
     pandas.DataFrame
         Indexed by date: ``offset`` (0, 1000 or NaN), ``state`` (one of
-        :data:`OFFSET_STATES`), ``reason``, ``strong`` (bool).
+        :data:`OFFSET_STATES`), ``reason``, ``strong`` (bool) and ``rule``
+        (the tag of what decided: a :func:`_strong_rule` tag, "demoted",
+        "contradiction", "regime", "year state" or "no evidence").
+        ``attrs``: ``identity_years`` ({year: note} for the years with
+        identical dates), ``identity_pixels_1000`` (identical dates whose own
+        pixels say +1000), ``demoted`` and ``contradicted`` (dates).
     """
+    r = OFFSET_RULE
     baselines = baselines or {}
     year_state = {str(k): v for k, v in (year_state or {}).items()}
-    rows = {}
-    for d in sorted(stats):
-        bl = _baseline_class(baselines.get(d))
-        val, why = _strong(dict(stats[d]), bl)
-        rows[d] = {"value": val, "reason": why, "baseline": bl}
+    identical = _identity_map(identical)
+    dates = sorted(stats)
+    bls = {d: _baseline_class(baselines.get(d)) for d in dates}
+    # the scenes' own pixel evidence: rules (1)-(4) without the identity
+    pix = {d: _strong_rule(dict(stats[d]), bls[d]) for d in dates}
+    # rule (0), per store-year: the legacy cubes come from the same backend, so the identity
+    # is used only where one identical date shows values impossible with +1000 in both cubes
+    by_year = collections.defaultdict(list)
+    for d in dates:
+        if d in identical:
+            by_year[d[:4]].append(d)
+    use, notes = {}, {}
+    for y, ds in sorted(by_year.items()):
+        hard = [d for d in ds if pix[d][2] in HARD_ZERO_TAGS]
+        use[y] = bool(hard)
+        notes[y] = (f"identity used: {len(hard)} of its {len(ds)} identical dates show negative "
+                    "or dark B12 values" if hard else
+                    f"identity NOT used: none of its {len(ds)} identical dates shows negative or "
+                    "dark B12 values (both cubes could carry the +1000)")
+    rows, pix1000 = {}, []
+    for d in dates:
+        if use.get(d[:4]) and d in identical:
+            val, why, tag = _strong_rule(dict(stats[d]), bls[d], identical[d])
+        else:
+            val, why, tag = pix[d]
+        if tag == "identity" and pix[d][0] in (1000, "unclear"):
+            pv, pw, _ = pix[d]
+            why = f"{why}; its pixels alone say {'+1000' if pv == 1000 else 'unclear'}: {pw}"
+            if pv == 1000:
+                pix1000.append(d)
+        rows[d] = {"value": val, "reason": why, "baseline": bls[d], "tag": tag}
+    # (5) per year: an isolated strong 1000 beside many strong 0 is demoted to weak; when both
+    # values remain, the smaller side contradicts its year ('unclear'; both sides on a tie)
+    strong = collections.defaultdict(lambda: {0: [], 1000: []})
+    for d, row in rows.items():
+        if row["value"] in (0, 1000) and row["baseline"] != "none":
+            strong[d[:4]][row["value"]].append(d)
+    demoted, contradicted, contested = [], [], set()
+    for y, g in sorted(strong.items()):
+        n0, n1 = len(g[0]), len(g[1000])
+        if not n1 or not n0:
+            continue
+        if n0 >= r["regime_min_strong"] and n1 <= r["regime_outlier_share"] * (n0 + n1):
+            for d in g[1000]:
+                rows[d].update(value=None, tag="demoted", reason=(
+                    f"{rows[d]['reason']}; demoted: {n1} strong '+1000' beside the year's {n0} "
+                    f"strong 0 (<= {r['regime_outlier_share']:.0%} of {n0 + n1})"))
+                demoted.append(d)
+            continue
+        if n0 == n1:
+            contested.add(y)
+        nid = sum(1 for d in g[0] if rows[d]["tag"] == "identity")
+        by = f", {nid} of them by the identity with the legacy cube" if nid else ""
+        for side, other, n_other in ((1000, 0, n0), (0, 1000, n1)):
+            if len(g[side]) > n_other:
+                continue                            # the larger side keeps its decisions
+            what = (f"{n_other} strong 0{by}" if other == 0 else f"{n_other} strong 1000")
+            for d in g[side]:
+                rows[d].update(value="unclear", tag="contradiction", reason=(
+                    f"{rows[d]['reason']}; contradicts the year's {what}"))
+                contradicted.append(d)
     regime = {}
-    for d, r in rows.items():
-        if r["value"] in (0, 1000) and r["baseline"] != "none":
-            regime.setdefault(d[:4], set()).add(r["value"])
+    for d, row in rows.items():
+        if row["value"] in (0, 1000) and row["baseline"] != "none":
+            regime.setdefault(d[:4], set()).add(row["value"])
     out = []
-    for d, r in rows.items():
-        val, why, strong = r["value"], r["reason"], r["value"] in (0, 1000)
+    for d, row in rows.items():
+        val, why, tag = row["value"], row["reason"], row["tag"]
+        strong_ = val in (0, 1000)
         if val is None:
             reg = regime.get(d[:4], set())
             ys = year_state.get(d[:4])
-            if len(reg) == 1:
+            tail = "" if why == "no strong evidence" else f"; {why}"
+            if d[:4] in contested or len(reg) > 1:  # a tie: no regime ((5) leaves one value)
+                val, why, tag = ("unclear", f"the year's decided scenes disagree{tail}",
+                                 "no evidence")
+            elif len(reg) == 1:
                 val = next(iter(reg))
-                why = f"the regime of the year's decided scenes ({val})"
-            elif len(reg) > 1:
-                val, why = "unclear", "the year's decided scenes disagree"
+                why, tag = f"the regime of the year's decided scenes ({val}){tail}", (
+                    "demoted" if tag == "demoted" else "regime")
             elif ys == "+1000 in the values":
-                val, why = 1000, "the store's year offset_state"
+                val, why, tag = 1000, f"the store's year offset_state{tail}", "year state"
             elif ys == "no offset":
-                val, why = 0, "the store's year offset_state"
+                val, why, tag = 0, f"the store's year offset_state{tail}", "year state"
             else:
-                val, why = "unclear", f"no evidence (year state {ys!r})"
+                val, why, tag = "unclear", f"no evidence (year state {ys!r}){tail}", "no evidence"
         state = ("unclear" if val == "unclear" else
                  "+1000 in the values" if val == 1000 else "no offset")
         out.append({"date": d, "offset": np.nan if val == "unclear" else float(val),
-                    "state": state, "reason": why, "strong": bool(strong)})
-    df = pd.DataFrame(out, columns=["date", "offset", "state", "reason", "strong"])
-    return df.set_index("date")
+                    "state": state, "reason": why, "strong": bool(strong_), "rule": tag})
+    df = pd.DataFrame(out, columns=["date", "offset", "state", "reason", "strong", "rule"])
+    df = df.set_index("date")
+    df.attrs.update(identity_years=notes, identity_pixels_1000=pix1000, demoted=demoted,
+                    contradicted=contradicted)
+    return df
 
 
 def radiometry_stats(attrs):
@@ -635,6 +1023,200 @@ def radiometry_stats(attrs):
     per = rad.get("per_date_valid_low") or {}
     return ({d: {"n_valid": int(v), "n_low": int(lo)} for d, (v, lo) in per.items()},
             rad.get("offset_state"), rad.get("band"))
+
+
+def read_verify(site, year, root=None):
+    """The store-year's ``<year>.verify.json`` (the downloader's comparison
+    with the legacy netCDF cube, ``zarr_cubes.compare_with_netcdf``): a
+    dict, None when absent, or ``{"verdict": "unreadable verify.json",
+    "error": ...}``."""
+    p = zc.sidecar_path(site, year, VERIFY_NAME, root)
+    if not p.is_file():
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            v = json.load(f)
+    except (OSError, ValueError) as e:
+        return {"verdict": "unreadable verify.json", "error": f"{type(e).__name__}: {e}"}
+    if not isinstance(v, dict):
+        return {"verdict": "unreadable verify.json", "error": "not a JSON object"}
+    return v
+
+
+def _count(x):
+    """An integer count from a JSON value, or None."""
+    if isinstance(x, bool) or x is None:
+        return None
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bands_clean(bands):
+    """Every band of :data:`IDENTITY_BANDS` was compared on some pixels and
+    differs on none (values, or no data in one only), over all dates."""
+    for b in IDENTITY_BANDS:
+        s = bands.get(b)
+        if not isinstance(s, collections.abc.Mapping) or not (_count(s.get("equal")) or 0) > 0:
+            return False
+        if any(_count(s.get(k)) != 0 for k in ("value_differs", "nodata_only_store",
+                                                "nodata_only_reference")):
+            return False
+    return True
+
+
+def _per_date_counts(per, dates):
+    """``{date: (valid, low)}`` of a radiometry ``per_date_valid_low`` mapping
+    on ``dates`` (raises on a malformed entry)."""
+    ds = set(dates)
+    out = {}
+    for k, v in dict(per).items():
+        d = str(k)[:10]
+        if d in ds:
+            out[d] = tuple(int(x) for x in v)
+    return out
+
+
+def _covers_store(verify):
+    """True when the comparison of a verify.json saw every pixel of the
+    store's frame: identical grids, or a common window that is the whole
+    store frame (a store inside the legacy cube, e.g. an extract); False
+    otherwise or when the file has no grid check. The per-date counts of
+    ``zarr_cubes.compare_with_netcdf`` cover the common window only."""
+    g = verify.get("grid")
+    if not isinstance(g, collections.abc.Mapping) or g.get("crs_equal") is False:
+        return False
+    if g.get("identical") is True:
+        return True
+    cw, st = g.get("common_window"), g.get("store")
+    if not isinstance(cw, collections.abc.Mapping) or not isinstance(st, collections.abc.Mapping):
+        return False
+    try:
+        h, w = (int(x) for x in st["shape"])
+        return ([int(x) for x in cw["store_rows"]] == [0, h]
+                and [int(x) for x in cw["store_cols"]] == [0, w])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def identity_from_verify(verify, store_dates, year=None, radiometry=None):
+    """Rule (0) of :data:`OFFSET_RULE` for one store-year: the store dates
+    whose B03 and B08 equal the offset-harmonised legacy netCDF cube on
+    every compared pixel, from the year's verify.json.
+
+    A common date is identical when the verdict is one of
+    :data:`IDENTITY_VERDICTS`, or the B03 and B08 pixel counts show no
+    difference over all dates, or (verdict 'differs') it is absent from
+    ``dates_with_differences_listed`` and that list is complete (not
+    truncated at ``max_dates_listed``), or it is listed with differences in
+    SCL only. Nothing is granted when the comparison did not cover the
+    store's whole frame (:func:`_covers_store`; the per-date counts cover
+    the common window only), when the verification lacks B03 or B08,
+    compared no valid pixel, saw duplicated dates or is malformed, or when
+    it is bound to another download: its date counts are not the store's,
+    or its per-date B12 counts (``radiometry``, kept by the downloader) are
+    not the store's.
+
+    Parameters
+    ----------
+    verify : dict or None
+        :func:`read_verify`.
+    store_dates : iterable of str
+        Every date of the store (not only the record's).
+    year : int, optional
+        The store's year (checked against the file's ``year``).
+    radiometry : dict, optional
+        The store's ``radiometry`` attribute (``zarr_cubes.store_radiometry``):
+        its ``per_date_valid_low`` must equal the verification's on the
+        window when both are present.
+
+    Returns
+    -------
+    (dict, str)
+        ``{date: note}`` of the identical dates, and a note on the year.
+    """
+    if not verify:
+        return {}, f"no {VERIFY_NAME}"
+    name = VERIFY_NAME if year is None else f"{int(year)}.{VERIFY_NAME}"
+    if not isinstance(verify, collections.abc.Mapping):
+        return {}, f"{name}: not a JSON object, no identity"
+    verdict = verify.get("verdict")
+    vy = verify.get("year")
+    if year is not None and vy is not None and str(vy) != str(int(year)):
+        return {}, f"{name} is for the year {vy}: no identity"
+    if verdict not in IDENTITY_VERDICTS + ("differs",):
+        return {}, f"{name}: verdict {verdict!r}, no identity"
+    if not _covers_store(verify):
+        return {}, (f"{name}: verdict {verdict!r}, but its comparison did not cover the store's "
+                    "whole frame (grids of another extent, or no grid check): the per-date "
+                    "counts cover the common window only, no identity")
+    if not set(IDENTITY_BANDS) <= set(verify.get("bands_compared") or ()):
+        return {}, f"{name}: B03 and B08 were not both compared, no identity"
+    bands = verify.get("bands") or {}
+    dd = verify.get("dates") or {}
+    listed = verify.get("dates_with_differences_listed") or {}
+    if not all(isinstance(x, collections.abc.Mapping) for x in (bands, dd, listed)):
+        return {}, (f"{name}: malformed (its bands, dates or listed dates are not mappings), no "
+                    "identity")
+    if not all(isinstance(bands.get(b), collections.abc.Mapping)
+               and (_count(bands[b].get("equal")) or 0)
+               + (_count(bands[b].get("value_differs")) or 0) > 0 for b in IDENTITY_BANDS):
+        return {}, f"{name}: no valid B03 / B08 pixel compared, no identity"
+    if dd.get("duplicated_dates"):
+        return {}, f"{name}: duplicated dates in the comparison, no identity"
+    try:
+        w0, w1 = (str(x)[:10] for x in verify["window"])
+        p0, p1 = (str(x)[:10] for x in verify["reference_period"])
+    except (KeyError, TypeError, ValueError):
+        return {}, f"{name}: no window or reference period, no identity"
+    zd = sorted({str(d)[:10] for d in store_dates if w0 <= str(d)[:10] < w1})
+    only = {str(d)[:10] for d in dd.get("only_store") or ()}
+    common = [d for d in zd if p0 <= d < p1 and d not in only]
+    if _count(dd.get("store")) != len(zd) or _count(dd.get("common")) != len(common):
+        return {}, (f"{name}: its dates (store {dd.get('store')}, common {dd.get('common')}) "
+                    f"are not the store's ({len(zd)}, {len(common)}): a verification of another "
+                    "download, no identity")
+    bound = "its date counts"
+    rv = verify.get("radiometry")
+    rv = rv.get("per_date_valid_low") if isinstance(rv, collections.abc.Mapping) else None
+    rs = (radiometry.get("per_date_valid_low")
+          if isinstance(radiometry, collections.abc.Mapping) else None)
+    if rv is not None and rs is not None:
+        try:
+            same = _per_date_counts(rv, zd) == _per_date_counts(rs, zd)
+        except (TypeError, ValueError):
+            same = False
+        if not same:
+            return {}, (f"{name}: its per-date B12 counts are not the store's: a verification "
+                        "of another download, no identity")
+        bound = "its date counts and per-date B12 counts"
+    base = f"B03 and B08 bitwise, {name} verdict {verdict!r}"
+    if verdict in IDENTITY_VERDICTS:
+        return dict.fromkeys(common, base), (f"{name}: verdict {verdict!r}, {len(common)} "
+                                             f"common dates (bound to the store by {bound})")
+    if _bands_clean(bands):
+        note = f"{base}, no B03 or B08 difference on any date"
+        return dict.fromkeys(common, note), (f"{name}: verdict 'differs' outside B03 and B08, "
+                                             f"{len(common)} common dates (bound to the store "
+                                             f"by {bound})")
+    n = _count(verify.get("dates_with_differences"))
+    complete = n is not None and n == len(listed)
+    out = {}
+    for d in common:
+        e = listed.get(d)
+        if e is not None:
+            # a listed date's entry counts the differing pixels of each band that differs
+            if isinstance(e, collections.abc.Mapping) and all(
+                    b not in e or _count(e[b]) == 0 for b in IDENTITY_BANDS):
+                out[d] = f"{base}, the date differs in SCL only"
+        elif complete:
+            out[d] = f"{base}, the date is not among the {n} dates with differences"
+    tail = ("the list of dates with differences is complete" if complete else
+            f"the list of dates with differences is truncated ({len(listed)} of {n}): the "
+            "unlisted dates get no identity")
+    return out, (f"{name}: verdict 'differs', {len(out)} of {len(common)} common dates identical "
+                 f"in B03 and B08; {tail} (bound to the store by {bound})")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1112,18 +1694,43 @@ class ZarrSource(SceneSource):
         return {str(y): store_fingerprint(p, full) for y, p in self._paths.items()}
 
     def baselines(self):
-        """``{date: [processing versions]}``: the scene metadata if present,
-        else the stores' ``input_baselines``."""
-        if self.scene_meta:
-            return {d: list(v.get("processing_baselines", []))
-                    for d, v in self.scene_meta.get("dates", {}).items()}
+        """``{date: [processing versions]}``: the union of the scene metadata
+        (the STAC items at query time) and the stores' ``input_baselines``
+        (the products the job read), so a date whose two lists fall on both
+        sides of 04.00 is 'mixed' for the offset rule (amendment of
+        2026-10-19; before it the scene metadata alone when present)."""
         out = {}
         for a in self._attrs.values():
-            out.update((zc.store_baselines(a) or {}).get("per_date", {}))
-        return out
+            for d, v in ((zc.store_baselines(a) or {}).get("per_date") or {}).items():
+                out.setdefault(str(d)[:10], set()).update(str(x) for x in (v or ()))
+        if self.scene_meta:
+            for d, v in self.scene_meta.get("dates", {}).items():
+                out.setdefault(str(d)[:10], set()).update(
+                    str(x) for x in v.get("processing_baselines", []))
+        return {d: sorted(v) for d, v in out.items()}
 
     def year_states(self):
         return {str(y): radiometry_stats(a)[1] for y, a in self._attrs.items()}
+
+    def legacy_identity(self):
+        """Rule (0) of :data:`OFFSET_RULE` over the source's store years:
+        ``({date: note}, {year: note})``, the store dates whose B03 and B08
+        equal the offset-harmonised legacy netCDF cube, from each
+        ``<year>.verify.json`` beside the stores (:func:`read_verify`,
+        :func:`identity_from_verify`, bound to the store by its dates and
+        its per-date B12 counts); a malformed file grants nothing."""
+        dates, notes = {}, {}
+        for y in self.years:
+            try:
+                ident, note = identity_from_verify(read_verify(self.site, y, self.root),
+                                                   self._local[y], y,
+                                                   zc.store_radiometry(self._attrs[y]))
+            except (AttributeError, TypeError, ValueError, KeyError) as e:
+                ident, note = {}, (f"{y}.{VERIFY_NAME}: malformed ({type(e).__name__}: {e}), "
+                                   "no identity")
+            dates.update(ident)
+            notes[str(y)] = note
+        return dates, notes
 
     def _offsets_provisional(self):
         stats = {}
@@ -1134,7 +1741,8 @@ class ZarrSource(SceneSource):
                 stats[d] = dict(st, n_px=H * W)
         for d in self.dates:
             stats.setdefault(d, {})
-        tab = decide_offsets(stats, self.baselines(), self.year_states())
+        ident, _ = self.legacy_identity()
+        tab = decide_offsets(stats, self.baselines(), self.year_states(), ident)
         return tab.loc[[d for d in self.dates]]
 
     def angles(self, lon=None, lat=None):
@@ -1419,12 +2027,16 @@ def check_store(path):
 def scan_source(src, positions=None, log_every=50):
     """§1.11 item 2 by streaming B08, B12, SCL and CLD of every scene (row
     blocks of 16 dates): SCL codes (``obs.scl_u8`` raises outside 0..11),
-    the SCL histogram, CLD range (``obs.cld_u8``), the offset statistics.
+    the SCL histogram, CLD range (``obs.cld_u8``), the offset statistics
+    (:func:`scene_offset_stats`; the clear-water counts use the CLD of the
+    same blocks, so every chunk is still read once; :func:`scl_cloud_counts`
+    from the histogram).
 
     Returns
     -------
     dict
-        ``{date: {"scl": [13 counts], "cld_fill", "cld_max", **offset stats}}``.
+        ``{date: {"scl": [13 counts], "cld_fill", "cld_max", **offset stats,
+        "n_scl_cloud", "n_scl_valid"}}``.
     """
     bands = [b for b in ("B08", "B12", "SCL", "CLD") if b in src.bands]
     out = {}
@@ -1437,8 +2049,8 @@ def scan_source(src, positions=None, log_every=50):
                 log(f"  [inputs] {src.site}: {done}/{src.T if positions is None else len(positions)}"
                     f" scenes scanned ({time.time() - t0:.0f} s)")
         s8 = blk.data["SCL"]
-        st = (scene_offset_stats(blk.data["B12"], s8, [blk.data["B08"]], src.fill.get("B12",
-                                                                                         obs.FILL))
+        st = (scene_offset_stats(blk.data["B12"], s8, [blk.data["B08"]],
+                                 src.fill.get("B12", obs.FILL), cld_u8=blk.data.get("CLD"))
               if "B12" in blk.data else None)
         for k, q in enumerate(blk.positions):
             d = src.dates[int(q)]
@@ -1455,6 +2067,8 @@ def scan_source(src, positions=None, log_every=50):
             if st is not None:
                 for key, arr in st.items():            # summed over row blocks
                     e[key] = e.get(key, 0) + int(arr[k])
+    for e in out.values():
+        e.update(scl_cloud_counts(e["scl"]))
     return out
 
 
@@ -1530,8 +2144,10 @@ def inputs_report(site, root=None, start=None, end=None, legacy=None, rtk_grid=N
         The period (default :data:`UNION_PERIOD`).
     legacy : path, optional
         The legacy netCDF cube (grid equality: the whole grid, or the
-        window of a store that is an extract of it, ``extract.py``; G-zarr
-        reads the stores' ``<year>.verify.json``).
+        window of a store that is an extract of it, ``extract.py``). G-zarr
+        and rule (0) of the offset rule read the stores' ``<year>.verify.json``
+        whether or not it is given (``g_zarr``: the verdict, the dates with
+        differences, the identity note and ``scenes_identical``).
     rtk_grid : path, optional
         Villaviciosa's ``rtk.DEFAULT_GRID`` GeoTIFF (grid equality).
     instants : see :class:`ZarrSource`; default the catalogue times (no
@@ -1607,27 +2223,77 @@ def inputs_report(site, root=None, start=None, end=None, legacy=None, rtk_grid=N
             for d, st in per.items():
                 off_stats[d] = dict(st, n_px=src.grid.H * src.grid.W)
         for d, e in stats.items():
-            off_stats[d] = {k: e[k] for k in ("n_px", "n_valid", "n_low", "n_water",
-                                              "n_water_low", "n_neg") if k in e}
-        tab = decide_offsets({d: off_stats.get(d, {}) for d in src.dates}, src.baselines(),
-                             src.year_states())
+            off_stats[d] = {k: e[k] for k in OFFSET_STAT_KEYS if k in e}
+            if "n_scl_cloud" not in off_stats[d] and e.get("scl") is not None:
+                off_stats[d].update(scl_cloud_counts(e["scl"]))
+        ident, ident_notes = src.legacy_identity()
+        rec_stats = {d: off_stats.get(d, {}) for d in src.dates}
+        bls, ystates = src.baselines(), src.year_states()
+        tab = decide_offsets(rec_stats, bls, ystates, ident)
+        rep["offset_rule_sha256"] = offset_rule_sha256()
         rep["offsets"] = {d: (None if np.isnan(r.offset) else int(r.offset))
                           for d, r in tab.iterrows()}
-        rep["offset_decisions"] = {d: {"state": r.state, "reason": r.reason,
-                                       "strong": bool(r.strong)} for d, r in tab.iterrows()}
+        dec = {d: {"state": r.state, "reason": r.reason, "strong": bool(r.strong),
+                   "rule": r.rule} for d, r in tab.iterrows()}
+        by_id = [d for d, r in tab.iterrows() if r.rule == "identity"]
+        if by_id:
+            # what rules (1)-(5) alone decide on the scenes the identity decided (they have
+            # no offset): the false-positive rate of the pixel rules, for the attribution
+            alt = decide_offsets(rec_stats, bls, ystates)
+            for d in by_id:
+                dec[d]["without_identity"] = {"state": alt.loc[d, "state"],
+                                              "reason": alt.loc[d, "reason"],
+                                              "rule": alt.loc[d, "rule"]}
+            rep["identity_overrides"] = dict(sorted(collections.Counter(
+                f"{d[:4]} {alt.loc[d, 'state']}" for d in by_id).items()))
+        rep["offset_decisions"] = dec
         unclear = [d for d, r in tab.iterrows() if r.state == "unclear"]
         if unclear:
             rep["problems"].append(f"BOA offset unclear on {len(unclear)} scenes: {unclear[:5]}")
         rep["offset_counts"] = tab["state"].value_counts().to_dict()
+        rep["offset_rule_counts"] = dict(sorted(collections.Counter(
+            str(x) for x in tab["rule"]).items()))
+        notes = tab.attrs
+        if notes.get("demoted"):
+            rep["warnings"].append(
+                f"{len(notes['demoted'])} isolated strong '+1000' demoted to weak (<= "
+                f"{OFFSET_RULE['regime_outlier_share']:.0%} of their year's strong decisions, "
+                f"beside >= {OFFSET_RULE['regime_min_strong']} strong 0): {notes['demoted']}")
+        if notes.get("contradicted"):
+            rep["warnings"].append(
+                f"{len(notes['contradicted'])} strong decisions contradict the larger side of "
+                f"their year (unclear): {notes['contradicted']}")
+        if notes.get("identity_pixels_1000"):
+            rep["warnings"].append(
+                f"{len(notes['identity_pixels_1000'])} scenes decided 0 by the identity with the "
+                f"legacy cube whose own clear-water test says +1000: "
+                f"{notes['identity_pixels_1000']}")
+        for y, n in sorted((notes.get("identity_years") or {}).items()):
+            if n.startswith("identity NOT used"):
+                rep["warnings"].append(f"{y}: {n}")
+        mixed = [d for d in src.dates if _baseline_class(bls.get(d)) == "mixed"]
+        if mixed:
+            rep["warnings"].append(
+                f"{len(mixed)} scenes have processing baselines on both sides of 04.00 (the scene "
+                f"metadata and the stores' input_baselines together), e.g. {mixed[:5]}: no "
+                "rule-(2) shortcut; one o_s per scene holds only under the backend's "
+                "harmonisation")
+        by_identity = collections.Counter(d[:4] for d in by_id)
         gz = {}
         for y in years:
-            p = zc.sidecar_path(site, y, "verify.json", root)
-            if p.is_file():
-                with open(p, encoding="utf-8") as f:
-                    v = json.load(f)
-                gz[str(y)] = {"verdict": v.get("verdict"), "dates": v.get("dates_with_differences")}
+            v = read_verify(site, y, root)
+            if v is None:
+                gz[str(y)] = {"verdict": f"no {VERIFY_NAME}"}
             else:
-                gz[str(y)] = {"verdict": "no verify.json"}
+                gz[str(y)] = {"verdict": v.get("verdict"), "dates": v.get("dates_with_differences")}
+                if v.get("error"):
+                    gz[str(y)]["error"] = v["error"]
+                    rep["warnings"].append(f"{y}.{VERIFY_NAME} is unreadable ({v['error']}): no "
+                                           "G-zarr verdict and no identity with the legacy cube")
+            # rule (0): the record scenes decided by their identity with the legacy cube
+            gz[str(y)]["identity"] = ident_notes.get(str(y), "year outside the source's period")
+            gz[str(y)]["identity_check"] = (notes.get("identity_years") or {}).get(str(y))
+            gz[str(y)]["scenes_identical"] = int(by_identity.get(str(y), 0))
         rep["g_zarr"] = gz
         meta = src.scene_meta
         rep["scene_meta"] = {"present": meta is not None}
@@ -1802,3 +2468,115 @@ def frozen_offsets(report):
     if bad:
         raise OffsetUnclear(f"{report.get('site')}: offsets unclear on {bad[:5]}")
     return {d: int(v) for d, v in off.items()}
+
+
+def offset_rule_sha256():
+    """sha256 of the per-scene offset rule: :data:`OFFSET_RULE` (its JSON)
+    and the CRLF-normalised source of every function that carries it, in
+    the order of ``settings.OFFSET_RULE_IMPL`` (the prep levels hash the
+    same list). An inputs report records it; ``prepare`` refuses a report
+    written with another (:func:`offset_rule_status`)."""
+    h = hashlib.sha256()
+    for name in settings.OFFSET_RULE_IMPL:
+        h.update(b"\n--- " + name.encode("utf-8") + b"\n")
+        h.update(settings.impl_source(name).encode("utf-8"))
+    return h.hexdigest()
+
+
+def offset_rule_status(report):
+    """None when one site's inputs report was written with the current
+    offset rule (its ``offset_rule_sha256``), else what it was written
+    with (a short text)."""
+    sha = report.get("offset_rule_sha256")
+    cur = offset_rule_sha256()
+    if sha == cur:
+        return None
+    rule = report.get("offset_rule")
+    rev = (rule.get("revision") or {}).get("date") if isinstance(rule, dict) else None
+    if not sha:
+        return ("an offset rule without a recorded sha256 (V1"
+                + (f", or a draft of the {rev} amendment" if rev else "") + ")")
+    return (f"another offset rule (sha256 {str(sha)[:12]}, revision {rev or 'none'}; the current "
+            f"one is {cur[:12]})")
+
+
+def _site_reports(report):
+    """``{site: report}`` from an inputs report: a path, a file's dict (with
+    ``sites``) or one site's dict; ``{}`` for None."""
+    if report is None:
+        return {}
+    if isinstance(report, (str, os.PathLike)):
+        with open(report, encoding="utf-8") as f:
+            report = json.load(f)
+    if isinstance(report.get("sites"), dict):
+        return dict(report["sites"])
+    return {report["site"]: report} if report.get("site") else {}
+
+
+def offset_summary(report, previous=None, sites=None, max_scenes=40):
+    """Lines that summarise the per-scene offset decisions of an inputs
+    report (a path, or the dict of the file or of one site), to paste back
+    after a run on the server.
+
+    Per site: ok, T, the counts by state and by rule, whether the report was
+    written with the current rule, G-zarr and the identity per year, what
+    rules (1)-(5) alone decide on the scenes the identity decided, the
+    problems and warnings and, against ``previous`` (e.g. the report of the
+    V1 rule) when given, the change of state; then one line per scene that
+    is unclear, '+1000', demoted or contradicted now, or was '+1000' before
+    (at most ``max_scenes``): state, rule, previous state, the water, cloud,
+    frame and negative counts, and the reason."""
+    cur, old = _site_reports(report), _site_reports(previous)
+    sha = offset_rule_sha256()
+    out = []
+    for s in (sites or sorted(cur)):
+        v = cur.get(s)
+        if not isinstance(v, dict):
+            out.append(f"== {s}: not in the report")
+            continue
+        o = old.get(s) if isinstance(old.get(s), dict) else {}
+        which = "current rule" if v.get("offset_rule_sha256") == sha else "NOT the current rule"
+        out.append(f"== {s} | ok {v.get('ok')} | T {(v.get('record') or {}).get('T')} | offsets "
+                   f"{v.get('offset_counts')} | {which}")
+        out.append(f"   by rule {v.get('offset_rule_counts')}")
+        for y, g in sorted((v.get("g_zarr") or {}).items()):
+            chk = g.get("identity_check") or "no identical record date"
+            out.append(f"   G-zarr {y}: {g.get('verdict')} | {g.get('scenes_identical', 0)} scenes "
+                       f"by identity | {chk} | {g.get('identity')}")
+        if v.get("identity_overrides"):
+            out.append(f"   the identity's scenes by rules (1)-(5) alone: "
+                       f"{v['identity_overrides']}")
+        for p in v.get("problems") or ():
+            out.append(f"   PROBLEM {p}")
+        for w in v.get("warnings") or ():
+            out.append(f"   warning {w}")
+        dec = v.get("offset_decisions") or {}
+        odec = o.get("offset_decisions") or {}
+        if odec:
+            ch = collections.Counter(
+                f"{(odec.get(d) or {}).get('state', 'absent')} -> {x['state']}"
+                for d, x in dec.items())
+            out.append(f"   before -> now: {dict(sorted(ch.items()))}")
+        sc = v.get("scenes") or {}
+        pick = [d for d in sorted(dec) if dec[d]["state"] != "no offset"
+                or dec[d].get("rule") in ("demoted", "contradiction")
+                or (odec.get(d) or {}).get("state") == "+1000 in the values"]
+        for d in pick[:max_scenes]:
+            x, e = dec[d], sc.get(d) or {}
+            cs = _cloud_share(e)
+            cloud = "-" if cs is None else f"{cs:.3f}"
+            before = (odec.get(d) or {}).get("state", "absent") if odec else "-"
+            out.append(f"   {d} {x['state']} [{x.get('rule')}] before {before} | water "
+                       f"{e.get('n_water')} clear {e.get('n_water_clear')} clear-low "
+                       f"{e.get('n_water_clear_low')} | SCL 8/9/10 {cloud} | frame valid "
+                       f"{e.get('n_valid')} low {e.get('n_low')} | neg {e.get('n_neg')} | "
+                       f"{str(x.get('reason'))[:220]}")
+        if len(pick) > max_scenes:
+            out.append(f"   ... {len(pick) - max_scenes} more such scenes")
+    return out
+
+
+def print_offset_summary(report=INPUTS_REPORT, previous=None, sites=None, max_scenes=40):
+    """Print :func:`offset_summary` (the server one-liner)."""
+    for line in offset_summary(report, previous, sites, max_scenes):
+        print(line)

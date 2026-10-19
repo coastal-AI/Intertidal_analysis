@@ -2791,7 +2791,10 @@ def _rel2(site2, path):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _frozen_offsets_for(site2):
-    """The inputs report's frozen offsets of the site, or None."""
+    """The inputs report's frozen offsets of the site, or None. A report
+    written with another per-scene offset rule than the current one
+    (``inputs.offset_rule_status``: its ``offset_rule_sha256``) is not used:
+    rerun inputs."""
     if site2.offsets is not None:
         return {str(k)[:10]: int(v) for k, v in dict(site2.offsets).items()}, "given"
     from experiments.benchmark import inputs
@@ -2802,6 +2805,10 @@ def _frozen_offsets_for(site2):
     s = rep.get("sites", {}).get(site2.site, rep if rep.get("site") == site2.site else None)
     if not s or "offsets" not in s:
         return None, "provisional (site not in the inputs report)"
+    stale = inputs.offset_rule_status(s)
+    if stale:
+        return None, (f"provisional (the inputs report {p} was written with {stale}, not the "
+                      "current per-scene offset rule: rerun inputs)")
     return inputs.frozen_offsets(s), f"inputs report {p}"
 
 
@@ -2924,6 +2931,17 @@ def record_inputs(site2):
         offs, src = _frozen_offsets_for(site2)
         out["offsets"] = {"source": src,
                           "sha256": None if offs is None else config.sha256_json(offs)}
+        if offs is None:
+            # provisional offsets are decided at record time: by the rule's code and
+            # parameters, each store-year's verify.json (rule 0) and the scene metadata
+            from experiments.benchmark import inputs
+            out["offsets"]["rule_sha256"] = inputs.offset_rule_sha256()
+            out["offsets"]["verify"] = {
+                str(y): _small_sha(str(zc.sidecar_path(site2.site, y, inputs.VERIFY_NAME,
+                                                       site2.cubes_root)))
+                for y in site2.years}
+            out["offsets"]["scene_meta"] = _small_sha(
+                str(inputs.scene_meta_path(site2.site, site2.cubes_root)))
     out["ioc"] = _ioc_ids(site2)
     return out
 
