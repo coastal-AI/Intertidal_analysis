@@ -78,6 +78,7 @@ TRUTH_FILES = ("truth_elev.npz", "truth_elev.json", "support.npy", "truth_lag.js
 
 
 def log(msg):
+    """Print ``msg`` and flush, so that progress shows at once in a log."""
     print(msg, flush=True)
 
 
@@ -248,22 +249,28 @@ class Checks:
         self.items = []
 
     def add(self, level, what, detail=""):
+        """Record a finding at ``level`` and print it."""
         self.items.append({"level": level, "what": what, "detail": str(detail)})
         log(f"[check-env] {level:<4} {what}" + (f": {detail}" if detail != "" else ""))
 
     def ok(self, what, detail=""):
+        """Record an OK finding."""
         self.add("OK", what, detail)
 
     def info(self, what, detail=""):
+        """Record an INFO finding."""
         self.add("INFO", what, detail)
 
     def warn(self, what, detail=""):
+        """Record a WARN finding (it limits a group or a resource)."""
         self.add("WARN", what, detail)
 
     def fail(self, what, detail=""):
+        """Record a FAIL finding (a missing or invalid input)."""
         self.add("FAIL", what, detail)
 
     def count(self, level):
+        """Number of findings at ``level``."""
         return sum(1 for i in self.items if i["level"] == level)
 
 
@@ -796,6 +803,11 @@ def check_env(res_m, sites=None, rscript=None, n_sample=5, models=True):
 
 
 def cmd_check_env(args):
+    """``check-env``: check the environment and every input of the sites, and
+    write the findings to ``check_env_<host>.json`` in the logs folder.
+
+    Returns 1 when anything FAILed, else 0.
+    """
     from experiments.benchmark import config, product
     sites = _sites(args.sites, args.res, args.scenario)
     ck = check_env(args.res, sites, rscript=args.rscript, n_sample=args.sample_scenes,
@@ -819,6 +831,12 @@ def cmd_check_env(args):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def cmd_prepare(args):
+    """``prepare``: write FROZEN.json, then build the input package of each
+    site (every step, or those of ``--steps``).
+
+    Returns 1 when a site failed, 2 for an unknown step or a missing module,
+    else 0.
+    """
     from experiments.benchmark import config, product
     package = _module("package")
     if package is None:
@@ -873,6 +891,12 @@ def _print_judges(label, js):
 
 
 def cmd_truth(args):
+    """``truth``: write FROZEN.json, then build the judges and the lag truth
+    and/or the elevation truth (``--part``) of each site's package.
+
+    Returns 1 when a site failed, 2 for an unknown part or a missing module,
+    else 0.
+    """
     package, judges, truth = _module("package"), _module("judges"), _module("truth")
     if package is None or judges is None or truth is None:
         return 2
@@ -1011,6 +1035,12 @@ def _status_runs(cfg):
 
 
 def cmd_status(args):
+    """``status``: print the state of each site's package, judges, truths,
+    gates and runs.
+
+    With ``--groups`` it also counts the planned units; with ``--csv`` it
+    writes ``scores/status.csv``. Returns 0.
+    """
     from experiments.benchmark import config, runner
     targets = _sites(args.site or "all", args.res, args.scenario)
     if (args.site or "all") == "all" and int(args.res) in (20,) and args.scenario is None:
@@ -1090,6 +1120,12 @@ def _plan_from_args(args):
 
 
 def cmd_run(args):
+    """``run``: plan the units of the requested groups and run them through the
+    queue (``--dry-run`` only lists their state).
+
+    Returns 2 for an unknown group or one whose milestone is not built, 1 when
+    a unit failed, else 0.
+    """
     from experiments.benchmark import runner
     groups = _split(args.groups)
     bad = [g for g in groups if g not in GROUPS]
@@ -1168,6 +1204,10 @@ def _plan_args(sp, groups_required):
 
 
 def build_parser():
+    """The argument parser: ``check-env``, ``prepare``, ``truth``,
+    ``status`` and ``run``, plus ``gate``, ``control``, ``lock``, ``score``
+    and ``report``, which answer that they belong to a later milestone
+    (:func:`cmd_later`)."""
     p = argparse.ArgumentParser(
         prog="python -X utf8 -m experiments.v13_benchmark",
         description="v13 controlled benchmark of intertidal lag and elevation methods "

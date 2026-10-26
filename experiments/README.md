@@ -75,10 +75,10 @@ Modules these scripts reuse:
 | `v0_vaklodingen_fetch.py`, `v1_vaklodingen_validate.py` | fetch the Rijkswaterstaat Vaklodingen sheets and judge elevation maps against them |
 | `paired_bootstrap.py` | paired cluster bootstrap of the elevation metrics |
 
-Not yet committed on 26 October 2026: `v16_window_curves.py`,
-`light_to_extraction.py` (the pre-2023 scenes of the Dutch sites from the
-light CDSE Zarr stores, as v19's extra extraction) and `download_cube_stac.py`
-(the same scenes from free public archives, an alternative route).
+Not in this repository yet (26 October 2026): `light_to_extraction.py` (the
+pre-2023 scenes of the Dutch sites from the light CDSE Zarr stores, as v19's
+extra extraction) and `download_cube_stac.py` (the same scenes from free
+public archives, an alternative route).
 
 Each of these scripts records, next to its outputs, the git commit and the
 sha256 of its own source and of the inputs it read; v15 and v19 also check

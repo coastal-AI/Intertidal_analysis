@@ -1,6 +1,6 @@
 # The method, in equations
 
-Moved here from the repository README when the README was rewritten as the paper companion (2026-09-21). Updated on 2026-09-23 for the fixed-band product: bands of fixed length, monotone lags, the bootstrap interval and the kernel application replace the adoption gate; the derivations are unchanged.
+Moved here from the repository README when the README was rewritten as the paper companion (2026-09-21). Updated on 2026-09-23 for the fixed-band product: bands of fixed length, monotone lags, the bootstrap interval and the kernel application replace the adoption gate; the derivations are unchanged. On 2026-10-26 the "Uncertainty" paragraph was rewritten to describe the `sigma` that the product stores, and how it is computed.
 
 **The pixel model, derived in four steps.**
 
@@ -146,14 +146,59 @@ bias (datum offset) reported separately, because optimising RMSE alone
 repeatedly produced flattened relief with better numbers (three separate
 incidents in the phase log).
 
-**Uncertainty.** The per-pixel error bar $\sigma_z$ is *not* the analytic
-Cramér–Rao bound — that bound was validated and refuted (`p13`: 9 %
-coverage at 68 % nominal), because it measures only the fit's statistical
-error (~5 cm) while the dominant error is the shared, systematic
-water-level term. Instead, $\sigma_z$ is tabulated from planted recoveries
-in a simulator calibrated on the archive itself (real cloud masks, real
-acquisition times, measured noise and level jitter), and checked for
-coverage against held-out ground truth.
+**Uncertainty: the `sigma` of the product.** The per-pixel uncertainty
+that the MAREA product stores, `sigma` in `marea.npz` (meters), is the
+width $\sigma$ of the pixel's fitted flooding curve,
+$\mathrm{NDWI} = a + b\,\Phi\big((h-z)/\sigma\big)$: the $\sigma$ of the
+pixel model above. It comes from the elevation inversion
+(`marea.invert_series`, which calls `elevation._fit_block`). It does not
+come from the delay estimator, whose per-pixel $\sigma_p$ (profiled over six
+widths from 0.06 to 0.45 m, `configs/m2.yaml`) is not stored, nor from the
+scene bootstrap. It is found together with $z$, pixel by pixel, by a grid
+search:
+
+1. The candidate elevations are 50 levels evenly spaced between the lowest
+   and the highest level of the mouth tide at the image times, with no delay
+   (`rango_marea_m` in `result.json`). The candidate widths are the eight
+   values of
+   `marea.SG_GRID`: 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m.
+2. The level of each look is the mouth tide read the pixel's own delay
+   earlier, $h(t-\tau)$ with $\tau$ = `tau_px_min`.
+3. For every candidate pair $(z, \sigma)$, $a$ and $b$ are solved in closed
+   form by least squares on the NDWI of the pixel's cloud-free looks (the
+   other looks carry zero weight).
+4. The pair with the smallest sum of squared residuals gives the stored $z$
+   and $\sigma$.
+
+So $\sigma$ is always one of the eight grid values; a transition sharper
+than 0.03 m or more gradual than 0.65 m is reported at that end of the
+grid. $\sigma$ is NaN exactly where $z$ is NaN, because the same guards
+reject both: fewer than eight cloud-free looks, $b$ not between 0.15 and
+2.5, $|a| \ge 2.5$, and the quality rule when it is applied.
+
+How to read it: $\sigma$ says how gradually the pixel turns from dry to wet
+as the water rises. In the pixel model it is the spread of the ground inside
+the pixel; in practice it also absorbs any error in the water level given
+to each look, which blurs the transition in the same way
+(`experiments/b2_sigma.py` separates the two). It is not a standard error
+of $z$: it is not derived from the scatter of the fit, and it does not tend
+to zero as more looks are added. The product uses it in one place, the
+envelope of the hypsometric curve (`hyp_lo`, `hyp_hi`): the 5th and 95th
+percentiles of 30 curves in which every elevation is moved by a normal draw
+with standard deviation $\sigma$ (`hypsometry.curve_with_uncertainty`). The
+poster shows $\sigma$ as the uncertainty of the elevation. Whether it works
+as a calibrated error bar (about 68 % of the elevation errors within
+$\pm\sigma$) is an open question:
+[`experiments/v17_truth_diagnostics.py`](../experiments/v17_truth_diagnostics.py)
+tests it against the surveys, and this repository reports no result of that
+test.
+
+Two per-pixel error bars of the development phase are not part of the
+product: the analytic Cramér–Rao bound of each fit
+(`experiments/p13_sigma_uncertainty.py`) and a bar tabulated from planted
+recoveries in a simulator calibrated on the archive
+(`experiments/b7_incertidumbre.py`). [`PHASE_LOG.md`](PHASE_LOG.md) records
+how both were tested.
 
 **Sampling limits.** A sun-synchronous satellite samples each tidal
 constituent at its aliased period

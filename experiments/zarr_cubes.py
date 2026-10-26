@@ -172,6 +172,8 @@ def cubes_root(root=None):
 
 
 def site_dir(site, root=None):
+    """``<root>/<site>``: the folder of a site's yearly stores (see
+    :func:`cubes_root`)."""
     return cubes_root(root) / str(site)
 
 

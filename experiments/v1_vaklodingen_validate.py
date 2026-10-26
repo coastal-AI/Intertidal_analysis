@@ -89,6 +89,16 @@ def sample_truth(cells, xq, yq):
 
 
 def main(sites):
+    """Score each site's comparison products against the Vaklodingen.
+
+    Truth outside the range of the no-delay elevations (+/- 0.25 m) is
+    excluded. Each product is scored on all its pixels, on the 5 x 5-pixel
+    thinned subset, by each of six bands of distance from the mouth, and on the
+    pixels that every product resolves. Writes
+    ``results/v1_vaklodingen_validation.json`` and
+    ``docs/figures/tide_comparison/vaklodingen_by_band.png``; a site without
+    its ``products.npz`` is skipped.
+    """
     import pyproj
     import xarray as xr
     from pyintertidal import tide_estimators as te

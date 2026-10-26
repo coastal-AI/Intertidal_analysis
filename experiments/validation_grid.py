@@ -21,10 +21,14 @@ THIN_M = 100.0
 
 
 def dutch_cube(site, res_m=DUTCH_RES_M):
+    """File name of a Dutch site's 2023-2025 netCDF cube at ``res_m``:
+    ``ndwi_cube_<site>_2023-2025_<res_m>m.nc``."""
     return f"ndwi_cube_{site}_2023-2025_{res_m}m.nc"
 
 
 def dutch_products(site, res_m=DUTCH_RES_M):
+    """Products folder of a Dutch site: ``products_<site>`` at 20 m,
+    ``products_<site>_<res_m>m`` otherwise."""
     return f"products_{site}" if res_m == 20 else f"products_{site}_{res_m}m"
 
 

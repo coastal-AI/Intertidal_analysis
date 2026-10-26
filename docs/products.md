@@ -71,7 +71,7 @@ Written by `pyintertidal.marea.reconstruct(cube_path, out_dir, ...)` into
 | key | shape | contents | units |
 |---|---|---|---|
 | `z` | (P,) | elevation of each intertidal pixel | m, tide-model scale |
-| `sigma` | (P,) | width of the fitted wet/dry transition (one of `marea.SG_GRID`); the poster calls it the uncertainty of z | m |
+| `sigma` | (P,) | width of the fitted wet/dry transition (one of the eight values of `marea.SG_GRID`, NaN where `z` is NaN); the poster calls it the uncertainty of z; what it is and how it is computed: [`METHOD.md`](METHOD.md), paragraph "Uncertainty" | m |
 | `s_km` | (P,) | distance from the mouth along the water | km |
 | `band` | (P,) | index of the 3-km section of each pixel | - |
 | `keep`, `shape` | (P,), (2,) | flat indices of the intertidal pixels in the (H, W) frame | - |

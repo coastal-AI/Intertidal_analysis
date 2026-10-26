@@ -109,6 +109,8 @@ MAIN = ("no delay", "MAREA", "Granadeiro", "NIDEM")
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_keep(cfg):
+    """``(keep, (H, W))`` of the site's MAREA extraction
+    (``cfg['extract']``)."""
     z = np.load(cfg["extract"], allow_pickle=True)
     return np.asarray(z["keep"]), tuple(int(v) for v in z["shape"])
 
@@ -155,6 +157,8 @@ def load_granadeiro(path, keep):
 
 
 def marea_record_size(cfg):
+    """Number of scenes in MAREA's record: ``n_escenas`` of the last
+    existing ``cfg['lag_result']`` file, or None."""
     files = [f for f in cfg["lag_result"] if os.path.exists(f)]
     if not files:
         return None
@@ -221,6 +225,16 @@ def same_scene_rows(site, prods, records, truth_ok, score_fn):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def score_villaviciosa(cfg, same_scenes=False):
+    """Score every Villaviciosa product against the development points of the
+    RTK survey.
+
+    The points come from ``pyintertidal.rtk.load_rtk``. First the no-delay and
+    MAREA scores must reproduce the notebook's ``rtk_onsite_metrics.csv`` (an
+    assertion); then every product is scored on ``all`` points and on the
+    ``common`` points, against the Alicante heights when the survey carries
+    them. With ``same_scenes`` the same-scenes subsets are added. Returns
+    ``(rows as a DataFrame, info)``.
+    """
     from pyintertidal import elevation_validation as ev
     from pyintertidal import rtk
 
@@ -297,6 +311,15 @@ def score_villaviciosa(cfg, same_scenes=False):
 
 
 def score_dutch(site, cfg, same_scenes=False):
+    """Score every product of a Dutch site against the Vaklodingen.
+
+    Truth outside the range of the no-delay elevations (+/- 0.25 m) is
+    excluded. First the no-delay and MAREA scores must reproduce the notebook's
+    ``vaklodingen_metrics.csv`` (an assertion); then every product is scored on
+    ``all``, ``thinned`` and ``common`` pixels, and a missing or NOT COMPUTABLE
+    product gets an empty row. With ``same_scenes`` the same-scenes subsets are
+    added. Returns ``(rows as a DataFrame, info)``.
+    """
     import pyproj
     from experiments import v1_vaklodingen_validate as v1
     from experiments.v7_waterline_contour import cube_grid, vscore
@@ -429,10 +452,15 @@ def check_published_common(cfg, rows):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fmt_n(n):
+    """``n`` with LaTeX thin spaces as thousands separators; ``--`` when
+    missing or zero."""
     return f"{int(n):,}".replace(",", "\\,") if n and np.isfinite(n) and n > 0 else "--"
 
 
 def latex_rows(df):
+    """The LaTeX rows of ``tables.tex``: per site and main product, n, RMSE,
+    slope and r on all pixels, then RMSE, slope and r on the common subset;
+    'not computable' for a product without pixels."""
     lines = []
     for site in df["site"].unique():
         d = df[df["site"] == site]
@@ -502,6 +530,9 @@ def _n(v):
 
 
 def summary_markdown(tab, summary):
+    """The markdown report of a ``--same-scenes`` run
+    (``same_scenes_summary.md``): one table per site from
+    :func:`same_scenes_summary`, then the sites that could not be scored."""
     truth = {"villaviciosa": "RTK-GNSS (development split, Alicante datum)"}
     lines = ["# Same-scenes comparison: no delay vs MAREA vs NIDEM",
              "",
@@ -537,6 +568,13 @@ def summary_markdown(tab, summary):
 
 
 def main(sites, same_scenes=False):
+    """Score ``sites`` and write ``<site>.csv`` and ``summary.json``.
+
+    The default run writes to ``results/method_comparison/``, with
+    ``tables.tex``. With ``same_scenes`` it writes to
+    ``results/method_comparison_same_scenes/``, with the same-scenes summary,
+    and a site that fails is recorded while the others go on.
+    """
     out = OUT_SAME if same_scenes else OUT
     os.makedirs(out, exist_ok=True)
     frames, summary = [], {}

@@ -57,6 +57,8 @@ BANDS = ("B03", "B08", "SCL")
 
 
 def part_path(site, year_start):
+    """Path of the part file that holds one year of a site's cube: the final
+    cube's name with ``.part<YYYY>.nc``."""
     return dutch_cube(site).replace(".nc", f".part{year_start[:4]}.nc")
 
 
@@ -113,6 +115,12 @@ def check_overpass(site, dates):
 
 
 def main(argv=None):
+    """Command line: download each site's cube one year at a time, merge the
+    years into the final cube, and check its grid and its overpass times.
+
+    Returns 0, or 1 when cube dates are still missing from the overpass times
+    after asking the catalog. ``--login`` only authenticates.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("sites", nargs="*", help=f"any of {', '.join(DUTCH_SITES)} (default: all)")
     ap.add_argument("--login", action="store_true",

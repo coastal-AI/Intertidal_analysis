@@ -2,8 +2,9 @@
 
 > **Estado:** comparación de desarrollo del 17-09-2026, hecha con una versión anterior del método (seis bandas de distancia en lugar de las secciones de 3 km, y un umbral de detección ya retirado). No es un resultado de validación; la validación v2 ([`validation_v2_spec.md`](validation_v2_spec.md)) la sustituye.
 
-Estado a 2026-09-17. Notebooks: `tide_boundary_comparison_<sitio>.ipynb`
-(escalda, ferrol, ems, wadden); productos en `products_<sitio>/comparison_<tag>/`;
+Estado a 2026-09-17. Notebooks: `archive/notebooks/tide_boundary_comparison_<sitio>.ipynb`
+(escalda, ferrol, ems, wadden; archivados, sin mantenimiento); productos en
+`products_<sitio>/comparison_<tag>/` (no están en el repositorio público);
 figuras en `docs/figures/tide_comparison/`; verdad batimétrica en
 `data_v4/truth/vaklodingen/`.
 

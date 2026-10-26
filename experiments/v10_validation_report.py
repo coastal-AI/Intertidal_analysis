@@ -56,6 +56,8 @@ DUTCH = {"escalda": "Westerschelde", "wadden": "Wadden Sea (Vlie)", "ems": "Ems-
 
 
 def fmt(v, d=3, sign=False):
+    """``v`` with ``d`` decimals for LaTeX, minus signs as ``$-$`` (with
+    ``sign``, an explicit ``$+$`` too); ``--`` when missing."""
     if v is None or not np.isfinite(v):
         return "--"
     s = f"{v:+.{d}f}" if sign else f"{v:.{d}f}"
@@ -63,10 +65,14 @@ def fmt(v, d=3, sign=False):
 
 
 def fmt_n(n):
+    """``n`` with LaTeX thin spaces as thousands separators; ``--`` when
+    missing."""
     return f"{int(n):,}".replace(",", "\\,") if n and np.isfinite(n) else "--"
 
 
 def scenes(v):
+    """A scene count as text; ``--`` when it is not a number (for example
+    ``missing``)."""
     try:
         return str(int(float(v)))
     except (TypeError, ValueError):
@@ -78,6 +84,7 @@ def scenes(v):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def method_rows(df, subset="all"):
+    """For each main method, its v9 row for ``subset``, or None."""
     out = {}
     for p in MAIN:
         a = df[(df["product"] == p) & (df["subset"] == subset)]
@@ -86,6 +93,11 @@ def method_rows(df, subset="all"):
 
 
 def rtk_table(cmp_dir, numbers):
+    """Rows of the Villaviciosa RTK table, from v9's ``villaviciosa.csv``.
+
+    Per method: scenes, n, RMSE, slope, r and bias, or 'not run' / 'not
+    computable'. The numbers go into ``numbers['rtk']``.
+    """
     df = pd.read_csv(f"{cmp_dir}/villaviciosa.csv")
     info = json.load(open(f"{cmp_dir}/summary.json"))["villaviciosa"]
     rows = []
@@ -108,6 +120,12 @@ def rtk_table(cmp_dir, numbers):
 
 
 def external_table(cmp_dir, numbers):
+    """Rows of the Vaklodingen table, from v9's ``<site>.csv`` of each Dutch
+    site.
+
+    Per method: scenes, n, RMSE, slope and r on all pixels, and the RMSE on the
+    common subset. The numbers go into ``numbers['vaklodingen']``.
+    """
     summ = json.load(open(f"{cmp_dir}/summary.json"))
     rows = []
     for site, name in DUTCH.items():
@@ -192,6 +210,15 @@ def external_table_nidem_csv(root, suf, numbers):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def lidar_truth(grid_path):
+    """The PNOA LiDAR DTM (``MDT02``) as truth on the 10 m grid of
+    ``grid_path``.
+
+    A 2 m pixel whose full 3 x 3 neighborhood is flatter than ``WATER_STD_M``
+    is taken as water and removed; the ground pixels are averaged into each
+    10-m cell, and a cell is kept only when over 95 % of it holds LiDAR data
+    and at least ``MIN_GROUND`` of that is ground. Returns ``(truth, transform,
+    shape, share of the 2 m pixels taken as water)``.
+    """
     import rasterio
     from rasterio.warp import Resampling, reproject, transform_bounds
     from rasterio.windows import from_bounds
@@ -225,6 +252,14 @@ def lidar_truth(grid_path):
 
 
 def lidar_table(root, numbers):
+    """Rows of the Villaviciosa LiDAR table.
+
+    No delay and MAREA (``external_products.npz``), NIDEM and, when it exists,
+    Granadeiro, scored against :func:`lidar_truth` on the canonical 10 m grid
+    (truth outside the range of the no-delay elevations, +/- 0.25 m, excluded),
+    on all cells and on the cells that every product resolves. The numbers go
+    into ``numbers['lidar']``.
+    """
     from pyintertidal import rtk
     from pyintertidal.elevation_validation import ols_against_truth
 
@@ -278,12 +313,17 @@ def lidar_table(root, numbers):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def lag_pair_value(path, prefix):
+    """The ``value`` of the first row of a ``lag_pair_metrics.csv`` whose
+    ``quantity`` starts with ``prefix``, as text; None when there is none."""
     q = pd.read_csv(path)
     hit = q[q["quantity"].str.startswith(prefix)]
     return str(hit["value"].iloc[0]) if len(hit) else None
 
 
 def inner_distance_km(root, site):
+    """Distance of the inner gauge from the mouth (km), read from the text
+    of the site's comparison notebook; None when the notebook or the line is
+    missing."""
     nb = f"{root}/tide_boundary_comparison_{site}.ipynb"
     if not os.path.exists(nb):
         return None
@@ -293,6 +333,14 @@ def inner_distance_km(root, site):
 
 
 def lag_table(root, suf, numbers):
+    """Rows of the gauge-pair lag table.
+
+    For each site: the gauge-to-gauge lag; MAREA's lag at the inner gauge with
+    its bootstrap interval; the error E(tau) of the mouth-to-inner level
+    difference with no lag, with MAREA's lag and with the best constant lag
+    (-30 to +180 min); and the slope b and correlation r of the predicted
+    difference on the measured one. The numbers go into ``numbers['lag']``.
+    """
     from pyintertidal import lag_validation as lv
 
     rows = []
@@ -342,6 +390,10 @@ def lag_table(root, suf, numbers):
 
 
 def stations_table(root, numbers):
+    """Rows of the Villaviciosa table of 3-km sections: the applied lag and
+    its bootstrap interval at each section center, from the latest
+    ``marea_eot20_g0_*`` production result. The numbers go into
+    ``numbers['stations']``."""
     import glob
     f = sorted(glob.glob(f"{root}/products_marea/marea_eot20_g0_*/result.json"))
     if not f:
@@ -359,6 +411,9 @@ def stations_table(root, numbers):
 
 
 def main(argv=None):
+    """Command line: write each table's rows to ``<out>/<table>_rows.tex``
+    and every number to ``<out>/numbers.json`` (default
+    ``docs/paper/tables``)."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--root", default=".", help="folder with the extracted run results")
     ap.add_argument("--comparison-dir", default=None, help="default: <root>/results/method_comparison")

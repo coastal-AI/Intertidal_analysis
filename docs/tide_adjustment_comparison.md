@@ -2,8 +2,9 @@
 
 > **Status:** a development comparison of 2026-09-17, made with an earlier version of the method (six bands of distance instead of the 3-km sections, and a detection threshold since removed). It is not a validation result; validation v2 ([`validation_v2_spec.md`](validation_v2_spec.md)) supersedes it.
 
-Status 2026-09-17. Notebooks: `tide_boundary_comparison_<site>.ipynb`
-(escalda, ferrol, ems, wadden); products in `products_<site>/comparison_<tag>/`;
+Status 2026-09-17. Notebooks: `archive/notebooks/tide_boundary_comparison_<site>.ipynb`
+(escalda, ferrol, ems, wadden; archived, not maintained); products in
+`products_<site>/comparison_<tag>/` (not in the public repository);
 figures in `docs/figures/tide_comparison/`; bathymetric truth in
 `data_v4/truth/vaklodingen/`. Spanish version: `tide_adjustment_comparison.es.md`.
 

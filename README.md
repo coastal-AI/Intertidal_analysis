@@ -65,15 +65,20 @@ Tap the figure to enlarge it.*
 
 ### Step by step, with the code
 
+Each step first says what happens; the names in `code font` point to the
+functions and files that do it, for readers who want to reuse the code.
+
 1. **Images.** Sentinel-2 L2A at 10 m, 2023-2025 (Sentinel-2A, 2B and 2C),
    downloaded as openEO data cubes from the Copernicus Data Space Ecosystem.
    A *look* is a cloud-free view of the pixel: its scene classification
-   (SCL) is one of the classes 4-7 (vegetation, bare ground, water,
-   unclassified: not cloud, shadow or snow), in a scene with little cloud (at
-   most 5 % cloudy over the frame or, failing that, 10 % over the transition
-   zone between permanent water and land). In each look the pixel is wet when
-   the water index NDWI = (B03 - B08) / (B03 + B08), from green and
-   near-infrared light, is above 0. Code: `pyintertidal.cube.SentinelCube`
+   (SCL, the map of clouds, shadows, water and land that comes with every
+   Sentinel-2 L2A image) is one of the classes 4-7 (vegetation, bare
+   ground, water, unclassified: not cloud, shadow or snow), in a scene with
+   little cloud (at most 5 % cloudy over the frame or, failing that, 10 %
+   over the transition zone between permanent water and land). In each look
+   the pixel is wet when the water index NDWI = (B03 - B08) / (B03 + B08),
+   from green and near-infrared light, is above 0. Code:
+   `pyintertidal.cube.SentinelCube`
    and `experiments/download_cube_zarr.py` (download),
    `pyintertidal.stability.reference_and_clouds` and `filter_dates` (the
    scene screening), `pyintertidal.marea.extract` (the looks).
@@ -90,25 +95,38 @@ Tap the figure to enlarge it.*
    measured along the water (`pyintertidal.geometry.along_distance`), and the
    intertidal zone is cut into sections of 3 km of that distance
    (`pyintertidal.tide_estimators.make_bands_fixed`; a section with fewer
-   than 500 pixels is merged with the next). For each section, one delay: the
-   τ for which the mouth tide read τ minutes earlier, h(t - τ), best explains
-   the wet and dry looks of its pixels together (a seeded sample of at most
-   1,200 pixels per section, `configs/m2.yaml`; a profiled Bernoulli
-   likelihood in which every pixel refits its own elevation and transition
-   width for each candidate τ; `pyintertidal.tide_estimators.m2a_rasch`). τ
-   is zero at the mouth and can only grow inland; 30 bootstrap resamples of
-   the scenes give its interval. Each pixel then receives the section profile
-   smoothed along the channel (3-km Gaussian kernel), rounded to the minute.
-   MAREA shifts the tide in time, not in height: wet/dry images can time the
-   tide but cannot measure its amplification ([`docs/METHOD.md`](docs/METHOD.md)).
-4. **Its elevation, z.** On the corrected tide the pixel's water index
-   follows a flooding curve, NDWI = a + b Φ((h(t - τ) - z) / σ), fitted by
-   least squares (`pyintertidal.marea.invert_series`). Its midpoint z is the
-   elevation (meters, on the same scale as h). Its width σ (one of eight
-   steps from 0.03 to 0.65 m) is what the poster shows as the uncertainty;
-   whether σ is a calibrated error bar is one of the open questions. A pixel
-   is left empty unless it has at least eight cloud-free looks, a plausible
-   curve (wet-dry contrast b between 0.15 and 2.5, |a| < 2.5) and, since
+   than 500 pixels is merged with the next). Each section gets one delay τ:
+   the one for which the mouth tide read τ minutes earlier, h(t - τ), best
+   explains the wet and dry looks of all its pixels together. In plain words:
+   with the right delay, the looks taken while the water stood above a
+   pixel's ground come out wet and those taken while it stood below come out
+   dry; with a wrong delay, wet and dry looks mix (panel 3 of the figure, "the
+   cleanest split"). The fit uses a seeded random sample of at most 1,200
+   pixels per section (`configs/m2.yaml`) and a profiled Bernoulli
+   likelihood: for each candidate τ, every pixel refits its own elevation
+   and transition width, so that no delay is judged with ground heights
+   fitted for another (`pyintertidal.tide_estimators.m2a_rasch`). τ is zero
+   at the mouth and can only grow inland; refitting it on 30 resamples of the
+   scenes (a bootstrap) gives its 95 % interval. Each pixel then receives its
+   own delay, read at its distance from the mouth on a smooth curve through
+   the section delays (a Gaussian kernel of 3-km bandwidth along the
+   channel), rounded to the minute. MAREA shifts the tide in time, not in
+   height: wet/dry images can time the tide but cannot measure its
+   amplification ([`docs/METHOD.md`](docs/METHOD.md)).
+4. **Its elevation, z.** On the corrected tide, the pixel's water index
+   follows an S-shaped flooding curve: low (the dry pixel) while the water
+   is below its ground, high (the flooded pixel) once the water is above it.
+   The curve is NDWI = a + b Φ((h(t - τ) - z) / σ), where Φ is the S-shaped
+   cumulative normal distribution, a the pixel's dry level and b the jump
+   from dry to wet; it is fitted by least squares
+   (`pyintertidal.marea.invert_series`). Its midpoint z is the elevation
+   (meters, on the same scale as h). Its width σ says how gradually the
+   pixel floods: one of eight steps from 0.03 to 0.65 m, and what the poster
+   shows as the uncertainty. Whether σ is a calibrated error bar is one of
+   the open questions; the "Uncertainty" paragraph of
+   [`docs/METHOD.md`](docs/METHOD.md) says what σ is and how it is computed.
+   A pixel is left empty unless it has at least eight cloud-free looks, a
+   plausible curve (wet-dry contrast b between 0.15 and 2.5, |a| < 2.5) and, since
    2026-10-06, at least three looks with the water below its ground and three
    above it. That last condition is the quality rule
    `marea.QUALITY_MIN_BRACKET = 3`, the default of `reconstruct` and of
@@ -215,18 +233,18 @@ each site; their outputs are not in this repository.
 | [`pyintertidal/`](pyintertidal/README.md) | the MAREA library: data cubes, water detection, tides, the delay estimator, the per-pixel inversion, derived products |
 | [`experiments/`](experiments/README.md) | the scripts: validation v2 ([`validation_v2.py`](experiments/validation_v2.py) and [`benchmark/`](experiments/benchmark/README.md)), the method comparison on the existing 10 m inputs (`v14`-`v19`, [`fixedcfg/`](experiments/fixedcfg/README.md)), and the development record |
 | [`tests/`](tests/README.md) | unit tests on small synthetic data, and the guard of the reserved RTK points |
-| `configs/` | pre-registered thresholds (`configs/m2.yaml` is read by the production engine) |
-| `data/` | the RTK-GNSS field survey of the Ría de Villaviciosa |
+| [`configs/`](configs/README.md) | pre-registered thresholds (`configs/m2.yaml` is read by the production engine) |
+| [`data/`](data/README.md) | the RTK-GNSS field survey of the Ría de Villaviciosa |
 | [`docs/`](docs/README.md) | the method, the validation specification, the products guide, worked examples and their figures |
-| `notebooks/` | the notebook that explores the validation cubes, and the one-pixel walkthrough |
+| [`notebooks/`](notebooks/README.md) | the notebook that explores the validation cubes, and the one-pixel walkthrough |
 | [`poster/`](poster/README.md) | the CARTOGRASS 2026 poster: LaTeX sources, figures, the scripts that draw them, the PDF |
-| `products_marea/` | the 10 m MAREA product of the Ría de Villaviciosa (97 screened scenes of 2023-2025, EOT20 at the mouth, made before the quality rule of step 4), used by the second example below |
-| `products_villaviciosa/hsr_eot20_2023-2025.tif` | the canonical 10 m grid of Villaviciosa (EPSG:32630), on which `pyintertidal.rtk.load_rtk` places the RTK survey and the second example writes its GeoTIFF |
+| [`products_marea/`](products_marea/README.md) | the 10 m MAREA product of the Ría de Villaviciosa (97 screened scenes of 2023-2025, EOT20 at the mouth, made before the quality rule of step 4), used by the second example below |
+| [`products_villaviciosa/hsr_eot20_2023-2025.tif`](products_villaviciosa/README.md) | the canonical 10 m grid of Villaviciosa (EPSG:32630), on which `pyintertidal.rtk.load_rtk` places the RTK survey and the second example writes its GeoTIFF |
 | `products_ferrol/`, `products_{escalda,wadden,ems}_10m/` | `overpass_times.json`: the acquisition time of every scene of the Ferrol, Dutch and German sites |
-| `sealed/` | the registry of sealed data files (`pyintertidal.seal`) |
-| `data_v4/gauges/ioc_stations.json` | the IOC station list read by `pyintertidal.boundary.make_boundary` |
-| `results/` | verdicts of the development experiments, kept as the record of what had been seen before the validation's pre-registration lock |
-| `archive/` | legacy code, notebooks and the earlier poster draft, kept for the record and not maintained |
+| [`sealed/`](sealed/README.md) | the registry of sealed data files (`pyintertidal.seal`) |
+| [`data_v4/gauges/ioc_stations.json`](data_v4/README.md) | the IOC station list read by `pyintertidal.boundary.make_boundary` |
+| [`results/`](results/README.md) | verdicts of the development experiments, kept as the record of what had been seen before the validation's pre-registration lock; not validation results |
+| [`archive/`](archive/README.md) | legacy code, notebooks and the earlier poster draft, kept for the record and not maintained |
 
 ## Installation
 

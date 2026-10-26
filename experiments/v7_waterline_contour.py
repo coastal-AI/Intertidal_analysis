@@ -287,10 +287,13 @@ def output_paths(site, sensitivity=False, variant=False):
 
 
 def log(msg):
+    """Print ``msg`` and flush, so that progress shows at once in a log."""
     print(msg, flush=True)
 
 
 def sha256(path, block=1 << 20):
+    """Hex sha256 of the file at ``path``, read in blocks of ``block``
+    bytes."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(block), b""):
@@ -299,6 +302,8 @@ def sha256(path, block=1 << 20):
 
 
 def peak_memory_mb():
+    """Peak working set of this process in MiB on Windows; elsewhere the
+    current resident set size. None when psutil is missing or fails."""
     try:
         import psutil
         mi = psutil.Process().memory_info()
@@ -535,6 +540,8 @@ class ExtractionCheck:
         self.n_removed += int((marea & ~obs).sum())
 
     def summary(self):
+        """The counts of the check, for the diagnostics. ``result`` reads
+        identical because any mismatch has already raised in ``__call__``."""
         return {"scene_px_compared (SCL->C and NDWI, every keep px)": int(self.n_c),
                 "ndwi_values_compared_where_both_masks_valid": int(self.n_both_valid_compared),
                 "marea_clear_but_nan_ndwi": int(self.n_clear_nan),
@@ -551,6 +558,12 @@ class ExtractionCheck:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def cube_grid(cube_path):
+    """Dates, coordinates and georeferencing of a netCDF cube.
+
+    ``dates``, ``xs``, ``ys``, ``H``, ``W``, the CRS (``wkt`` and ``crs``) and
+    the affine ``transform`` of the pixel corners, built from the pixel-center
+    coordinates.
+    """
     import pyproj
     import xarray as xr
 
@@ -571,6 +584,14 @@ def cube_grid(cube_path):
 
 
 def write_rasters(out_dir, res, grid):
+    """Write the NIDEM layers of ``res`` as GeoTIFFs in ``out_dir`` on
+    ``grid``.
+
+    The filtered and unfiltered elevations, the filtered elevation with the
+    bounded confidence, the uncertainty, the confidence (raw and bounded) and
+    the ITEM relative extents (uint8, 255 = invalid). Returns the paths
+    written.
+    """
     from rasterio.crs import CRS
     from pyintertidal.raster import write_geotiff
 
@@ -593,6 +614,7 @@ def write_rasters(out_dir, res, grid):
 
 
 def at_keep(raster, keep):
+    """Values of a full-frame raster at the flat indices ``keep``."""
     return np.asarray(raster).ravel()[keep]
 
 
@@ -1032,6 +1054,14 @@ def score_vaklodingen(site, cfg, res, keep, grid, csv_paths, variant=False,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def diagnostics(res, comp, keep, Z, U, sizes, edges, h):
+    """The truth-free diagnostics of a NIDEM run, as a JSON-ready dict.
+
+    The tide range of the record, the interval edges, sizes, median tides Z_j
+    and their standard deviations U_j, the valid observations per interval on
+    keep, the share of non-monotone pixels, the coverage on keep and on the
+    full frame, the histogram of the relative extent R, the contours per level
+    and the NDWI values outside [-1, 1].
+    """
     q = [0, 5, 25, 50, 75, 95, 100]
     cnt_k = comp["count"].reshape(wc.N_INTERVALS, -1)[:, keep]
     R_k = at_keep(res["R"], keep)
@@ -1721,6 +1751,8 @@ def record_not_computable(site, cfg, *, mode, pre, ppath,
 
 
 def record_label_of(mode, n_sens=None):
+    """The label of the scene record of a run mode ('primary', 'sensitivity'
+    or 'variant'), as written into the outputs."""
     return {"primary": "primary: ITEM all-observations record, ITEM pixel-quality mask",
             "sensitivity": f"{sensitivity_lead(n_sens)}, ITEM pixel-quality mask",
             "variant": (f"{VARIANT_LEAD}: primary record, scenes with a "
@@ -1729,6 +1761,17 @@ def record_label_of(mode, n_sens=None):
 
 
 def main(argv=None):
+    """Command line: run NIDEM at one site and write its outputs.
+
+    The record is the primary one, ``--sensitivity-marea-record`` or
+    ``--s2-scene-rule`` (see the module docstring and ``--help``). Writes the
+    GeoTIFFs, ``nidem.npz``, the survey scores and ``nidem_diagnostics.json``
+    into the site's NIDEM folder and returns the diagnostics.
+    ``--preflight-only`` stops after the pre-flight and returns it;
+    ``--record-not-computable`` writes the NOT COMPUTABLE rows. A record that
+    the pre-flight stops raises ``EmptyIntervalError`` (exit code 3 from the
+    command line).
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("site", choices=sorted(SITES))
     ap.add_argument("--sensitivity-marea-record", action="store_true",

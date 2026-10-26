@@ -248,10 +248,13 @@ FROZEN = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def log(msg):
+    """Print ``msg`` and flush, so that progress shows at once in a log."""
     print(msg, flush=True)
 
 
 def sha256(path, block=1 << 20):
+    """Hex sha256 of the file at ``path``, read in blocks of ``block``
+    bytes."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(block), b""):
@@ -260,6 +263,8 @@ def sha256(path, block=1 << 20):
 
 
 def peak_memory_mb():
+    """Peak working set of this process in MiB on Windows; elsewhere the
+    current resident set size. None when psutil is missing or fails."""
     try:
         import psutil
         mi = psutil.Process().memory_info()
@@ -360,6 +365,8 @@ class StageCache:
 
     @staticmethod
     def key(*arrays):
+        """sha256 hex of the shapes, dtypes and bytes of ``arrays``: the key
+        of a stage's inputs."""
         h = hashlib.sha256()
         for a in arrays:
             a = np.ascontiguousarray(a)
@@ -369,6 +376,8 @@ class StageCache:
         return h.hexdigest()
 
     def get(self, name, key):
+        """The arrays stored for stage ``name`` when the cache is on and
+        their key equals ``key``; otherwise None."""
         p = os.path.join(self.dir, f"{name}.npz")
         if not (self.enabled and os.path.exists(p)):
             return None
@@ -379,10 +388,14 @@ class StageCache:
         return {k: z[k] for k in z.files if k != "key"}
 
     def put(self, name, key, **arrays):
+        """Store ``arrays`` for stage ``name`` under ``key`` (only when the
+        cache is on)."""
         if self.enabled:
             np.savez(os.path.join(self.dir, f"{name}.npz"), key=np.array(key), **arrays)
 
     def clear(self):
+        """Delete the cache folder and its files (only when the cache is
+        on)."""
         if self.enabled and os.path.isdir(self.dir):
             for f in os.listdir(self.dir):
                 os.remove(os.path.join(self.dir, f))
@@ -489,6 +502,8 @@ def minutes_since_epoch(idx):
 
 
 def to_utc_naive(v):
+    """``v`` as a pandas Timestamp in UTC without a time zone (a naive time
+    is returned unchanged)."""
     import pandas as pd
     ts = pd.Timestamp(v)
     if ts.tzinfo is not None:
@@ -797,18 +812,30 @@ def score_vaklodingen(site, cfg, final_keep, keep, grid, out_dir):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def quantiles(v, q=(0, 1, 5, 25, 50, 75, 95, 99, 100)):
+    """Percentiles ``q`` of the finite values of ``v``, as ``{'p<q>':
+    value}``; an empty dict when none is finite."""
     v = np.asarray(v, float)
     v = v[np.isfinite(v)]
     return {f"p{k}": float(np.percentile(v, k)) for k in q} if v.size else {}
 
 
 def status_counts(st):
+    """How many fits ended with each R status code, counted by name (0 ok, 1
+    nlm_iterations_0, 2 constant_fit, 3 error)."""
     u, c = np.unique(np.asarray(st), return_counts=True)
     names = {0: "ok", 1: "nlm_iterations_0", 2: "constant_fit", 3: "error"}
     return {names.get(int(k), str(k)): int(v) for k, v in zip(u, c)}
 
 
 def main(argv=None):
+    """Command line: run the re-implementation at one site and write its
+    outputs.
+
+    The options are listed in the module docstring. Writes the products, the
+    survey scores (unless ``--no-score``) and
+    ``granadeiro2021_diagnostics.json`` into the site's folder, and returns the
+    diagnostics.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("site", choices=sorted(SITES))
     ap.add_argument("--workers", type=int, default=8, help="parallel R workers (default 8)")

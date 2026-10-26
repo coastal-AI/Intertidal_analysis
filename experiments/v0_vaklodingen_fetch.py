@@ -27,6 +27,11 @@ BOXES = {"escalda": (3.55, 51.33, 3.85, 51.46),
 
 
 def sheets_for(site):
+    """The Vaklodingen sheets whose RD extent intersects the box of ``site``.
+
+    Read from ``data_v4/truth/vaklodingen_catalog.nc``: a list of ``(file name,
+    (x0, x1, y0, y1) in RD meters, date of the last survey or None)``.
+    """
     import pyproj
     import xarray as xr
 
@@ -49,6 +54,11 @@ def sheets_for(site):
 
 
 def main(sites):
+    """Download every sheet of ``sites`` into ``data_v4/truth/vaklodingen/``.
+
+    A cached file over 1 MB is kept; each download is tried up to four times,
+    30 s apart.
+    """
     import truststore
     truststore.inject_into_ssl()
     import requests
