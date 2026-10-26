@@ -385,6 +385,26 @@ Gates added 2026-10-26 (band subsets only):
   --accept-gate-differences``); ``extraction_gate_problem``,
   ``--without-extraction-gate`` (recorded).
 
+``--l2a-nodata-equal`` (band subsets only, off by default; 2026-10-26): the
+light-path gate may pass UP TO THE NO-DATA ENCODING. Found at escalda 2023
+(B03 B08 SCL against the nine bands, the same 294 input products, offset and
+delivered shape): every differing pixel-date was no data in both stores,
+written once as the Sentinel-2 L2A no-data (DN 0, SCL 0 = NO_DATA, in a
+chunk the backend wrote) and once as the Zarr fill (-32768: a 128 x 128 chunk
+the backend did not write; 110 all-zero chunks of the nine-band delivery
+were absent from the subset's). With the flag, a gate whose bitwise
+comparison differs runs ``nodata_encoding_check``: a differing pixel-date
+counts as encoding only when, in BOTH stores, every compared band (SCL among
+them) is 0 or the fill; any other difference (a value, a real 0 of a dark
+pixel with a valid SCL) still fails. Passing that way (the same dates, grid,
+offset, delivered shape and input baselines too), the store is accepted as
+NINE_BAND_NODATA_HOW, recorded with the counts in ``<year>.vs_nine_band.json``
+(``nodata_encoding``), and lifts the wait of the years without a nine-band
+store as NINE_BAND_HOW does (``light_gate_passed``). Without the flag
+nothing changes. Nothing the n-tables read changes either: the extraction
+reads 0 / 0 as NaN NDWI, SCL 0 as not clear, and the screening sets the fill
+to SCL 0.
+
 ``--expect-account <e-mail>`` (any run, off by default): before any job is
 submitted or looked up, ``connection.describe_account()`` is called, the
 account's e-mail printed, and the run stops when it is another account (the
@@ -4313,8 +4333,10 @@ def angles_reference_grid(site, root=None, log=None, res=ANGLES_RES_M):
                            float(fy[0] + h)]}
 
 
-def verify_request(req, log):
-    """Compare the store with the site's netCDF cube; JSON beside the store."""
+def verify_request(req, log, ctx=None):
+    """Compare the store with the site's netCDF cube; JSON beside the store.
+    ``ctx``: only its --l2a-nodata-equal is read (a band subset's light-path
+    gate, ``nine_band_gate``)."""
     cfg = SITE_CONFIG[req.site]
     ref = ROOT / cfg["reference"]
     base = {"site": req.site, "year": req.year, "window": [req.start, req.end],
@@ -4373,7 +4395,7 @@ def verify_request(req, log):
             + (f"; input baselines {rep['input_baselines']['counts']}"
                if rep.get("input_baselines") else ""))
     if req.is_subset and written:   # the light-path gate: the same year's nine-band store
-        gate = nine_band_gate(req, log)
+        gate = nine_band_gate(req, log, l2a_nodata=bool(getattr(ctx, "l2a_nodata_equal", False)))
         if gate is not None:
             rep["nine_band_store"] = gate
             zc.write_json(rep, req.sidecar("verify.json"))
@@ -4557,7 +4579,7 @@ def verify_and_complete(ctx, req, log):
     or --test (reported, never refused). The decision is also written into
     ``<year>.verify.json`` (``acceptance``). A band subset is decided by
     ``decide`` (the light-path gate first)."""
-    rep = verify_request(req, log)
+    rep = verify_request(req, log, ctx)
     ok, how, why = decide(req, rep)
     geo = rep.get("geometry") or {}
     acc = {"accepted": ok, "how": how, "why": why, "rule": dict(VERIFY_MIN_EQUAL),
@@ -4764,6 +4786,9 @@ class Context:
         #: --without-light-gate (band subsets): buy a year without a nine-band store of its own
         #: before any store of its bands passed the light-path gate (recorded)
         self.without_light_gate = bool(getattr(a, "without_light_gate", False))
+        #: --l2a-nodata-equal (band subsets): the light-path gate may pass up to the no-data
+        #: encoding (L2A 0 / fill; nodata_encoding_check), recorded as NINE_BAND_NODATA_HOW
+        self.l2a_nodata_equal = bool(getattr(a, "l2a_nodata_equal", False))
         #: band subsets of EXTRACTION_GATE_SITES: where the converter's 2023 extraction gates are
         #: (--extraction-gate-dir) and --without-extraction-gate (recorded)
         self.extraction_gate_dir = getattr(a, "extraction_gate_dir", None) or EXTRACTION_GATE_DIR
@@ -7046,7 +7071,9 @@ def run_request(ctx, req, log):
     if req.is_subset:               # a band subset: its light-path gate, and what its job cost
         gate = rep.get("nine_band_store")
         out.update(light_path_gate=None if gate is None else
-                   "passed" if gate.get("passed") else "FAILED", job_costs=info.get("costs"))
+                   "passed" if gate.get("passed") else
+                   "passed up to the no-data encoding" if gate.get("passed_up_to_nodata_encoding")
+                   else "FAILED", job_costs=info.get("costs"))
     return out
 
 
@@ -7163,6 +7190,12 @@ def log_report(req, lines, log):
 
 #: the ``acceptance`` of a band subset that passed the light-path gate
 NINE_BAND_HOW = "identical to the nine-band store"
+#: the ``acceptance`` of a band subset that passed it up to the no-data encoding
+#: (--l2a-nodata-equal: every difference a pixel-date that is 0 or the fill on every band in
+#: both stores; ``nodata_encoding_check``)
+NINE_BAND_NODATA_HOW = "identical to the nine-band store up to the L2A no-data encoding (0 / fill)"
+#: the acceptances by the light-path gate (``light_gate_passed``)
+LIGHT_GATE_HOWS = (NINE_BAND_HOW, NINE_BAND_NODATA_HOW)
 
 
 def _grid_root(req):
@@ -7323,7 +7356,84 @@ def compare_stores(store, other, bands, log=None, t_block=None, row_block=None):
         b.close()
 
 
-def nine_band_gate(req, log=print):
+def nodata_encoding_check(store, other, bands, t_block=None, row_block=None, max_dates=20):
+    """The pixel-dates where two canonical stores of one site and year differ
+    (any of ``bands``, bitwise, on their common dates and identical grid),
+    split into the NO-DATA ENCODING ones (--l2a-nodata-equal): in BOTH stores
+    every band of ``bands`` is 0 (the Sentinel-2 L2A no-data DN; SCL 0 =
+    NO_DATA) or the store's fill (a chunk the backend did not write) at that
+    pixel-date, and the others (a value, or a real 0 with a valid SCL). Needs
+    SCL among ``bands`` (what says the pixel is no data). Returns a JSON-able
+    record; ``equal_up_to_nodata_encoding``: every difference is encoding."""
+    t0 = time.time()
+    rule = ("a differing pixel-date is no-data ENCODING when, in both stores, every band of "
+            f"{list(bands)} is 0 (L2A no data; SCL 0 = NO_DATA) or the store's fill")
+    out = {"rule": rule, "bands": list(bands)}
+    if "SCL" not in bands:
+        return dict(out, equal_up_to_nodata_encoding=False,
+                    reason="SCL is not compared: no-data cannot be told from a real 0")
+    a, b = zc.open_store(store), zc.open_store(other)
+    try:
+        common = sorted(set(zc.dates(a)) & set(zc.dates(b)))
+        if not common or not zc._same_grid(a, b) or any(x not in a.data_vars or x not in b.data_vars
+                                                         for x in bands):
+            return dict(out, equal_up_to_nodata_encoding=False,
+                        reason="no common date, another grid or a band missing")
+        ia = {d: i for i, d in enumerate(zc.dates(a))}
+        ib = {d: i for i, d in enumerate(zc.dates(b))}
+        fa = {x: zc.fill_of(a[x]) for x in bands}
+        fb = {x: zc.fill_of(b[x]) for x in bands}
+        H = int(a.sizes["y"])
+        tb, rb = int(t_block or zc.CHUNKS["t"]), int(row_block or zc.CHUNKS["y"])
+        n = {"pixel_dates": 0, "differing": 0, "nodata_encoding": 0, "other": 0,
+             "fill_in_store_zero_in_other": 0, "zero_in_store_fill_in_other": 0}
+        dates_other, dates_enc = {}, {}
+        for k in range(0, len(common), tb):
+            sel = common[k:k + tb]
+            for r0 in range(0, H, rb):
+                differ = nod_a = nod_b = None
+                all_fill_a = all_zero_b = all_zero_a = all_fill_b = None
+                for x in bands:
+                    va = np.asarray(a[x].isel(t=[ia[d] for d in sel], y=slice(r0, r0 + rb)).values)
+                    vb = np.asarray(b[x].isel(t=[ib[d] for d in sel], y=slice(r0, r0 + rb)).values)
+                    ne = va != vb
+                    ga = (va == 0) | ((va == fa[x]) if fa[x] is not None else False)
+                    gb = (vb == 0) | ((vb == fb[x]) if fb[x] is not None else False)
+                    fla = (va == fa[x]) if fa[x] is not None else np.zeros(va.shape, bool)
+                    flb = (vb == fb[x]) if fb[x] is not None else np.zeros(vb.shape, bool)
+                    if differ is None:
+                        differ, nod_a, nod_b = ne, ga, gb
+                        all_fill_a, all_zero_b = fla, vb == 0
+                        all_zero_a, all_fill_b = va == 0, flb
+                    else:
+                        differ, nod_a, nod_b = differ | ne, nod_a & ga, nod_b & gb
+                        all_fill_a, all_zero_b = all_fill_a & fla, all_zero_b & (vb == 0)
+                        all_zero_a, all_fill_b = all_zero_a & (va == 0), all_fill_b & flb
+                enc = differ & nod_a & nod_b
+                oth = differ & ~(nod_a & nod_b)
+                n["pixel_dates"] += int(differ.size)
+                n["differing"] += int(differ.sum())
+                n["nodata_encoding"] += int(enc.sum())
+                n["other"] += int(oth.sum())
+                n["fill_in_store_zero_in_other"] += int((differ & all_fill_a & all_zero_b).sum())
+                n["zero_in_store_fill_in_other"] += int((differ & all_zero_a & all_fill_b).sum())
+                for target, m in ((dates_enc, enc), (dates_other, oth)):
+                    per = m.reshape(len(sel), -1).sum(axis=1)
+                    for d, c in zip(sel, per):
+                        if c:
+                            target[d] = target.get(d, 0) + int(c)
+        worst = lambda dd: dict(sorted(dd.items(), key=lambda kv: -kv[1])[:max_dates])  # noqa: E731
+        return dict(out, **n, dates_common=len(common), dates_with_encoding=len(dates_enc),
+                    dates_with_other=len(dates_other), worst_dates_encoding=worst(dates_enc),
+                    worst_dates_other=worst(dates_other),
+                    equal_up_to_nodata_encoding=bool(n["other"] == 0),
+                    seconds=round(time.time() - t0, 1))
+    finally:
+        a.close()
+        b.close()
+
+
+def nine_band_gate(req, log=print, l2a_nodata=False):
     """The LIGHT-PATH GATE of a band subset (module docstring): its store
     against the complete NINE-BAND store of the same site and year under
     ``req.main_root``: ``compare_stores`` on the subset's bands ('identical':
@@ -7333,7 +7443,11 @@ def nine_band_gate(req, log=print):
     baselines per date (where both recorded them). The whole record goes to
     ``<year>.vs_nine_band.json``; returns its summary (``passed``, ``why``),
     or None when there is no such store (nothing to compare: a year without
-    a nine-band store)."""
+    a nine-band store). ``l2a_nodata`` (--l2a-nodata-equal, off by default):
+    a gate that fails on the values alone is checked by
+    ``nodata_encoding_check`` and, when every difference is the encoding of
+    pixel-dates that are no data in both stores, recorded and returned as
+    ``passed_up_to_nodata_encoding`` (``passed`` stays False)."""
     if not req.is_subset or req.main_root is None:
         return None
     other = zc.store_path(req.site, req.year, req.main_root)
@@ -7386,6 +7500,21 @@ def nine_band_gate(req, log=print):
                        and cmp_["dates"]["common"] > 0)
     was = _json_attr(theirs.get("verification"))
     checks["nine_band_acceptance"] = was.get("how") if isinstance(was, dict) else None
+    # --l2a-nodata-equal (off by default): the values differ, nothing else (the same dates, grid,
+    # offset, delivered shape and input baselines): are the differences only the encoding of
+    # pixel-dates that are no data in both stores (L2A 0 against the fill)? (nodata_encoding_check)
+    enc, nodata_ok = None, False
+    if l2a_nodata and not passed:
+        d = cmp_["dates"]
+        only_values = bool(cmp_["verdict"] == "differs" and cmp_.get("grid_identical")
+                           and not d["only_store"] and not d["only_other"] and not layout_bad
+                           and checks["input_baselines"]["equal"] is not False)
+        if only_values:
+            enc = nodata_encoding_check(req.store, other, req.bands)
+            nodata_ok = bool(enc.get("equal_up_to_nodata_encoding"))
+        else:
+            enc = {"checked": False, "reason": "not only the values differ (dates, grid, offset, "
+                                               "delivered shape or input baselines)"}
     why = ("; ".join(bad) if bad else
            f"{cmp_['dates']['common']} = {cmp_['dates']['other']} dates, "
            f"{' '.join(req.bands)} bitwise equal on every pixel of every date, offset "
@@ -7394,15 +7523,32 @@ def nine_band_gate(req, log=print):
            + ("equal" if checks["input_baselines"]["equal"] else "not recorded on one side")
            + (f"; the nine-band store was accepted as '{checks['nine_band_acceptance']}'"
               if checks["nine_band_acceptance"] else ""))
+    if nodata_ok:
+        why = (f"{cmp_['dates']['common']} = {cmp_['dates']['other']} dates, the same offset "
+               f"{checks['delivered_offset_px']['subset']}, delivered shape "
+               f"{checks['delivered_shape_px']['subset']} and input baselines; "
+               f"{' '.join(req.bands)} bitwise equal except {enc['differing']} pixel-dates (on "
+               f"{enc['dates_with_encoding']} dates) that are no data in both stores, encoded as "
+               f"0 in one and the fill in the other ({enc['fill_in_store_zero_in_other']} fill in "
+               f"the subset / 0 in the nine bands, {enc['zero_in_store_fill_in_other']} the reverse); "
+               f"no other difference"
+               + (f"; the nine-band store was accepted as '{checks['nine_band_acceptance']}'"
+                  if checks["nine_band_acceptance"] else ""))
     path = req.sidecar("vs_nine_band.json")
-    zc.write_json({"site": req.site, "year": req.year, "store": str(req.store),
-                   "nine_band_store": str(other), "bands": list(req.bands), "passed": passed,
-                   "passed_on_common_dates": passed or common_only, "dates_differ_only": common_only,
-                   "layout_differs": layout_bad, "why": why, "checks": checks,
-                   "comparison": cmp_, "checked_utc": utcnow().isoformat(timespec="seconds")},
+    extra = ({"passed_up_to_nodata_encoding": nodata_ok, "nodata_encoding": enc,
+              "l2a_nodata_equal": True} if l2a_nodata else {})
+    zc.write_json(dict({"site": req.site, "year": req.year, "store": str(req.store),
+                        "nine_band_store": str(other), "bands": list(req.bands), "passed": passed,
+                        "passed_on_common_dates": passed or common_only,
+                        "dates_differ_only": common_only, "layout_differs": layout_bad, "why": why,
+                        "checks": checks, "comparison": cmp_,
+                        "checked_utc": utcnow().isoformat(timespec="seconds")}, **extra),
                   path)
     if passed:
         log(f"light-path gate PASSED: {why} ({path.name})")
+    elif nodata_ok:
+        log(f"light-path gate PASSED UP TO THE NO-DATA ENCODING (--l2a-nodata-equal): {why} "
+            f"({path.name})")
     elif common_only:
         log(f"LIGHT-PATH GATE FAILED on the dates only: {why}. Every common date is bitwise equal "
             f"with the same layout and input baselines, which lifts the wait of the years without a "
@@ -7416,22 +7562,32 @@ def nine_band_gate(req, log=print):
     else:
         log(f"LIGHT-PATH GATE FAILED: {why}. Do not download years without reference with this band "
             f"subset before this is explained ({path.name})")
-    return {"store": str(other), "passed": passed, "why": why, "verdict": cmp_["verdict"],
-            "passed_on_common_dates": passed or common_only, "layout_differs": layout_bad,
-            "dates": {k: cmp_["dates"][k] for k in ("store", "other", "common")},
-            "checks": checks, "report": str(path)}
+    if l2a_nodata and not passed and not nodata_ok:
+        log("  --l2a-nodata-equal: " + (
+            f"{enc.get('other')} differing pixel-date(s) are NOT no data in both stores (worst dates "
+            f"{enc.get('worst_dates_other')}); {enc.get('nodata_encoding')} are encoding only"
+            if enc.get("checked", True) and "other" in enc else
+            f"not applied ({enc.get('reason')})"))
+    out = {"store": str(other), "passed": passed, "why": why, "verdict": cmp_["verdict"],
+           "passed_on_common_dates": passed or common_only, "layout_differs": layout_bad,
+           "dates": {k: cmp_["dates"][k] for k in ("store", "other", "common")},
+           "checks": checks, "report": str(path)}
+    if l2a_nodata:
+        out["passed_up_to_nodata_encoding"] = nodata_ok
+    return out
 
 
 def light_gate_passed(root, bands):
     """The complete stores of ``bands`` under ``root`` (any site) accepted by
-    the light-path gate (``verification`` how NINE_BAND_HOW): ``[path]``."""
+    the light-path gate (``verification`` how NINE_BAND_HOW, or
+    NINE_BAND_NODATA_HOW with --l2a-nodata-equal): ``[path]``."""
     out = []
     for site, years in zc.available(root).items():
         for y in years:
             p = zc.store_path(site, y, root)
             attrs = zc.store_attrs(p)
             acc = _json_attr(attrs.get("verification"))
-            if (isinstance(acc, dict) and acc.get("how") == NINE_BAND_HOW
+            if (isinstance(acc, dict) and acc.get("how") in LIGHT_GATE_HOWS
                     and list(_json_attr(attrs.get("bands")) or []) == list(bands)):
                 out.append(str(p))
     return out
@@ -7583,8 +7739,9 @@ def decide(req, rep):
     (``verification_decision``); a band subset whose year has a complete
     nine-band store is accepted as NINE_BAND_HOW when its light-path gate
     passed (``rep['nine_band_store']``, ``nine_band_gate``: it holds what an
-    accepted store holds), and otherwise decided by the rule, the gate's
-    failure said."""
+    accepted store holds), as NINE_BAND_NODATA_HOW when it passed up to the
+    no-data encoding (only with --l2a-nodata-equal), and otherwise decided by
+    the rule, the gate's failure said."""
     ok, how, why = verification_decision(rep)
     gate = rep.get("nine_band_store") if req.is_subset else None
     if not gate:
@@ -7592,6 +7749,10 @@ def decide(req, rep):
     if gate.get("passed"):
         return True, NINE_BAND_HOW, (f"the light-path gate passed against {gate.get('store')} "
                                      f"({gate.get('why')}); against the reference: {how} ({why})")
+    if gate.get("passed_up_to_nodata_encoding"):        # only with --l2a-nodata-equal
+        return True, NINE_BAND_NODATA_HOW, (
+            f"--l2a-nodata-equal: the light-path gate passed up to the no-data encoding against "
+            f"{gate.get('store')} ({gate.get('why')}); against the reference: {how} ({why})")
     return ok, how, f"{why}; the LIGHT-PATH GATE FAILED ({gate.get('why')})"
 
 
@@ -8318,7 +8479,7 @@ def dry_run(reqs, ctx):
     return 0
 
 
-def verify_only(reqs):
+def verify_only(reqs, ctx=None):
     bad = 0
     for req in reqs:
         log = make_log(req)
@@ -8333,11 +8494,12 @@ def verify_only(reqs):
         old = pre_registration_warning(req)
         if old:
             log(old)
-        rep = verify_request(req, log)
+        rep = verify_request(req, log, ctx)
         ok, how, why = decide(req, rep)
         was = _json_attr(zc.store_attrs(req.store).get("verification"))
         flagged = (not ok and isinstance(was, dict)
-                   and was.get("how") == "accepted with --accept-differences")
+                   and was.get("how") in ("accepted with --accept-differences",
+                                          NINE_BAND_NODATA_HOW))
         # the decision goes into verify.json again, with the one made at writing
         rep["acceptance"] = {"accepted": ok or flagged, "how": was.get("how") if flagged else how,
                              "why": why, "rule": dict(VERIFY_MIN_EQUAL),
@@ -8347,8 +8509,10 @@ def verify_only(reqs):
         log(f"verification decision: {how} ({why})"
             + (f"; the store was accepted at writing: {was.get('how')}"
                if not ok and isinstance(was, dict) else "")
-            + ("; accepted with --accept-differences, as recorded: not counted as a failure"
-               if flagged else ""))
+            + (("; accepted with --accept-differences, as recorded: not counted as a failure"
+                if was.get("how") == "accepted with --accept-differences" else
+                f"; accepted at writing as '{was.get('how')}' (--l2a-nodata-equal), as recorded: not "
+                f"counted as a failure") if flagged else ""))
         ds = zc.open_store(req.store)
         dates = zc.dates(ds)
         ds.close()
@@ -8413,6 +8577,14 @@ def parse_args(argv=None):
                          "no store of these bands has passed the light-path gate yet (default: "
                          "refused before any job; the cheap gate year comes first, e.g. escalda "
                          "2023); recorded in the store")
+    ap.add_argument("--l2a-nodata-equal", action="store_true",
+                    help="with --bands: the light-path gate may pass UP TO THE NO-DATA ENCODING: "
+                         "every pixel-date where the subset and the nine-band store differ is 0 (L2A "
+                         "no data; SCL 0 = NO_DATA) or the fill on every compared band in both "
+                         "stores (a chunk one delivery wrote as zeros, the other did not write); the "
+                         "store is then accepted as '" + NINE_BAND_NODATA_HOW + "' (recorded, with "
+                         "the counts in <year>.vs_nine_band.json) and lifts the wait of the years "
+                         "without a nine-band store. Default: bitwise, the fill included")
     ap.add_argument("--extraction-gate-dir", default=None,
                     help=f"with --bands: where experiments.light_to_extraction writes its 2023 "
                          f"extraction gates <site>_gate_2023.json (default {EXTRACTION_GATE_DIR}); a "
@@ -8514,6 +8686,8 @@ def parse_args(argv=None):
     if (a.store_root is not None or a.without_light_gate) and a.bands is None:
         ap.error("--store-root and --without-light-gate concern a band subset's stores: they go "
                  "with --bands (a subset of the nine bands)")
+    if a.l2a_nodata_equal and a.bands is None:
+        ap.error("--l2a-nodata-equal concerns a band subset's light-path gate: it goes with --bands")
     if (a.extraction_gate_dir is not None or a.without_extraction_gate) and a.bands is None:
         ap.error("--extraction-gate-dir and --without-extraction-gate concern a band subset's "
                  "purchases: they go with --bands")
@@ -8605,7 +8779,7 @@ def main(argv=None):
     if a.dry_run:
         return dry_run(reqs, ctx)
     if a.verify_only:
-        return verify_only(reqs)
+        return verify_only(reqs, ctx)
     refused = [m for m in (refuse_snapped(r) for r in reqs if not r.complete()) if m]
     if refused and not ctx.allow_snapped:
         print("REFUSED, nothing started (no job, no download):", flush=True)

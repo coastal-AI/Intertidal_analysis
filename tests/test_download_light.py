@@ -13,7 +13,9 @@ confirm it on a delivery of its array shape, and that its SCL is checked at
 the 20 m phases; the dry run's input megapixels and credit estimate,
 from the measured cost per megapixel; the converter's 2023 extraction gate
 before a purchase at its sites, a light-path gate failing on the dates
-alone, the nine-band root guard, and --expect-account (a fake connection). The nine-band behaviour is
+alone, the nine-band root guard, and --expect-account (a fake connection);
+the gate up to the L2A no-data encoding (--l2a-nodata-equal: opt-in, never
+hiding a value or a dark pixel). The nine-band behaviour is
 pinned by tests/test_download_cube_zarr.py and tests/test_zarr_angles.py,
 which run unchanged. Frames of 64 x 64 px, deliveries of at most 256 x 256
 px, at most 5 dates.
@@ -614,6 +616,130 @@ def test_a_gate_failing_on_the_dates_alone_lifts_the_wait(tmp_path, wkt):
     # the nine bands never go into a root of band subsets (refused before anything)
     assert dcz.nine_band_root_problem(cubes) is None
     assert "is a band-subset store" in dcz.nine_band_root_problem(light)
+
+
+FILL16 = -32768                                 # the stores' int16 fill
+
+
+def _nodata_pair(tmp_path, wkt, nine_tweak=None, light_tweak=None):
+    """A nine-band escalda 2023 store whose date 1 holds a 4 x 4 block of
+    L2A no data written as zeros (every band 0: a chunk the backend wrote),
+    and the B03 B08 SCL store of the same delivery where that block is the
+    fill (the chunk it did not write), as found at escalda 2023. Same layout
+    and baselines. ``nine_tweak(data)`` changes the delivery of both,
+    ``light_tweak(data)`` the subset's bands only."""
+    cubes, light = tmp_path / "cubes", tmp_path / "cubes_light"
+    t, y, x, data = synth(2023, n=3, H=8, W=8)
+    for b in data:
+        data[b][1, 4:8, 4:8] = 0
+    if nine_tweak:
+        nine_tweak(data)
+    lay = {"delivered_offset_px": json.dumps([5, 1]), "delivered_shape_px": json.dumps([8, 8])}
+    nine = make_request(cubes, year=2023, site="escalda")
+    place(nine, [("a.zarr", write_raw_v2(tmp_path / "s9" / "a.zarr", t, y, x, data, wkt), "x")])
+    normalise_and_write(nine)
+    dcz.mark_complete(nine.store, lay)
+    sub_data = {b: data[b].copy() for b in LIGHT}
+    for b in LIGHT:
+        sub_data[b][1, 4:8, 4:8] = FILL16
+    if light_tweak:
+        light_tweak(sub_data)
+    sub = make_request(light, year=2023, site="escalda")
+    sub.bands, sub.main_root = LIGHT, cubes
+    place(sub, [("a.zarr", write_raw_v2(tmp_path / "sl" / "a.zarr", t, y, x, sub_data, wkt), "x")])
+    normalise_and_write(sub)
+    dcz.mark_complete(sub.store, lay)
+    return cubes, light, sub
+
+
+def test_the_gate_up_to_the_no_data_encoding_is_opt_in(tmp_path, monkeypatch, wkt):
+    """The escalda 2023 case: the subset and the nine bands differ only on
+    pixel-dates that are no data in both, as 0 in one store and the fill in
+    the other. Without --l2a-nodata-equal the gate fails as before (nothing
+    new recorded); with it the gate passes UP TO THE NO-DATA ENCODING (the
+    counts recorded), the store is accepted as NINE_BAND_NODATA_HOW through
+    the run's verification, and the years without a nine-band store may be
+    bought. A real 0 of a dark pixel (SCL valid) or a value still fails."""
+    cubes, light, sub = _nodata_pair(tmp_path, wkt)
+    msgs = []
+    gate = dcz.nine_band_gate(sub, log=msgs.append)                      # the default: bitwise
+    assert not gate["passed"] and "passed_up_to_nodata_encoding" not in gate
+    assert not gate["passed_on_common_dates"] and gate["layout_differs"] == []
+    rec = json.loads(sub.sidecar("vs_nine_band.json").read_text())
+    assert "nodata_encoding" not in rec and "passed_up_to_nodata_encoding" not in rec
+    assert all(s["differing"] == 16 for s in rec["comparison"]["per_band"].values())
+    assert dcz.decide(sub, {"nine_band_store": gate, "verdict": "differs"})[1] not in dcz.LIGHT_GATE_HOWS
+    assert "LIGHT-PATH GATE FAILED: the two stores differ" in "\n".join(msgs)
+    # --l2a-nodata-equal: the gate passes up to the encoding
+    gate = dcz.nine_band_gate(sub, log=msgs.append, l2a_nodata=True)
+    assert not gate["passed"] and gate["passed_up_to_nodata_encoding"]
+    rec = json.loads(sub.sidecar("vs_nine_band.json").read_text())
+    enc = rec["nodata_encoding"]
+    assert rec["passed_up_to_nodata_encoding"] and rec["l2a_nodata_equal"]
+    assert enc["differing"] == enc["nodata_encoding"] == 16 and enc["other"] == 0
+    assert enc["fill_in_store_zero_in_other"] == 16 and enc["zero_in_store_fill_in_other"] == 0
+    assert enc["worst_dates_encoding"] == {"2023-01-20": 16} and enc["dates_with_other"] == 0
+    assert "PASSED UP TO THE NO-DATA ENCODING" in msgs[-1] and "16 pixel-dates" in msgs[-1]
+    ok, how, why = dcz.decide(sub, {"nine_band_store": gate, "verdict": "differs"})
+    assert ok and how == dcz.NINE_BAND_NODATA_HOW and "--l2a-nodata-equal" in why
+    # through the run's verification (the flag read from the command line), no reference here
+    monkeypatch.setitem(dcz.SITE_CONFIG["escalda"], "reference", "no/such/reference.nc")
+    ctx = dcz.Context(dcz.parse_args(["escalda", "--years", "2023", "--bands", "B03,B08,SCL",
+                                      "--l2a-nodata-equal"]))
+    assert ctx.l2a_nodata_equal and not dcz.Context().l2a_nodata_equal
+    rep = dcz.verify_and_complete(ctx, sub, msgs.append)
+    assert rep["acceptance"]["how"] == dcz.NINE_BAND_NODATA_HOW
+    acc = json.loads(_attrs(sub.store)["verification"])
+    assert acc["how"] == dcz.NINE_BAND_NODATA_HOW and zc.is_complete(sub.store)
+    assert dcz.light_gate_passed(light, LIGHT) == [str(sub.store)]
+    old = dcz.Request(site="villaviciosa", year=2021, start="2021-01-01", end="2022-01-01",
+                      bbox={}, root=light, bands=LIGHT, main_root=cubes)
+    assert dcz.subset_gate_problem(old, dcz.Context()) is None
+    # --verify-only with the flag decides the same; without it, a rule that refuses (as the
+    # reference does at escalda 2023) keeps the recorded acceptance: not counted as a failure
+    zc.write_json({str(d): f"{d}T10:50:00" for d in ("2023-01-03", "2023-01-20", "2023-02-06")},
+                  zc.overpass_path("escalda", light))
+    assert dcz.verify_only([sub], ctx) == 0
+    vo = json.loads(sub.sidecar("verify.json").read_text())["acceptance"]
+    assert vo["accepted"] and vo["how"] == dcz.NINE_BAND_NODATA_HOW and vo["by"] == "--verify-only"
+    monkeypatch.setattr(dcz, "verification_decision", lambda rep: (False, "refused", "the rule"))
+    msgs.clear()
+    assert dcz.verify_only([sub]) == 0
+    vo = json.loads(sub.sidecar("verify.json").read_text())["acceptance"]
+    assert vo["accepted"] and vo["how"] == dcz.NINE_BAND_NODATA_HOW
+    assert vo["at_writing"]["how"] == dcz.NINE_BAND_NODATA_HOW
+    with pytest.raises(SystemExit):
+        dcz.parse_args(["escalda", "--l2a-nodata-equal"])             # goes with --bands
+
+
+@pytest.mark.parametrize("what", ["dark pixel", "value"])
+def test_the_no_data_encoding_never_hides_data(tmp_path, wkt, what):
+    """--l2a-nodata-equal counts a difference as encoding only when both
+    stores are 0 or the fill on EVERY band there: a dark pixel (B03 0 with a
+    valid SCL and B08) that one store lost, or a value off by one, fails."""
+    def dark(d):                            # both deliveries: dark water, B03 0, B08 and SCL valid
+        d["B03"][2, 0, 7], d["B08"][2, 0, 7], d["SCL"][2, 0, 7] = 0, 500, 6
+
+    def tweak(d):
+        if what == "dark pixel":            # the subset lost it: the fill on its three bands
+            for b in LIGHT:
+                d[b][2, 0, 7] = FILL16
+        else:
+            d["B08"][2, 0, 7] += 1
+
+    cubes, light, sub = _nodata_pair(tmp_path, wkt, nine_tweak=dark, light_tweak=tweak)
+    ds = zc.open_store(zc.store_path("escalda", 2023, cubes))
+    assert [int(ds[b].isel(t=2, y=0, x=7)) for b in LIGHT] == [0, 500, 6]
+    ds.close()
+    msgs = []
+    gate = dcz.nine_band_gate(sub, log=msgs.append, l2a_nodata=True)
+    assert not gate["passed"] and not gate["passed_up_to_nodata_encoding"]
+    enc = json.loads(sub.sidecar("vs_nine_band.json").read_text())["nodata_encoding"]
+    assert enc["other"] == 1 and enc["nodata_encoding"] == 16
+    assert enc["worst_dates_other"] == {"2023-02-06": 1}
+    assert "1 differing pixel-date(s) are NOT no data in both stores" in msgs[-1]
+    assert dcz.decide(sub, {"nine_band_store": gate, "verdict": "differs"})[1] not in dcz.LIGHT_GATE_HOWS
+    assert dcz.light_gate_passed(light, LIGHT) == []
 
 
 def test_expect_account_stops_before_any_job(tmp_path, monkeypatch, capsys, wkt):
