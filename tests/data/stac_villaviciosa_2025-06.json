@@ -1,0 +1,2059 @@
+{
+ "_recorded": {
+  "body": {
+   "bbox": [
+    -5.46,
+    43.47,
+    -5.35,
+    43.55
+   ],
+   "collections": [
+    "sentinel-2-l2a"
+   ],
+   "datetime": "2025-06-01T00:00:00Z/2025-06-15T23:59:59Z",
+   "limit": 50
+  },
+  "endpoint": "https://stac.dataspace.copernicus.eu/v1/search",
+  "recorded_utc": "2026-10-14",
+  "trimmed": "assets reduced to B02_10m (proj fields); properties statistics, auth:schemes, storage:schemes dropped; links dropped"
+ },
+ "features": [
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.434637584020745,
+    44.242979841290044
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -4.434637584020745,
+       44.242979841290044
+      ],
+      [
+       -4.830829383166458,
+       43.24814646765288
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332706
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.434637584020745,
+       44.242979841290044
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250614T112131_N0511_R037_T30TUP_20250614T161201",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-14T17:03:46.000000Z",
+    "datetime": "2025-06-14T11:21:31.024Z",
+    "end_datetime": "2025-06-14T11:21:31.024Z",
+    "eo:cloud_cover": 99.999744,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250614T161201_S20250614T112706_N05.11",
+    "eopf:datatake_id": "GS2A_20250614T112131_052115_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-14T17:03:46.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-14T16:12:01.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-14T17:13:24.525184Z",
+    "sat:absolute_orbit": 52115,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-14T11:21:31.024Z",
+    "updated": "2025-06-14T17:13:24.525184Z",
+    "view:azimuth": 287.6900191027011,
+    "view:incidence_angle": 9.116750632879459,
+    "view:sun_azimuth": 149.179893037202,
+    "view:sun_elevation": 67.0844012091366
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.537264522308052,
+    43.201211355403785,
+    -5.1242610537248,
+    44.22597512802537
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ],
+      [
+       -5.1242610537248,
+       44.18762158427181
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.537264522308052,
+       43.238273156784096
+      ],
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250614T112131_N0511_R037_T29TQJ_20250614T161201",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-14T17:04:05.000000Z",
+    "datetime": "2025-06-14T11:21:31.024Z",
+    "end_datetime": "2025-06-14T11:21:31.024Z",
+    "eo:cloud_cover": 99.999821,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250614T161201_S20250614T112706_N05.11",
+    "eopf:datatake_id": "GS2A_20250614T112131_052115_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-14T17:04:05.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-14T16:12:01.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-14T17:12:36.542656Z",
+    "sat:absolute_orbit": 52115,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-14T11:21:31.024Z",
+    "updated": "2025-06-14T17:12:36.542656Z",
+    "view:azimuth": 269.0524882521696,
+    "view:incidence_angle": 4.783560476454687,
+    "view:sun_azimuth": 146.969527853684,
+    "view:sun_elevation": 66.71951987159059
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.111316985807703,
+    44.24783068396879
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.129762713238511,
+       44.24783068396879
+      ],
+      [
+       -4.111316985807703,
+       43.25939191053712
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332707
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2B_MSIL2A_20250614T110619_N0511_R137_T30TUP_20250614T140230",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-14T14:36:20.000000Z",
+    "datetime": "2025-06-14T11:06:19.024Z",
+    "end_datetime": "2025-06-14T11:06:19.024Z",
+    "eo:cloud_cover": 99.998844,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2B_OPER_MSI_L2A_DS_2BPS_20250614T140230_S20250614T111542_N05.11",
+    "eopf:datatake_id": "GS2B_20250614T110619_043206_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-14T14:36:20.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2b",
+    "processing:datetime": "2025-06-14T14:02:30.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-14T14:40:20.417266Z",
+    "sat:absolute_orbit": 43206,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2017-013A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-14T11:06:19.024Z",
+    "updated": "2025-06-14T14:40:20.417266Z",
+    "view:azimuth": 103.58596719022177,
+    "view:incidence_angle": 5.291606402013444,
+    "view:sun_azimuth": 143.857722447527,
+    "view:sun_elevation": 66.0651540774525
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.060521728958072,
+    43.201211355403785,
+    -5.1242610537248,
+    44.20486432247017
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.060521728958072,
+       43.22518404152089
+      ],
+      [
+       -5.741151416063663,
+       44.20486432247017
+      ],
+      [
+       -5.1242610537248,
+       44.1876215842718
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.060521728958072,
+       43.22518404152089
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2B_MSIL2A_20250614T110619_N0511_R137_T29TQJ_20250614T140230",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-14T14:35:23.000000Z",
+    "datetime": "2025-06-14T11:06:19.024Z",
+    "end_datetime": "2025-06-14T11:06:19.024Z",
+    "eo:cloud_cover": 99.999756,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2B_OPER_MSI_L2A_DS_2BPS_20250614T140230_S20250614T111542_N05.11",
+    "eopf:datatake_id": "GS2B_20250614T110619_043206_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-14T14:35:23.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2b",
+    "processing:datetime": "2025-06-14T14:02:30.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-14T14:38:42.454220Z",
+    "sat:absolute_orbit": 43206,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2017-013A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-14T11:06:19.024Z",
+    "updated": "2025-06-14T14:38:42.454220Z",
+    "view:azimuth": 105.24460914334293,
+    "view:incidence_angle": 9.459711923121931,
+    "view:sun_azimuth": 141.798178749627,
+    "view:sun_elevation": 65.6425081021741
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.445439893546391,
+    44.24280796650108
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -4.445439893546391,
+       44.24280796650108
+      ],
+      [
+       -4.839535618204273,
+       43.248010395683565
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332706
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.445439893546391,
+       44.24280796650108
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2C_MSIL2A_20250612T112131_N0511_R037_T30TUP_20250612T150504",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-12T15:56:30.000000Z",
+    "datetime": "2025-06-12T11:21:31.025Z",
+    "end_datetime": "2025-06-12T11:21:31.025Z",
+    "eo:cloud_cover": 37.211779,
+    "eo:snow_cover": 2.2e-05,
+    "eopf:datastrip_id": "S2C_OPER_MSI_L2A_DS_2CPS_20250612T150504_S20250612T112401_N05.11",
+    "eopf:datatake_id": "GS2C_20250612T112131_004011_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-12T15:56:30.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2c",
+    "processing:datetime": "2025-06-12T15:05:04.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-12T16:02:01.533724Z",
+    "sat:absolute_orbit": 4011,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2024-157A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-12T11:21:31.025Z",
+    "updated": "2025-06-12T16:02:01.533724Z",
+    "view:azimuth": 287.79573084064475,
+    "view:incidence_angle": 9.117549728528015,
+    "view:sun_azimuth": 149.563419582281,
+    "view:sun_elevation": 67.0352708923909
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.537264522308052,
+    43.201211355403785,
+    -5.1242610537248,
+    44.22597512802537
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ],
+      [
+       -5.1242610537248,
+       44.18762158427181
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.537264522308052,
+       43.238273156784096
+      ],
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2C_MSIL2A_20250612T112131_N0511_R037_T29TQJ_20250612T150504",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-12T15:57:37.000000Z",
+    "datetime": "2025-06-12T11:21:31.025Z",
+    "end_datetime": "2025-06-12T11:21:31.025Z",
+    "eo:cloud_cover": 44.53105,
+    "eo:snow_cover": 9e-05,
+    "eopf:datastrip_id": "S2C_OPER_MSI_L2A_DS_2CPS_20250612T150504_S20250612T112401_N05.11",
+    "eopf:datatake_id": "GS2C_20250612T112131_004011_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-12T15:57:37.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2c",
+    "processing:datetime": "2025-06-12T15:05:04.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-12T16:11:20.367269Z",
+    "sat:absolute_orbit": 4011,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2024-157A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-12T11:21:31.025Z",
+    "updated": "2025-06-12T16:11:20.367269Z",
+    "view:azimuth": 270.26011489905176,
+    "view:incidence_angle": 4.7963991410379885,
+    "view:sun_azimuth": 147.350917168008,
+    "view:sun_elevation": 66.6747018528163
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.111316985807703,
+    44.24783068396879
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.129762713238511,
+       44.24783068396879
+      ],
+      [
+       -4.111316985807703,
+       43.25939191053712
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332707
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250611T110711_N0511_R137_T30TUP_20250611T175017",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-11T18:40:38.000000Z",
+    "datetime": "2025-06-11T11:07:11.024Z",
+    "end_datetime": "2025-06-11T11:07:11.024Z",
+    "eo:cloud_cover": 99.999994,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250611T175017_S20250611T111248_N05.11",
+    "eopf:datatake_id": "GS2A_20250611T110711_052072_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-11T18:40:38.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-11T17:50:17.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-11T18:47:30.064328Z",
+    "sat:absolute_orbit": 52072,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-11T11:07:11.024Z",
+    "updated": "2025-06-11T18:47:30.064328Z",
+    "view:azimuth": 102.22512913053775,
+    "view:incidence_angle": 5.232779088045375,
+    "view:sun_azimuth": 144.501151307881,
+    "view:sun_elevation": 66.0116831463971
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.071112869381275,
+    43.201211355403785,
+    -5.1242610537248,
+    44.20515615976461
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.071112869381275,
+       43.22547482443298
+      ],
+      [
+       -5.751592426780276,
+       44.20515615976461
+      ],
+      [
+       -5.1242610537248,
+       44.1876215842718
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.071112869381275,
+       43.22547482443298
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250611T110711_N0511_R137_T29TQJ_20250611T175017",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-11T18:39:32.000000Z",
+    "datetime": "2025-06-11T11:07:11.024Z",
+    "end_datetime": "2025-06-11T11:07:11.024Z",
+    "eo:cloud_cover": 99.999988,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250611T175017_S20250611T111248_N05.11",
+    "eopf:datatake_id": "GS2A_20250611T110711_052072_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-11T18:39:32.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-11T17:50:17.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-11T18:44:05.969672Z",
+    "sat:absolute_orbit": 52072,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-11T11:07:11.024Z",
+    "updated": "2025-06-11T18:44:05.969672Z",
+    "view:azimuth": 104.69245657075624,
+    "view:incidence_angle": 9.435995739330801,
+    "view:sun_azimuth": 142.434341895327,
+    "view:sun_elevation": 65.5958342221212
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.111316985807703,
+    44.24783068396879
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.129762713238511,
+       44.24783068396879
+      ],
+      [
+       -4.111316985807703,
+       43.25939191053712
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332707
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2C_MSIL2A_20250609T110641_N0511_R137_T30TUP_20250609T162715",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-09T17:22:42.000000Z",
+    "datetime": "2025-06-09T11:06:41.025Z",
+    "end_datetime": "2025-06-09T11:06:41.025Z",
+    "eo:cloud_cover": 55.345637,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2C_OPER_MSI_L2A_DS_2CPS_20250609T162715_S20250609T111905_N05.11",
+    "eopf:datatake_id": "GS2C_20250609T110641_003968_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-09T17:22:42.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2c",
+    "processing:datetime": "2025-06-09T16:27:15.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-09T17:28:59.420854Z",
+    "sat:absolute_orbit": 3968,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2024-157A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-09T11:06:41.025Z",
+    "updated": "2025-06-09T17:28:59.420854Z",
+    "view:azimuth": 102.27621418200874,
+    "view:incidence_angle": 5.224377251098974,
+    "view:sun_azimuth": 144.907063730292,
+    "view:sun_elevation": 65.9323382709991
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.081049251419777,
+    43.201211355403785,
+    -5.1242610537248,
+    44.205432782736395
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.081049251419777,
+       43.225747630758775
+      ],
+      [
+       -5.761489117394612,
+       44.205432782736395
+      ],
+      [
+       -5.1242610537248,
+       44.1876215842718
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.081049251419777,
+       43.225747630758775
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2C_MSIL2A_20250609T110641_N0511_R137_T29TQJ_20250609T162715",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-09T17:22:56.000000Z",
+    "datetime": "2025-06-09T11:06:41.025Z",
+    "end_datetime": "2025-06-09T11:06:41.025Z",
+    "eo:cloud_cover": 83.315682,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2C_OPER_MSI_L2A_DS_2CPS_20250609T162715_S20250609T111905_N05.11",
+    "eopf:datatake_id": "GS2C_20250609T110641_003968_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-09T17:22:56.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2c",
+    "processing:datetime": "2025-06-09T16:27:15.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-09T17:29:29.986698Z",
+    "sat:absolute_orbit": 3968,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2024-157A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-09T11:06:41.025Z",
+    "updated": "2025-06-09T17:29:29.986698Z",
+    "view:azimuth": 104.69517620378049,
+    "view:incidence_angle": 9.459521708810165,
+    "view:sun_azimuth": 142.838754505471,
+    "view:sun_elevation": 65.5208433464303
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.431205024502606,
+    44.24303445650371
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -4.431205024502605,
+       44.24303445650371
+      ],
+      [
+       -4.827003882230171,
+       43.248206257383316
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332706
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.431205024502605,
+       44.24303445650371
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2B_MSIL2A_20250607T112109_N0511_R037_T30TUP_20250607T133245",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-07T14:04:01.000000Z",
+    "datetime": "2025-06-07T11:21:09.024Z",
+    "end_datetime": "2025-06-07T11:21:09.024Z",
+    "eo:cloud_cover": 18.482792,
+    "eo:snow_cover": 0.000303,
+    "eopf:datastrip_id": "S2B_OPER_MSI_L2A_DS_2BPS_20250607T133245_S20250607T112112_N05.11",
+    "eopf:datatake_id": "GS2B_20250607T112109_043106_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-07T14:04:01.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2b",
+    "processing:datetime": "2025-06-07T13:32:45.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-07T14:09:25.136450Z",
+    "sat:absolute_orbit": 43106,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2017-013A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-07T11:21:09.024Z",
+    "updated": "2025-06-07T14:09:25.136450Z",
+    "view:azimuth": 287.0053720594587,
+    "view:incidence_angle": 9.106293720892246,
+    "view:sun_azimuth": 150.296505872149,
+    "view:sun_elevation": 66.7442024304185
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.537264522308052,
+    43.201211355403785,
+    -5.1242610537248,
+    44.22597512802537
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ],
+      [
+       -5.1242610537248,
+       44.18762158427181
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.537264522308052,
+       43.238273156784096
+      ],
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2B_MSIL2A_20250607T112109_N0511_R037_T29TQJ_20250607T133245",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-07T14:14:02.000000Z",
+    "datetime": "2025-06-07T11:21:09.024Z",
+    "end_datetime": "2025-06-07T11:21:09.024Z",
+    "eo:cloud_cover": 42.32682,
+    "eo:snow_cover": 0.001161,
+    "eopf:datastrip_id": "S2B_OPER_MSI_L2A_DS_2BPS_20250607T133245_S20250607T112112_N05.11",
+    "eopf:datatake_id": "GS2B_20250607T112109_043106_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-07T14:14:02.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2b",
+    "processing:datetime": "2025-06-07T13:32:45.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:software": {
+     "eometadatatool": "250606095241+dirty"
+    },
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-07T14:20:10.044269Z",
+    "sat:absolute_orbit": 43106,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2017-013A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-07T11:21:09.024Z",
+    "updated": "2025-06-07T14:20:10.044269Z",
+    "view:azimuth": 267.49181256758294,
+    "view:incidence_angle": 4.783475567596234,
+    "view:sun_azimuth": 148.093974112372,
+    "view:sun_elevation": 66.3919480304699
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.447133964296777,
+    44.24278101226023
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -4.447133964296776,
+       44.24278101226023
+      ],
+      [
+       -4.841151712526701,
+       43.24798513733296
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332706
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.447133964296776,
+       44.24278101226023
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250604T112131_N0511_R037_T30TUP_20250604T162818",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-04T17:16:51.000000Z",
+    "datetime": "2025-06-04T11:21:31.024Z",
+    "end_datetime": "2025-06-04T11:21:31.024Z",
+    "eo:cloud_cover": 98.348588,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250604T162818_S20250604T112908_N05.11",
+    "eopf:datatake_id": "GS2A_20250604T112131_051972_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-04T17:16:51.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-04T16:28:18.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-04T17:28:14.153210Z",
+    "sat:absolute_orbit": 51972,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-04T11:21:31.024Z",
+    "updated": "2025-06-04T17:28:14.153210Z",
+    "view:azimuth": 287.70075333446863,
+    "view:incidence_angle": 9.166031070243735,
+    "view:sun_azimuth": 151.042362042848,
+    "view:sun_elevation": 66.532728943103
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.537264522308052,
+    43.201211355403785,
+    -5.1242610537248,
+    44.22597512802537
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ],
+      [
+       -5.1242610537248,
+       44.18762158427181
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.537264522308052,
+       43.238273156784096
+      ],
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250604T112131_N0511_R037_T29TQJ_20250604T162818",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-04T17:17:14.000000Z",
+    "datetime": "2025-06-04T11:21:31.024Z",
+    "end_datetime": "2025-06-04T11:21:31.024Z",
+    "eo:cloud_cover": 94.893515,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250604T162818_S20250604T112908_N05.11",
+    "eopf:datatake_id": "GS2A_20250604T112131_051972_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-04T17:17:14.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-04T16:28:18.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-04T17:29:18.281790Z",
+    "sat:absolute_orbit": 51972,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-04T11:21:31.024Z",
+    "updated": "2025-06-04T17:29:18.281790Z",
+    "view:azimuth": 270.48793785844504,
+    "view:incidence_angle": 4.841026316550283,
+    "view:sun_azimuth": 148.844145230726,
+    "view:sun_elevation": 66.1889699729328
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.111316985807703,
+    44.24783068396879
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.129762713238511,
+       44.24783068396879
+      ],
+      [
+       -4.111316985807703,
+       43.25939191053712
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332707
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2B_MSIL2A_20250604T110619_N0511_R137_T30TUP_20250604T151549",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-04T15:50:06.000000Z",
+    "datetime": "2025-06-04T11:06:19.024Z",
+    "end_datetime": "2025-06-04T11:06:19.024Z",
+    "eo:cloud_cover": 99.562901,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2B_OPER_MSI_L2A_DS_2BPS_20250604T151549_S20250604T111834_N05.11",
+    "eopf:datatake_id": "GS2B_20250604T110619_043063_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-04T15:50:06.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2b",
+    "processing:datetime": "2025-06-04T15:15:49.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-04T15:57:19.040426Z",
+    "sat:absolute_orbit": 43063,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2017-013A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-04T11:06:19.024Z",
+    "updated": "2025-06-04T15:57:19.040426Z",
+    "view:azimuth": 103.59381864194319,
+    "view:incidence_angle": 5.248888996523955,
+    "view:sun_azimuth": 145.729561603757,
+    "view:sun_elevation": 65.56267858007911
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.070068585452004,
+    43.201211355403785,
+    -5.1242610537248,
+    44.20514680565556
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.070068585452004,
+       43.22544615330695
+      ],
+      [
+       -5.751257766492681,
+       44.20514680565555
+      ],
+      [
+       -5.1242610537248,
+       44.1876215842718
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.070068585452004,
+       43.22544615330695
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2B_MSIL2A_20250604T110619_N0511_R137_T29TQJ_20250604T151549",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-04T15:50:27.000000Z",
+    "datetime": "2025-06-04T11:06:19.024Z",
+    "end_datetime": "2025-06-04T11:06:19.024Z",
+    "eo:cloud_cover": 98.563766,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2B_OPER_MSI_L2A_DS_2BPS_20250604T151549_S20250604T111834_N05.11",
+    "eopf:datatake_id": "GS2B_20250604T110619_043063_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-04T15:50:27.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2b",
+    "processing:datetime": "2025-06-04T15:15:49.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-04T15:57:06.445533Z",
+    "sat:absolute_orbit": 43063,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2017-013A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-04T11:06:19.024Z",
+    "updated": "2025-06-04T15:57:06.445533Z",
+    "view:azimuth": 105.44227786681849,
+    "view:incidence_angle": 9.438096294093002,
+    "view:sun_azimuth": 143.671208979834,
+    "view:sun_elevation": 65.1600806038302
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.450731004852535,
+    44.24272378000032
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -4.450731004852535,
+       44.24272378000032
+      ],
+      [
+       -4.845614797580077,
+       43.24791538263764
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332706
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.450731004852535,
+       44.24272378000032
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2C_MSIL2A_20250602T112131_N0511_R037_T30TUP_20250602T144620",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-02T15:34:43.000000Z",
+    "datetime": "2025-06-02T11:21:31.025Z",
+    "end_datetime": "2025-06-02T11:21:31.025Z",
+    "eo:cloud_cover": 99.33508,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2C_OPER_MSI_L2A_DS_2CPS_20250602T144620_S20250602T112133_N05.11",
+    "eopf:datatake_id": "GS2C_20250602T112131_003868_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-02T15:34:43.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2c",
+    "processing:datetime": "2025-06-02T14:46:20.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-02T15:39:15.615255Z",
+    "sat:absolute_orbit": 3868,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2024-157A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-02T11:21:31.025Z",
+    "updated": "2025-06-02T15:39:15.615255Z",
+    "view:azimuth": 287.8751102189162,
+    "view:incidence_angle": 9.124990617549775,
+    "view:sun_azimuth": 151.481353386623,
+    "view:sun_elevation": 66.346229604445
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.537264522308052,
+    43.201211355403785,
+    -5.1242610537248,
+    44.22597512802537
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ],
+      [
+       -5.1242610537248,
+       44.18762158427181
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.537264522308052,
+       43.238273156784096
+      ],
+      [
+       -6.496428932800861,
+       44.22597512802537
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2C_MSIL2A_20250602T112131_N0511_R037_T29TQJ_20250602T144620",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-02T15:34:43.000000Z",
+    "datetime": "2025-06-02T11:21:31.025Z",
+    "end_datetime": "2025-06-02T11:21:31.025Z",
+    "eo:cloud_cover": 99.062699,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2C_OPER_MSI_L2A_DS_2CPS_20250602T144620_S20250602T112133_N05.11",
+    "eopf:datatake_id": "GS2C_20250602T112131_003868_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-02T15:34:43.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2c",
+    "processing:datetime": "2025-06-02T14:46:20.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-02T15:40:16.262228Z",
+    "sat:absolute_orbit": 3868,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2024-157A",
+    "sat:relative_orbit": 37,
+    "start_datetime": "2025-06-02T11:21:31.025Z",
+    "updated": "2025-06-02T15:40:16.262228Z",
+    "view:azimuth": 270.7498935405286,
+    "view:incidence_angle": 4.827742548249815,
+    "view:sun_azimuth": 149.290221965493,
+    "view:sun_elevation": 66.0075438797458
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      300000,
+      4790220,
+      409800,
+      4900020
+     ],
+     "proj:code": "EPSG:32630",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      300000,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -5.504071407096211,
+    43.23826255332707,
+    -4.111316985807703,
+    44.24783068396879
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ],
+      [
+       -4.129762713238511,
+       44.24783068396879
+      ],
+      [
+       -4.111316985807703,
+       43.25939191053712
+      ],
+      [
+       -5.463227676863331,
+       43.23826255332707
+      ],
+      [
+       -5.504071407096211,
+       44.22596415476343
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250601T110651_N0511_R137_T30TUP_20250601T163114",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-01T17:25:43.000000Z",
+    "datetime": "2025-06-01T11:06:51.024Z",
+    "end_datetime": "2025-06-01T11:06:51.024Z",
+    "eo:cloud_cover": 90.843791,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250601T163114_S20250601T111702_N05.11",
+    "eopf:datatake_id": "GS2A_20250601T110651_051929_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-01T17:25:43.000000Z",
+    "grid:code": "MGRS-30TUP",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-01T16:31:14.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-01T17:32:48.401215Z",
+    "sat:absolute_orbit": 51929,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-01T11:06:51.024Z",
+    "updated": "2025-06-01T17:32:48.401215Z",
+    "view:azimuth": 102.32230685845282,
+    "view:incidence_angle": 5.1791254083016804,
+    "view:sun_azimuth": 146.504186000644,
+    "view:sun_elevation": 65.3095923639743
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "B02_10m": {
+     "gsd": 10,
+     "proj:bbox": [
+      699960,
+      4790220,
+      809760,
+      4900020
+     ],
+     "proj:code": "EPSG:32629",
+     "proj:shape": [
+      10980,
+      10980
+     ],
+     "proj:transform": [
+      10,
+      0,
+      699960,
+      0,
+      -10,
+      4900020
+     ],
+     "type": "image/jp2"
+    }
+   },
+   "bbox": [
+    -6.081326330919516,
+    43.201211355403785,
+    -5.1242610537248,
+    44.20543934233637
+   ],
+   "collection": "sentinel-2-l2a",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -6.081326330919516,
+       43.2257552380589
+      ],
+      [
+       -5.761723799030361,
+       44.20543934233636
+      ],
+      [
+       -5.1242610537248,
+       44.1876215842718
+      ],
+      [
+       -5.187368340531599,
+       43.201211355403785
+      ],
+      [
+       -6.081326330919516,
+       43.2257552380589
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "S2A_MSIL2A_20250601T110651_N0511_R137_T29TQJ_20250601T163114",
+   "properties": {
+    "constellation": "sentinel-2",
+    "created": "2025-06-01T17:24:54.000000Z",
+    "datetime": "2025-06-01T11:06:51.024Z",
+    "end_datetime": "2025-06-01T11:06:51.024Z",
+    "eo:cloud_cover": 92.444712,
+    "eo:snow_cover": 0.0,
+    "eopf:datastrip_id": "S2A_OPER_MSI_L2A_DS_2APS_20250601T163114_S20250601T111702_N05.11",
+    "eopf:datatake_id": "GS2A_20250601T110651_051929_N05.11",
+    "eopf:instrument_mode": "INS-NOBS",
+    "eopf:origin_datetime": "2025-06-01T17:24:54.000000Z",
+    "grid:code": "MGRS-29TQJ",
+    "gsd": 10,
+    "instruments": [
+     "msi"
+    ],
+    "platform": "sentinel-2a",
+    "processing:datetime": "2025-06-01T16:31:14.000000Z",
+    "processing:facility": "ESA",
+    "processing:level": "L2",
+    "processing:version": "05.11",
+    "product:timeliness": "PT24H",
+    "product:timeliness_category": "NRT",
+    "product:type": "S2MSI2A",
+    "published": "2025-06-01T17:30:35.335845Z",
+    "sat:absolute_orbit": 51929,
+    "sat:orbit_state": "descending",
+    "sat:platform_international_designator": "2015-028A",
+    "sat:relative_orbit": 137,
+    "start_datetime": "2025-06-01T11:06:51.024Z",
+    "updated": "2025-06-01T17:30:35.335845Z",
+    "view:azimuth": 104.88110926336667,
+    "view:incidence_angle": 9.3976744455224,
+    "view:sun_azimuth": 144.449519354077,
+    "view:sun_elevation": 64.91542702353931
+   },
+   "stac_version": "1.1.0",
+   "type": "Feature"
+  }
+ ],
+ "type": "FeatureCollection"
+}

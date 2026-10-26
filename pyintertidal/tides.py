@@ -73,6 +73,8 @@ class TideService:
         return self._model
 
     def _point(self, aoi):
+        """Prediction point ``(lat, lon)``: the AOI centroid when
+        ``location`` is "auto" or None, otherwise ``location`` as given."""
         if self.location == "auto" or self.location is None:
             return as_aoi(aoi).centroid
         return tuple(self.location)

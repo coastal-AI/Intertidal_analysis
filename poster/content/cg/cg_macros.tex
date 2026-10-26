@@ -1,0 +1,397 @@
+% Macros for the CARTOGRASS 2026 poster (cartograss2026.tex). It lives with
+% the poster's own blocks (content/cg/), not in preamble/: the older drafts
+% never load it, and it changes nothing they rely on. It is input after the
+% shared preamble/colors.tex, theme.tex and tables.tex (the palette, and the
+% theme's \term, \emphnum and \step that the texts use) and before
+% preamble/fixes.tex, which must stay last.
+%
+% The poster is a grid of panels at FIXED positions. Every panel is placed by
+% \cgpanel with its top-left corner at (x, y) measured from the top-left
+% corner of the sheet, at a fixed width and a fixed height budget. Nothing
+% flows from one panel into the next, so a panel that grows cannot push the
+% rest of the sheet around. It can, however, run past its own budget without
+% any warning from beamer (a box taller than its slot is not an error), so
+% every placement measures its content and writes one line to the log:
+%
+%   CGPANEL: <id> x=.. y=.. w=.. h=.. natural=.. (mm) ok|OVERFLOW
+%   CGROW:   <row> uses .. of .. mm ok|OVERFLOW
+%   CGFIG:   <file stem> slot=w x h mm found=pdf|png|MISSING|DRAFT
+%   CGTEXT:  \<macro> from text file|FALLBACK
+%   CGRESERVED, CGPHOTO, CGLOGO: placeholder slots and their sizes
+%
+% tools/cg/build_poster.py reads these lines and fails on any OVERFLOW.
+% The placements use `remember picture', so the sheet needs two passes.
+
+\makeatletter
+
+% ---------------------------------------------------------------- reporting
+\newlength{\cg@x}\newlength{\cg@y}\newlength{\cg@w}\newlength{\cg@h}
+\newlength{\cg@n}\newlength{\cg@tw}\newlength{\cg@tmp}
+\newlength{\cg@rowtop}\newlength{\cg@rowh}\newlength{\cg@rowmax}
+\newcount\cg@overflows
+\def\cg@rowname{none}
+% A length in mm with one decimal, for the log.
+\newcommand{\cgmm}[1]{\fpeval{round((#1)/2.845275591,1)}}
+
+\newcommand{\cg@report}[1]{%
+  \typeout{CGPANEL: #1\space x=\cgmm{\cg@x} y=\cgmm{\cg@y}
+    w=\cgmm{\cg@w} h=\cgmm{\cg@h} natural=\cgmm{\cg@n} (mm)\space
+    \ifdim\cg@n>\dimexpr\cg@h+0.5pt\relax OVERFLOW\else ok\fi}%
+  \ifdim\cg@n>\dimexpr\cg@h+0.5pt\relax\global\advance\cg@overflows\@ne\fi
+  % Track how far down the current row this panel reaches.
+  \setlength{\cg@tmp}{\dimexpr\cg@y+\cg@n-\cg@rowtop\relax}%
+  \ifdim\cg@tmp>\cg@rowmax\global\cg@rowmax=\cg@tmp\fi}
+
+% \cgrow{<name>}{<top y>}{<height budget>} ... \cgrowend
+% Groups the panels of one row of the sheet and reports the deepest one
+% against the row's budget (the COLHEIGHT check of poster.tex, per row).
+\newcommand{\cgrow}[3]{%
+  \gdef\cg@rowname{#1}%
+  \global\cg@rowtop=\dimexpr#2\relax
+  \global\cg@rowh=\dimexpr#3\relax
+  \global\cg@rowmax=0pt\relax\ignorespaces}
+\newcommand{\cgrowend}{%
+  \typeout{CGROW: \cg@rowname\space uses \cgmm{\cg@rowmax} of
+    \cgmm{\cg@rowh} mm (top at \cgmm{\cg@rowtop} mm)\space
+    \ifdim\cg@rowmax>\dimexpr\cg@rowh+0.5pt\relax OVERFLOW\else ok\fi}%
+  \ifdim\cg@rowmax>\dimexpr\cg@rowh+0.5pt\relax
+    \global\advance\cg@overflows\@ne\fi\ignorespaces}
+\AtEndDocument{\typeout{CGSUMMARY: \the\cg@overflows\space overflow(s)}}
+
+% --------------------------------------------------------------- the sheet
+% All placements live in ONE horizontal box. Each placement is a zero-size
+% overlay picture; outside a box every one of them would start a new empty
+% paragraph, and thirty empty lines add up to a page of vertical material.
+% Inside an \hbox a stray blank line is harmless (\par does nothing there).
+\newenvironment{cgsheet}{\par\noindent\hbox\bgroup\ignorespaces}{\egroup\par}
+
+% \cgband{<colour>}{<top y>}{<height>}: a full-bleed band across the sheet.
+\newcommand{\cgband}[3]{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[#1] ([yshift=-#2]current page.north west)
+      rectangle ([yshift=-#2-#3]current page.north east);
+  \end{tikzpicture}\ignorespaces}
+
+% \cgfill{<colour>}{<x>}{<y>}{<w>}{<h>}: a filled rectangle on the grid.
+\newcommand{\cgfill}[5]{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[#1] ([xshift=#2,yshift=-#3]current page.north west)
+      rectangle ++(#4,-#5);
+  \end{tikzpicture}\ignorespaces}
+
+% \cgpanel[<t|c|b>]{<id>}{<x>}{<y>}{<w>}{<h>}{<content>}
+% Typesets <content> in a minipage of width <w>, measures it, and places it
+% in a box of exactly <w> x <h> whose top-left corner is (<x>,<y>) from the
+% top-left corner of the sheet. The optional argument aligns the content
+% inside the budget (top, centre, bottom).
+\newsavebox{\cg@box}
+\NewDocumentCommand{\cgpanel}{O{t} m m m m m m}{%
+  \setlength{\cg@x}{#3}\setlength{\cg@y}{#4}%
+  \setlength{\cg@w}{#5}\setlength{\cg@h}{#6}%
+  \begin{lrbox}{\cg@box}%
+    \begin{minipage}[t]{\cg@w}\cg@panelsetup#7\par\end{minipage}%
+  \end{lrbox}%
+  \setlength{\cg@n}{\dimexpr\ht\cg@box+\dp\cg@box\relax}%
+  \cg@report{#2}%
+  \begin{tikzpicture}[remember picture,overlay]
+    \node[anchor=north west,inner sep=0pt,outer sep=0pt]
+      at ([xshift=\cg@x,yshift=-\cg@y]current page.north west)
+      {\vbox to \cg@h{\cg@vtop{#1}\copy\cg@box\kern0pt\cg@vbot{#1}}};
+  \end{tikzpicture}\ignorespaces}
+% (The \kern0pt matters: a \vbox takes the depth of its last item when that
+% item is a box, so a bottom-aligned panel would hang below its slot by the
+% whole depth of a [t] minipage.)
+\newcommand{\cg@vtop}[1]{\if c#1\vss\fi\if b#1\vss\fi}
+\newcommand{\cg@vbot}[1]{\if c#1\vss\fi\if t#1\vss\fi}
+
+% \cgfilled[<t|c|b>]{<id>}{<colour>}{<padding>}{<x>}{<y>}{<w>}{<h>}{<content>}
+% A filled panel: the fill covers the whole slot, the content sits inside a
+% uniform padding and is checked against the padded budget.
+\NewDocumentCommand{\cgfilled}{O{t} m m m m m m m m}{%
+  \cgfill{#3}{#5}{#6}{#7}{#8}%
+  \cgpanel[#1]{#2}{\dimexpr#5+#4\relax}{\dimexpr#6+#4\relax}%
+    {\dimexpr#7-#4-#4\relax}{\dimexpr#8-#4-#4\relax}{#9}}
+
+% \cgframed[<t|c|b>]{<id>}{<colour>}{<padding>}{<x>}{<y>}{<w>}{<h>}{<content>}
+% An outlined panel (1.2 mm line drawn inside the slot): the one small box
+% that should read as a box without competing with a filled callout.
+\NewDocumentCommand{\cgframed}{O{t} m m m m m m m m}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \draw[#3,line width=1.2mm]
+      ([xshift=#5+0.6mm,yshift=-#6-0.6mm]current page.north west)
+      rectangle ++(#7-1.2mm,-#8+1.2mm);
+  \end{tikzpicture}%
+  \cgpanel[#1]{#2}{\dimexpr#5+#4\relax}{\dimexpr#6+#4\relax}%
+    {\dimexpr#7-#4-#4\relax}{\dimexpr#8-#4-#4\relax}{#9}}
+
+% Inside every panel: ink colour, no indent, a modest paragraph gap, and
+% ragged-right text (justified text in a 165 mm measure opens rivers), with
+% no automatic hyphenation: a word split across lines is harder to read from
+% a metre away, and a ragged right edge does not need it (breaks after an
+% explicit hyphen, as in Ems-Dollard, stay allowed). \frenchspacing: one
+% word space after a colon or a full stop (English spacing set "Map:  base"
+% and "Reserved:  Lag" with a gap that read as a typo).
+\newcommand{\cg@panelsetup}{%
+  \color{PInk}\setlength{\parindent}{0pt}%
+  \setlength{\parskip}{0.38\baselineskip}\raggedright\hyphenpenalty=10000\relax
+  \frenchspacing}
+
+% ------------------------------------------------------------ type ramp
+% Body text is \normalsize = 27.9 pt (beamerposter scale 1.12 at A0). The
+% poster title is 64 pt (blk_head_title.tex), the section headings 44 pt and
+% the panel titles 36 pt, so the title leads by a clear step at 4 m.
+\newcommand{\cgTitleFont}{\fontsize{36}{42}\selectfont\bfseries}
+\newcommand{\cgSectionFont}{\fontsize{44}{52}\selectfont\bfseries}
+\newcommand{\cgSmall}{\fontsize{23}{28}\selectfont}
+\newcommand{\cgFine}{\fontsize{20.5}{25}\selectfont}
+% The bottom strip: 20 pt text under 22 pt bold deep-blue titles.
+\newcommand{\cgFoot}{\fontsize{20}{24}\selectfont}
+% The title line carries a strut, so every title of the strip has the same
+% height whatever its letters, and the body follows at its own baselineskip:
+% the first body lines of the four columns share one baseline.
+\newcommand{\cgFootTitle}[1]{{\color{PDeep}\bfseries\fontsize{22}{26}\selectfont
+  \strut#1\par}\vspace{1mm}}
+% A pull quote: one short sentence of a text panel set as its punch line.
+\newcommand{\cgquote}[1]{\par\vspace{2mm}{\color{PDeep}\bfseries
+  \fontsize{31}{37}\selectfont #1\par}}
+
+% \cgtitle[<text colour>][<rule colour>]{<title>}: a panel title over a thin
+% rule. The rule, not a box, separates panels (house style of theme.tex).
+% The rule is a vertical-mode \hrule, not a paragraph: a \rule would start a
+% paragraph and collect \parskip above and below it.
+% Struts at both ends give every title the same first-line height and
+% last-line depth, whatever its letters: in Fira Sans the dot of an i stands
+% above the ascenders, so without them "Where it does not help" sat 0.7 mm
+% lower than "Ems-Dollard maps" beside it, and a title with no descender
+% drew its rule closer than one with a p or a g.
+\newlength{\cg@tsh}\newlength{\cg@tsd}
+\newcommand{\cg@titlestrut}{%
+  \settoheight{\cg@tsh}{(ilhdfW}\settodepth{\cg@tsd}{(gpyj}%
+  \rule[-\cg@tsd]{0pt}{\dimexpr\cg@tsh+\cg@tsd\relax}}
+\NewDocumentCommand{\cgtitle}{O{PDeep} O{PTeal} m}{%
+  {\color{#1}\cgTitleFont\cg@titlestrut#3\cg@titlestrut\par}%
+  \nointerlineskip\vspace{2.6mm}%
+  {\color{#2}\hrule height 0.8mm\relax}%
+  \vspace{1.5mm}}
+% \cgtitlenote{<title>}{<note>}: the same, with a short note set flush right
+% on the title line in caption type (e.g. "Schematic" over a diagram whose
+% only source is its authors), so the note costs no height.
+\newcommand{\cgtitlenote}[2]{%
+  {\color{PDeep}\cgTitleFont\cg@titlestrut#1\hfill
+   {\color{PSlate}\mdseries\cgFine #2}\cg@titlestrut\par}%
+  \nointerlineskip\vspace{2.6mm}%
+  {\color{PTeal}\hrule height 0.8mm\relax}%
+  \vspace{1.5mm}}
+
+% \cgtitlenotebig{<title>}{<note>}: the same with the note at 24 pt, for a
+% note that must read from 1.5 m (the method flow chart's "Schematic": every
+% value in that figure is simulated).
+\newcommand{\cgtitlenotebig}[2]{%
+  {\color{PDeep}\cgTitleFont\cg@titlestrut#1\hfill
+   {\color{PSlate}\mdseries\fontsize{24}{28}\selectfont #2}\cg@titlestrut\par}%
+  \nointerlineskip\vspace{2.6mm}%
+  {\color{PTeal}\hrule height 0.8mm\relax}%
+  \vspace{1.5mm}}
+
+% Sand as a TEXT colour on white (2026-10-19, round 3): PSand (#C08A3E) has
+% only 3.0:1 contrast on white, so numbers and notes set in sand on a white
+% ground use PSandText (#8A5F22, 5.6:1), the darker sand the figures already
+% use for "seen dry", "dry" and "out of the water". PSand stays for fills,
+% lines, and text on navy (the conclusions' tag and marks, 3.9:1 there).
+% \emphnum is the theme's (preamble/theme.tex, left untouched): it is
+% redefined here, for this sheet only.
+\definecolor{PSandText}{HTML}{8A5F22}
+\renewcommand{\emphnum}[1]{{\color{PSandText}\bfseries #1}}
+
+% \cgsection[<note>]{<title>}: a section heading across the sheet, over a
+% heavier rule. <note> is set beside it in dark sand (e.g. a reservation note).
+\NewDocumentCommand{\cgsection}{O{} m}{%
+  {\color{PDeep}\cgSectionFont #2}%
+  \if\relax\detokenize{#1}\relax\else
+    \hspace{10mm}{\color{PSandText}\bfseries\fontsize{26}{30}\selectfont #1}\fi
+  \par\nointerlineskip\vspace{3mm}%
+  {\color{PTeal}\hrule height 1.6mm\relax}}
+
+% ------------------------------------------------------------ placeholders
+% \cgframe[<text colour>][<frame colour>]{<w>}{<h>}{<text>}: a dashed frame
+% of exactly <w> x <h> with centred text. Its baseline is its bottom edge,
+% so in a paragraph it occupies exactly <h> above the baseline.
+% \cgframefilled{<fill>}[<text colour>][<frame colour>]{<w>}{<h>}{<text>}: the
+% same over a filled rectangle (the reserved slots: a pale block reads as a
+% planned figure from across the room, where a hairline on white vanishes).
+% \cgframefont sets the text; a slot can switch it before the frame.
+\newcommand{\cgframefont}{\cgSmall}
+\newcommand{\cg@frame}[6]{%
+  \setlength{\cg@tw}{\dimexpr#4-14mm\relax}%
+  \begin{tikzpicture}[x=1pt,y=1pt]
+    \useasboundingbox (0pt,0pt) rectangle (#4,#5);
+    \if\relax\detokenize{#3}\relax\else\fill[#3] (0pt,0pt) rectangle (#4,#5);\fi
+    \draw[#2,line width=1.6pt,dash pattern=on 5mm off 3mm]
+      (0.8pt,0.8pt) rectangle ($(#4,#5)-(0.8pt,0.8pt)$);
+    \node[align=center,text=#1,text width=\cg@tw,inner sep=0pt,
+          font={\cgframefont\hyphenpenalty=10000\relax\frenchspacing}]
+      at ($0.5*(#4,#5)$) {#6};
+  \end{tikzpicture}}
+\NewDocumentCommand{\cgframe}{O{PSlate} O{PRule} m m m}{%
+  \cg@frame{#1}{#2}{}{#3}{#4}{#5}}
+\NewDocumentCommand{\cgframefilled}{m O{PSlate} O{PRule} m m m}{%
+  \cg@frame{#2}{#3}{#1}{#4}{#5}{#6}}
+
+% \cgreserved[<text colour>][<frame colour>]{<w>}{<h>}{<what goes here>}
+% The reserved-space frame for content that waits on the validation: a pale
+% (PMist) block with a dashed edge. The slot size goes to the log
+% (CGRESERVED), not onto the sheet.
+\NewDocumentCommand{\cgreserved}{O{PSlate} O{PSlate!45!white} m m m}{%
+  \typeout{CGRESERVED: slot=\cgmm{#3} x \cgmm{#4} mm}%
+  \cgframefilled{PMist}[#1][#2]{#3}{#4}{{\bfseries Reserved:} #5}}
+
+% \cgphoto{<stem>}{<w>}{<h>}{<what the photo shows>}
+% figures/cg/<stem>.(jpg|png|pdf), cropped to fill exactly <w> x <h> (a photo
+% is cut to its slot, not letterboxed: the crop keeps the centre); while none
+% exists, a pale reserved block says which photo goes there.
+\newcommand{\cgphoto}[4]{%
+  \typeout{CGPHOTO: #1 slot=\cgmm{#2} x \cgmm{#3} mm}%
+  \IfFileExists{figures/cg/#1.jpg}{\cg@photo{#1.jpg}{#2}{#3}}{%
+  \IfFileExists{figures/cg/#1.png}{\cg@photo{#1.png}{#2}{#3}}{%
+  \IfFileExists{figures/cg/#1.pdf}{\cg@photo{#1.pdf}{#2}{#3}}{%
+    \cgslot{#2}{#3}{\cgframefilled{PMist}[PSlate][PSlate!45!white]{#2}{#3}{%
+      {\bfseries Photo:} #4}}}}}}
+\newcommand{\cg@photo}[3]{%
+  \cgslot{#2}{#3}{\begin{tikzpicture}
+    \clip (0,0) rectangle (#2,#3);
+    \node[inner sep=0pt] at ($0.5*(#2,#3)$)
+      {\includegraphics[width=#2,height=#3,keepaspectratio=false,
+        clip]{figures/cg/#1}};
+  \end{tikzpicture}}}
+
+% \cgslot{<w>}{<h>}{<material>}: <material> centred in a box of exactly
+% <w> x <h>, set on its own line so the box height is the line height.
+\newcommand{\cgslot}[3]{%
+  \par\noindent\vbox to #2{\vss\hbox to #1{\hss#3\hss}\vss}\par}
+
+% \cgfig{<stem>}{<w>}{<h>}{<label>}
+% figures/cg/<stem>.pdf, else figures/cg/<stem>.png, scaled to fit a slot of
+% exactly <w> x <h>; while neither exists, a labelled frame of the same size
+% says what is expected there, so the layout never depends on the figure.
+% Figures should be exported at exactly the slot size (fonts >= 20 pt).
+\newcommand{\cgfig}[4]{%
+  \IfFileExists{figures/cg/#1.pdf}{\cg@figfile{#1}{pdf}{#2}{#3}}{%
+  \IfFileExists{figures/cg/#1.png}{\cg@figfile{#1}{png}{#2}{#3}}{%
+    \cg@figlog{#1}{#2}{#3}{MISSING}%
+    \cgslotsize{#2}{#3}% before the frame: inside it \linewidth changes
+    \cgslot{#2}{#3}{\cgframe{#2}{#3}{{\bfseries Figure:} #4\\[2.5mm]
+      {\cgFine\ttfamily figures/cg/\detokenize{#1}\
+       \cgSlotW\,$\times$\,\cgSlotH\,mm}}}}}}
+% \cgslotsize{<w>}{<h>}: store a slot's size in mm in \cgSlotW, \cgSlotH
+% (expanded now, so a frame can print it where \linewidth means something
+% else).
+\newcommand{\cgslotsize}[2]{\edef\cgSlotW{\cgmm{#1}}\edef\cgSlotH{\cgmm{#2}}}
+\newcommand{\cg@figfile}[4]{%
+  \cg@figlog{#1}{#3}{#4}{#2}%
+  \cgslot{#3}{#4}{\includegraphics[width=#3,height=#4,keepaspectratio]%
+    {figures/cg/#1.#2}}}
+\newcommand{\cg@figlog}[4]{%
+  \typeout{CGFIG: #1 slot=\cgmm{#2} x \cgmm{#3} mm found=#4}}
+
+% \cgfigor{<stem>}{<w>}{<h>}{<fallback material>}: like \cgfig, but while the
+% file is missing it draws <fallback material> (e.g. a TikZ draft) instead.
+\newcommand{\cgfigor}[4]{%
+  \IfFileExists{figures/cg/#1.pdf}{\cg@figfile{#1}{pdf}{#2}{#3}}{%
+  \IfFileExists{figures/cg/#1.png}{\cg@figfile{#1}{png}{#2}{#3}}{%
+    \cg@figlog{#1}{#2}{#3}{DRAFT}\cgslot{#2}{#3}{#4}}}}
+
+% \cglogo[<text colour>][<frame colour>]{<stem>}{<w>}{<h>}{<label>}
+% figures/cg/logo_<stem>.(pdf|png) fitted into <w> x <h>, else a labelled
+% frame. An inline box (no paragraph), so several can share one line.
+\NewDocumentCommand{\cglogo}{O{PSlate} O{PRule} m m m m}{%
+  \typeout{CGLOGO: logo_#3 slot=\cgmm{#4} x \cgmm{#5} mm}%
+  \vbox to #5{\vss\hbox to #4{\hss
+    \IfFileExists{figures/cg/logo_#3.pdf}{\includegraphics[width=#4,
+        height=#5,keepaspectratio]{figures/cg/logo_#3.pdf}}{%
+    \IfFileExists{figures/cg/logo_#3.png}{\includegraphics[width=#4,
+        height=#5,keepaspectratio]{figures/cg/logo_#3.png}}{%
+      \cgframe[#1][#2]{#4}{#5}{#6}}}\hss}\vss}}
+
+% ------------------------------------------------------------------ text
+% The prose lives in content/cg/text_*.tex, which only DEFINE macros
+% (\cgWhyBody, \cgStepsBody, ...); cartograss2026.tex loads them once through
+% content/cg/text_all.tex when that file exists.
+% \cguse{\<macro>}{<fallback>} sets the macro when it is defined, else the
+% short draft given here, so the sheet compiles with or without the texts.
+% The conditional is closed before either branch runs, so a text macro that
+% looks ahead (e.g. one ending in \\) never sees a stray \else or \fi.
+\newcommand{\cguse}[2]{%
+  \ifdefined#1\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi
+    {\typeout{CGTEXT: \string#1\space from text file}#1}%
+    {\typeout{CGTEXT: \string#1\space FALLBACK}#2}}
+
+% Captions: one style for every figure on the sheet (slate, 20.5 pt), the
+% data source at the end. \cgcap sets the caption under a figure, 3 mm below
+% it: the panel's \parskip and the interline glue are taken out, and a strut
+% fixes the first line, so the gap does not depend on the caption's letters.
+% \cgcapside sets a caption beside a figure (top-aligned, no gap).
+\newcommand{\cgcap}[1]{\par\nointerlineskip\vspace{\dimexpr3mm-\parskip\relax}%
+  {\color{PSlate}\cgFine\strut #1\par}}
+\newcommand{\cgcapside}[1]{{\color{PSlate}\cgFine #1\par}}
+
+% \cgSiteNum{<n>}: the numbered sand disc of the study-site map
+% (tools/cg/fig_sites_map.py: 7 mm, sand fill, deep-blue edge and figure), as
+% a list label, so the list and the map share one key.
+% Lining figures (\firalining; since 2026-10-19 the sheet's default too, see
+% the end of this file). Digits at 20 pt, the map's own (2026-10-19: they were
+% 18 pt, the only text under the sheet's 20 pt floor).
+% Round 4 (2026-10-19): SemiBold (\fontseries{sb}), not \bfseries (Fira Sans
+% Bold), here and in \cgStepNum and \cgInputTag: their originals in the
+% figures are matplotlib's "semibold" (FiraSans-SemiBold), so the same key was
+% visibly heavier in the text than in the figure it points to.
+% T1FiraSans-LF.fd maps the series sb silently (ssub) to its semibold shapes
+% (FiraSans-SemiBold-lf-t1, FiraSans-SemiBold.pfb), so no font warning.
+\newcommand{\cgSiteNum}[1]{\tikz[baseline=(n.base)]\node(n)[circle,fill=PSand,
+  draw=PDeep,line width=1pt,inner sep=0pt,minimum size=7mm,text=PDeep,
+  font=\firalining\fontseries{sb}\fontsize{20}{20}\selectfont]{#1};}
+
+% \cgStepNum{<n>}: the teal step disc of the method flow chart
+% (tools/cg/fig_method_flow.py: teal fill, white figure), inline, so a text
+% can point at one of its cards (e.g. the pixel panel's "step 4").
+\newcommand{\cgStepNum}[1]{\tikz[baseline=(n.base)]\node(n)[circle,fill=PTeal,
+  inner sep=0pt,minimum size=7mm,text=white,
+  font=\firalining\fontseries{sb}\fontsize{20}{20}\selectfont]{#1};}
+
+% \cgInputTag{<n>}: the navy INPUT tab of the method flow chart
+% (tools/cg/fig_method_flow.py card_tab: PDeep rounded box, 7 mm tall, white
+% 20 pt semibold capitals, 2.5 mm side padding), inline, so the Input data
+% paragraph and the chart's two input cards share one key, as the site discs
+% do for the map. The chart's tabs also name the input ("INPUT 2 · TIDE AT
+% THE MOUTH"); here the words after the tag name it.
+\newcommand{\cgInputTag}[1]{\tikz[baseline=(n.base)]\node(n)[fill=PDeep,
+  rounded corners=1.6mm,inner xsep=2.5mm,inner ysep=0pt,minimum height=7mm,
+  text=white,font=\firalining\fontseries{sb}\fontsize{20}{20}\selectfont]{INPUT #1};}
+
+% The key of the study-site strip (tools/cg/fig_sites_map.py --layout strip
+% draws no legend of its own): its intertidal flats (PSand at 55 % over white),
+% its water (PDeep at 15 %) and its tide-gauge triangle, as inline swatches
+% for the caption. The tints are the script's WATER and FLATS.
+\newcommand{\cg@keybox}[1]{\tikz[baseline=-0.15em]\filldraw[fill=#1,draw=PSlate,
+  line width=0.5pt] (0,-0.2em) rectangle (1.5em,0.72em);}
+\newcommand{\cgKeyFlats}{\cg@keybox{PSand!55!white}}
+\newcommand{\cgKeyWater}{\cg@keybox{PDeep!15!white}}
+\newcommand{\cgKeyGauge}{\tikz[baseline=-0.15em]\filldraw[fill=PTeal,draw=white,
+  line width=0.6pt] (0,-0.2em) -- (1.0em,-0.2em) -- (0.5em,0.78em) -- cycle;}
+
+% A one-line label over a block of text inside a filled box.
+\newcommand{\cglabel}[2][PTeal]{%
+  {\color{#1}\bfseries\fontsize{25}{30}\selectfont\MakeUppercase{#2}\par}%
+  \vspace{2mm}}
+
+% Lining figures for the whole sheet (2026-10-19). FiraSans.sty (pdfLaTeX,
+% Type 1) defaults to old-style figures, so the body set "EOT20" with a small
+% x-height 0, "[3]" with a descending 3 and "0.19 m" in another style than
+% the same numbers inside the figures (matplotlib draws Fira's lining
+% figures). The package builds \sfdefault from \fira@figurestyle, but its
+% [sfdefault] option had already copied the old-style family into
+% \familydefault, so both are set here; the preamble files stay untouched.
+% T1FiraSans-LF.fd is installed with the package.
+\def\fira@figurestyle{LF}
+\renewcommand*{\familydefault}{\sfdefault}
+
+\makeatother

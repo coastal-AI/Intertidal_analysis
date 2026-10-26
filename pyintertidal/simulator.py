@@ -23,7 +23,9 @@ Two calibration lessons are baked in, both paid for on 2026-08-18:
   matched null fabricates 40 %.
 
 Mechanisms (plan v4: "cada mecanismo un módulo con parámetros; nulo = todos
-apagados") subclass :class:`Mechanism` and may hook three points:
+apagados", i.e. each mechanism is a module with parameters and the null is
+all of them switched off) subclass :class:`Mechanism` and may hook three
+points:
 
 * ``level(h, s_km, rising)``  -> the water level each pixel experiences
   (tidal transfer f(h), hysteresis via limb-dependent lags);
@@ -39,6 +41,7 @@ from scipy.special import erf
 
 
 def _phi(x):
+    """Standard normal cumulative distribution function."""
     return 0.5 * (1.0 + erf(x / np.sqrt(2.0)))
 
 
@@ -56,9 +59,12 @@ class Mechanism:
         return h
 
     def truth(self, z, sg):
+        """(P,) planted elevations and widths -> the ones actually planted."""
         return z, sg
 
     def optics(self, clean, wet_frac):
+        """(T, P) noise-free water index and wet fraction -> the radiometry
+        the sensor records."""
         return clean
 
 
@@ -71,6 +77,7 @@ class Transfer(Mechanism):
         self.fn = fn                    # fn(h (T,), s_km (P,)) -> (T, P)
 
     def level(self, h, s_km, rising):
+        """The level each pixel feels: ``fn(h, s_km)``."""
         return self.fn(h, s_km)
 
 
@@ -91,6 +98,8 @@ class Hysteresis(Mechanism):
         self.tau_dn = np.asarray(tau_dn_px)
 
     def level(self, h, s_km, rising):
+        """(T, P) level: on rising scenes (``rising`` True) each pixel reads
+        the tide shifted by its flood lag, on falling scenes by its ebb lag."""
         T = len(h)
         P = len(self.tau_up)
         out = np.empty((T, P))
@@ -114,6 +123,7 @@ class OpticalOffset(Mechanism):
         self.delta = np.asarray(delta_px, float)
 
     def optics(self, clean, wet_frac):
+        """Add each pixel's bias ``delta`` to every scene."""
         return clean + self.delta[None, :]
 
 
@@ -126,6 +136,7 @@ class SigmaCopula(Mechanism):
         self.fn = fn                    # fn(z (P,)) -> sigma (P,)
 
     def truth(self, z, sg):
+        """Keep the planted elevations; replace the widths by ``fn(z)``."""
         return z, self.fn(z)
 
 
@@ -142,6 +153,8 @@ class ConnectivityCensoring(Mechanism):
         self.thr = np.asarray(threshold_px, float)
 
     def level(self, h, s_km, rising):
+        """(T, P) effective level: below its sill a pixel receives no water
+        (the level is lowered by 10 m, so it reads dry)."""
         # censoring acts on the EFFECTIVE level: below the sill nothing
         # arrives — the pixel stays DRY however close h is to its own z.
         # (Bug caught by the B6 gate on 2026-08-19: the original expression

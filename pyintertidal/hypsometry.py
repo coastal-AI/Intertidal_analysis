@@ -77,6 +77,7 @@ def curve_with_uncertainty(z_keep, pixel_m=10.0, sigma_z=None, n_bins=80,
                          float(np.percentile(zs, 99.5)), int(n_bins))
 
     def cum(v):
+        """Area (km²) of the elevations ``v`` lying below each of ``levels``."""
         return np.searchsorted(np.sort(v), levels) * px_km2
 
     area = cum(zs)

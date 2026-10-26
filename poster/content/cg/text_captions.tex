@@ -1,0 +1,103 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: figure captions (set with \cgcap).
+% -----------------------------------------------------------------------------
+% What the figure is, then its data source; one line where the figure is
+% wide. Checked against the delivered figures on 2026-10-19: what each one
+% shows, which tide series and which years it uses. If a figure is re-made,
+% check its caption here.
+% =============================================================================
+\ifdefined\cgCaptionsTextLoaded\endinput\fi
+\def\cgCaptionsTextLoaded{}
+
+% (a) Study-site strip, figures/cg/sites_map_strip (tools/cg/fig_sites_map.py
+% --layout strip, 391 x 54 mm). The strip draws no legend, so the caption
+% starts with its key (\cgKeyFlats, \cgKeyWater, \cgKeyGauge: cg_macros.tex,
+% the script's own tints). Flats: the Sentinel-2 water frequency of each
+% site's product (Villaviciosa 2016-2025 at 10 m; Ferrol 10 m; Westerschelde,
+% Wadden and Ems 20 m cubes of 2023-2025); the footer's Copernicus credit
+% covers 2016-2025. Gauges: stations.json (in-estuary gauges only), cut to
+% the headline judges (round 4, below); their providers are named in the
+% footer's Data line. The countries are named here
+% (science review): the strip's overview carries no names at all.
+% Round 2 (2026-10-19): the Wadden site is the Vlie tidal basin behind a
+% barrier-island inlet (pyintertidal/sites.py), not an estuary, hence "a
+% Wadden Sea tidal basin" and "inside the site". Round 3: the strip titles
+% that inset "Wadden" (as wide as its frame: the uneven 29-mm gap after it is
+% now 18 mm, the room the right-aligned "Ems-Dollard" title needs); this
+% caption names it in full. "Wadden Sea (Vlie)" is 17 mm wider than the strip
+% allows without cropping its overview. Where a padded inset (Ems-Dollard,
+% Westerschelde) runs past its product raster, the margin is Natural Earth
+% land or water (the basemap credited here).
+% Round 4 (2026-10-19): the strip draws only the 13 headline judges of the
+% frozen validation (experiments/benchmark/judges.HEADLINE: Ferrol 2; Gat
+% van Borssele and the Terneuzen pair; West-Terschelling and Harlingen;
+% Emshorn, Eemshaven Waddenzee, Dukegat, Knock, Delfzijl, Emden, Pogum,
+% Nieuwe Statenzijl). Borssele, Eemshaven haven and Ferrol 4 are excluded by
+% the method-independent rules (coverage; less than 3 km from the boundary
+% gauge Ferrol 1), so they are no longer drawn. The key says what a triangle
+% is for, "used as a check", so it is not read as one of INPUT 2's gauges at
+% the mouth (named in the next paragraph).
+\newcommand{\cgCapSites}{\cgKeyFlats\ intertidal flats\quad \cgKeyWater\ water\quad
+  \cgKeyGauge\ tide gauge used as a check.\quad Two rias in Spain; two North Sea
+  estuaries and a Wadden Sea tidal basin in the Netherlands and Germany.
+  Basemap: Natural Earth.}
+
+% (b) Low/high tide pair, figures/cg/ctx_lowtide + ctx_hightide
+% (tools/cg/fig_ctx_tide_pair.py): band B08 (near-infrared) at 10 m, scenes of
+% 25 Sep 2025 and 2 Oct 2025, 11:21 UTC (dates printed on the panels, so "one
+% week apart" is left to them). Both scenes are of 2025, hence (2025).
+\newcommand{\cgCapTidePair}{Ría de Villaviciosa in Sentinel-2 near-infrared:
+  water is dark. Contains modified Copernicus Sentinel data (2025).}
+
+% (c) The tide arrives late, figures/cg/b1_tide_arrives_late
+% (tools/cg/b1_tide_arrives_late.py): Ems, Borkum (mouth gauge) vs Delfzijl and
+% Emden, 11 July 2025, 16 h around one high water. Round 4: the key says
+% "Borkum (mouth gauge)", not "(mouth)": MAREA's tide at the mouth (the flow
+% chart's h) is EOT20 averaged with Borkum, not Borkum itself, so the key
+% must not read as h (text_results.tex, Results A). The figure prints the day,
+% the delays of that high water (+58, +86 min behind Borkum), the ranges and
+% the data line "Data: IOC (Borkum), Rijkswaterstaat (Delfzijl), WSV (Emden)",
+% so the caption only names the estuary and says what to see. One line.
+% "And higher" (2026-10-19): the figure's ranges grow inland (2.6, 3.3,
+% 3.5 m) and its high waters stand higher (1.20, 1.39, 1.51 m above each
+% gauge's 2025 mean); MAREA corrects only the delay, and the flow chart's card
+% 2 says "MAREA shifts the tide in time, not height" (2026-10-20; it said "a
+% taller tide inland is not corrected"), so the caption names both.
+\newcommand{\cgCapLate}{Ems estuary: inside, high water arrives later and
+  higher.}
+
+% (d) Decimeters become hours, figures/cg/b2_decimetres_hours
+% (tools/cg/b2_decimetres_hours.py). NOT PLACED on the sheet: card 5 of the
+% method flow chart shows the relation for one pixel (emerged time = share of
+% time the water is below its ground, over the whole tide record), and its
+% number now stands in the OBJECTIVE box (\cgObjectiveWhy, text_context.tex).
+% Kept for a later version. Matches
+% the figure: Gijon gauge, 2024; around mean sea level, -0.15 to +0.15 m =
+% +1.02 h in the air per tide; between the 10 % and 90 % levels each 10 cm is
+% 19-29 min (b2's JSON), hence "around mean sea level".
+\newcommand{\cgCapHours}{Decimeters become hours: share of time in the air of
+  ground at each elevation, from one year (2024) of the Gijón tide gauge;
+  around mean sea level, 30\,cm of elevation means about 1\,h more in the air
+  per tide. Data: IOC, Puertos del Estado.}
+
+% (e) How MAREA works, figures/cg/method_flow (tools/cg/fig_method_flow.py): a
+% schematic (one simulated pixel; the Ems-Dollard outline and its 3-km
+% sections are real, from the site's Sentinel-2 water frequency). On the sheet
+% its source is the note on the panel's title line (\cgStepsNote); this longer
+% caption is kept for a version with room under the figure.
+\newcommand{\cgCapFlow}{How MAREA works, followed for one imaginary pixel:
+  simulated looks and tide; outline and 3-km sections of the Ems-Dollard from
+  Sentinel-2. Schematic.}
+
+% (f) A pixel is a tide gauge, figures/cg/pixel_gauge
+% (tools/cg/fig_pixel_gauge.py): one real 10 m pixel, its 95 looks in MAREA's
+% own 2023-2025 record (97 scenes) against the EOT20 level at each image time
+% (the axis states the datum), coloured by its water index (wet above 0). On
+% the sheet the title note (\cgPixNote, text_methods.tex) says what it is and
+% the footer carries the Copernicus credit; this caption is kept for a version
+% with room for it. The elevation printed as "z" is an illustration, not a
+% result.
+\newcommand{\cgCapPixel}{One 10\,m pixel near the mouth of the Ría de
+  Villaviciosa: each dot is one cloud-free look of MAREA's record, at the
+  mouth tide of its image. Contains modified Copernicus Sentinel data
+  (2023--2025).}

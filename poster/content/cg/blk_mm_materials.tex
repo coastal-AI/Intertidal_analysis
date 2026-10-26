@@ -1,0 +1,26 @@
+% Materials, left half, top: the study sites (one strip: an overview and the
+% five estuaries, numbered sand discs), its key and the countries in one
+% caption, then what goes into MAREA and the independent checks, both as
+% run-in paragraphs in body type (\normalsize); the checks carry the map's
+% discs. Map slot \figSitesW x \figSitesH (391 x 54 mm, the delivered size:
+% placed at 1:1); script tools/cg/fig_sites_map.py --layout strip (the strip
+% draws no legend: \cgCapSites carries its key).
+% \parskip is 0 down to the caption, so the figure sits under its title rule
+% and the caption 3 mm under the figure, as in the other panels.
+\setlength{\parskip}{0pt}%
+\cgtitle{\cguse{\cgSitesTitle}{Study sites and data}}
+\vspace{1.5mm}
+\cgfig{sites_map_strip}{\figSitesW}{\figSitesH}{overview and the five sites
+  (Villaviciosa, Ferrol, Westerschelde, Wadden Sea, Ems-Dollard) with the
+  tide gauges used as checks}
+\cgcap{\cguse{\cgCapSites}{Five study sites. Basemap: Natural Earth.}}
+\par\vspace{4.5mm}
+\setlength{\parskip}{3.2mm}%
+{\term{\cguse{\cgDataTitle}{Input data}}}\
+  {\color{PSlate}\cguse{\cgDataNote}{(all MAREA needs: no field surveys)}}:\
+  \cguse{\cgDataBody}{\cgInputTag{1}\ Sentinel-2 images, 10\,m, 2023--2025, as
+  openEO data cubes.\quad \cgInputTag{2}\ Tide at the mouth: EOT20 and
+  gauges.}\par
+{\term{\cguse{\cgRefTitle}{Independent checks}}}\
+  {\color{PSlate}\cguse{\cgRefNote}{(never used to make the maps)}}:\
+  \cguse{\cgSitesBody}{RTK-GNSS and LiDAR; tide gauges; Vaklodingen.}\par

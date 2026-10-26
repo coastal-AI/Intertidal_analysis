@@ -125,6 +125,10 @@ class Canvas:
 
 
 class _Group:
+    """Context manager returned by :meth:`Canvas.group`: whatever is drawn
+    inside the ``with`` block is wrapped in one
+    ``<g transform="translate(dx, dy)">`` element."""
+
     def __init__(self, canvas, dx, dy):
         self.canvas = canvas
         self.dx, self.dy = dx, dy

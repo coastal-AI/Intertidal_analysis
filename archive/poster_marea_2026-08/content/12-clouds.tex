@@ -1,0 +1,24 @@
+\begin{pblock}{Cloud screening that keeps the data}
+On an Atlantic coast a scene-level cloud filter is ruinous: discard every
+image with clouds and little survives. But a cloud over a hillside three
+kilometres inland does not obscure the flat.
+
+So cloudiness is measured \term{only where it matters}. Two streaming passes:
+
+\step{1}{every pixel votes across the archive — permanent water, permanent
+land, or \term{transition}, which is the intertidal candidate;}
+\step{2}{cloud cover is then computed \emph{inside the transition zone
+alone}, with a dilated safety buffer.}
+
+Villaviciosa, nine years, 1379 acquisitions: only 141 are
+essentially clear over the flat. Demanding clear scenes would leave a decade
+of imagery yielding almost nothing.
+
+\vspace{2mm}
+But cloud cover is not a property of a scene — it is a property of each pixel.
+Masking pixel by pixel inside the transition zone lets partially clouded
+acquisitions still contribute: \emphnum{415} scenes have at least half
+the flat visible, and every clear pixel in them enters the fit. The estimator
+needs a minimum number of observations \emph{per pixel}, not per scene, which
+is what makes that possible.
+\end{pblock}

@@ -81,6 +81,8 @@ class _Html:
 
 
 def _sizes_table(rows):
+    """HTML table of size rows: ``(label, value)`` or ``(label, array,
+    chunk)``; the Array/Chunk header appears when any row has three cells."""
     head = ("<tr><th></th><th>Array</th><th>Chunk</th></tr>"
             if any(len(r) == 3 for r in rows) else "")
     body = []
@@ -96,11 +98,13 @@ def _sizes_table(rows):
 
 
 def _section(title, count, inner, open_=False):
+    """A collapsible ``<details>`` block headed "title (count)"."""
     return (f"<details{' open' if open_ else ''}><summary>{title} "
             f"<span>({count})</span></summary>{inner}</details>")
 
 
 def _coords_table(rows):
+    """HTML table of coordinate rows ``(name, dims, values preview)``."""
     return "<table class='coords'>" + "".join(
         f"<tr><td class='n'>{n}</td><td class='d'>{d}</td>"
         f"<td class='val'>{v}</td></tr>" for n, d, v in rows) + "</table>"

@@ -248,6 +248,9 @@ class CopernicusTideModel:
         self.box_size = box_size
 
     def _open(self, lat, lon, start, end):
+        """Open (lazily) the hourly sea-surface height ``zos`` of
+        :data:`DATASET_ID` in a box of +/- ``box_size`` degrees around
+        (lat, lon), from ``start`` to ``end``."""
         import copernicusmarine
         return copernicusmarine.open_dataset(
             dataset_id=self.DATASET_ID,

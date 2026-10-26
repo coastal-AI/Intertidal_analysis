@@ -1,0 +1,22 @@
+\begin{pblock}{A DEM that knows what it knows}
+\pfig[0.5\linewidth]{dem_v4}
+\figcap{Villaviciosa, MAREA DEM at 10\,m (operator-corrected clock;
+declared interpolation flags; 2.6\,\% unmeasurable pixels stay honest
+NaN).}
+
+\vspace{2mm}
+Three layers no published intertidal DEM carries:
+
+\defn{$\sigma_z$ per pixel, calibrated}{Tabulated from planted recoveries
+in the calibrated digital twin, by tidal headroom and observation count.
+Verified conservative: the 68\,\% interval covers \emphnum{83\,\%} of real
+errors — never optimistic.}
+\defn{$\sigma_{\text{topo}}$ vs.\ level decomposition}{The fitted
+transition width carries the tide-model error convolved in; deconvolved,
+median sub-pixel relief is \emphnum{0.177\,m} (35\,\% of the width's
+variance was water level, not ground).}
+\defn{Declared hydraulics}{Depression filling yields each pixel's spill
+elevation and ponding depth: \emphnum{14\,\%} of the intertidal sits
+behind a barrier (median 1.2\,m). The flag is validated against the real
+ponding signature, its bounded recall printed on the product.}
+\end{pblock}

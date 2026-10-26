@@ -1,0 +1,19 @@
+% The A3 is the A0 scaled down, not a re-layout.
+%
+% beamerposter's `size=a3' cannot reproduce the A0 proportions: it hard-codes
+% hmargin=1cm regardless of paper size, which is 1.2 % of A0's width but 3.4 %
+% of A3's, so the text block comes out ~4.4 % proportionally narrower and every
+% column reflows. It also rounds the font scale to two decimals per size, and
+% no absolute length in the document scales at all.
+%
+% Scaling the finished PDF keeps the layout proportionally identical, costs
+% nothing in quality (text and TikZ are vector; rasters go from ~150 to ~425
+% effective dpi), and needs no external binary — which matters here, because
+% ghostscript, pdfjam, qpdf and ImageMagick are all absent.
+\documentclass{article}
+\usepackage[papersize={297mm,420mm},margin=0pt]{geometry}
+\usepackage{pdfpages}
+\pagestyle{empty}
+\begin{document}
+\includepdf[fitpaper=false,pages=1]{poster.pdf}
+\end{document}

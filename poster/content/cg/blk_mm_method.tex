@@ -1,0 +1,18 @@
+% Methods, right half: how MAREA works, the whole height of the row. Slot
+% \figFlowW x \figFlowH (391 x 244.6 mm, the delivered size: placed at 1:1):
+% figures/cg/method_flow.(pdf|png), script tools/cg/fig_method_flow.py --height
+% 244.6 (six cards that follow one imaginary pixel, two rows of three joined by
+% arrows, and a line that names every symbol). Every value in it is simulated,
+% so the title line says "Schematic" at 24 pt (\cgtitlenotebig), readable from
+% 1.5 m. While the figure is missing, the six steps of \cgStepsBody
+% (content/cg/text_methods.tex) are set in its place.
+\setlength{\parskip}{0pt}%
+\cgtitlenotebig{\cguse{\cgStepsTitle}{How MAREA works: follow one
+  pixel}}{\cguse{\cgStepsNote}{Schematic: one imaginary pixel}}
+\vspace{1mm}
+\cgfigor{method_flow}{\figFlowW}{\figFlowH}{\parbox[c]{\figFlowW}{\cgSmall
+  \setlength{\parskip}{0pt}\raggedright
+  \cguse{\cgStepsBody}{\step{1}{Seen many times: wet or dry.}
+    \step{2}{Its tide arrives late.} \step{3}{Its section's delay.}
+    \step{4}{Its elevation.} \step{5}{Its emerged time.}
+    \step{6}{All pixels: the maps.}}\par}}

@@ -1,0 +1,18 @@
+% Bottom strip, right: QR to the code repository (40 mm, in a white box) and,
+% beside it, the label and the address in the text face, 20 pt, broken after
+% the owner (\cgRepoText). Both are [t] minipages opened by \vspace{0pt}, so
+% the QR's top edge and the label's line share one top. No promise of a web
+% viewer until it exists.
+% TODO(viewer): when the web viewer exists, point the QR (and the text) to it.
+% TODO(authors): confirm the repository is public before printing.
+\setlength{\parskip}{1.2mm}%
+\noindent\begin{minipage}[t]{43mm}\vspace{0pt}%
+  {\setlength{\fboxsep}{1.5mm}\colorbox{white}{%
+    \qrcode[height=40mm]{https://github.com/coastal-AI/Intertidal_analysis}}}%
+\end{minipage}\hfill
+\begin{minipage}[t]{\dimexpr\linewidth-48mm\relax}\vspace{0pt}%
+  \raggedright\setlength{\parskip}{1.2mm}%
+  \cgFootTitle{\cguse{\cgRepoQRLabel}{Code}}
+  {\cgFoot\color{PInk}
+   \cguse{\cgRepoText}{github.com/coastal-AI/\\Intertidal\_analysis}\par}
+\end{minipage}\par

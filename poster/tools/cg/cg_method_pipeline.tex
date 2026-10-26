@@ -1,0 +1,256 @@
+% CARTOGRASS 2026 poster, Methods: the MAREA pipeline in five steps.
+%
+% Drawn at FINAL print size (x = y = 1 mm), so it is placed at 1:1 with no
+% `width' key and its type keeps the size it was set in. Two presets:
+%
+%   slot  391 x 104 mm  the slot \figPipeW x \figPipeH of cartograss2026.tex
+%                       (default); titles 22 pt, step text and labels 20 pt
+%   wide  520 x 121 mm  the size first planned for the Methods row; titles
+%                       26 pt, step text 22 pt, labels 20 pt
+%
+% Same face and palette as the poster (Fira Sans, preamble/colors.tex), with
+% lining figures as in every figure of the poster.
+%
+% Build (from the repository root): poster/tools/cg/fig_method_pipeline.py
+% [--preset wide]. It compiles this file (poster/tools/cg/, next to the
+% script) from poster/ (for \input{preamble/colors}) into poster/build/cg/
+% with \def\cgPreset{...} given on the command line, and writes
+% poster/figures/cg/method_pipeline.*
+%
+% Emphasis: card 3 (the lag per section, MAREA's own step and the subject of
+% the poster's kicker) is the one filled card, in deep blue; card 5 (the
+% product) keeps the pale fill and the sand outline; the input cube (card 1)
+% is a plain card like 2 and 4. Cards 4 and 5 both say "on corrected tide":
+% the elevation and the emerged time are computed on the lag-corrected tide.
+%
+% The icons are schematics, not data: the tide curves, the looks, the
+% flooding curve and the map are drawn, not measured.
+\RequirePackage{fix-cm}   % CM math (tau) at any size, not the nearest
+\documentclass[tikz,border=0pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[sfdefault,book,lining]{FiraSans}
+\usepackage{xcolor}
+\usepackage{fontawesome5}
+\input{preamble/colors}
+\usetikzlibrary{arrows.meta,calc,shapes.symbols}
+\frenchspacing            % ordinary spaces after a colon
+
+\providecommand{\cgPreset}{slot}
+\def\cgWide{wide}
+% Every title and step text is two lines, broken by hand: in the slot preset
+% the step texts get a 68 mm measure, which at 20 pt holds about 20
+% characters (measured with \settowidth: "midpoint = elevation" is 65.4 mm),
+% and the 22 pt bold titles a 66 mm one ("on corrected tide" 60.5 mm).
+\ifx\cgPreset\cgWide
+  \def\W{520}\def\H{121}\def\G{15}
+  \newcommand{\cgtitle}{\fontsize{26}{30}\selectfont\bfseries}
+  \newcommand{\cgsub}{\fontsize{22}{26}\selectfont}
+  \def\TH{20.5}   % title block: 2 lines of 26/30 pt with descenders, mm
+  \def\SH{17.5}   % step text: 2 lines of 22/26 pt, mm
+  \def\BADGE{13}\def\BADGEPT{26}\def\ARW{3.2pt}\def\ARH{6.5mm}
+\else
+  \def\W{391}\def\H{104}\def\G{9}
+  \newcommand{\cgtitle}{\fontsize{22}{25}\selectfont\bfseries}
+  \newcommand{\cgsub}{\fontsize{20}{23}\selectfont}
+  \def\TH{17.0}   % 2 lines of 22/25 pt
+  \def\SH{16.0}   % 2 lines of 20/23 pt
+  \def\BADGE{11}\def\BADGEPT{22}\def\ARW{2.6pt}\def\ARH{4.6mm}
+\fi
+\newcommand{\cglab}{\fontsize{20}{23}\selectfont}
+
+% Geometry, in mm. Card i spans x = i(CW+G) .. i(CW+G)+CW and y = 0 .. YB;
+% the badges ride on the top edge, so the picture starts 7 mm above it.
+\pgfmathsetmacro{\CW}{(\W-4*\G)/5}
+\pgfmathsetmacro{\YB}{-(\H-7)}
+\pgfmathsetmacro{\YT}{-5.5}                       % top of the title block
+\pgfmathsetmacro{\YS}{\YB+3.5+\SH}                % top of the step text
+\pgfmathsetmacro{\YI}{(\YT-\TH+\YS)/2}            % centre of the icon area
+\pgfmathsetmacro{\IH}{\YT-\TH-\YS-3}              % height of the icon area
+% the icons are drawn in a 64 x 44 mm box, scaled to the area they get
+\pgfmathsetmacro{\IS}{min((\CW-7)/64, \IH/44)}
+\pgfmathsetmacro{\TW}{\CW-5}                     % measure of the titles
+\pgfmathsetmacro{\SW}{\CW-3}                     % and of the step texts
+
+\tikzset{
+  card/.style={draw=PRule, fill=white, line width=1.4pt, rounded corners=3mm},
+  badge/.style={circle, fill=PTeal, draw=white, line width=1.6pt,
+                minimum size=\BADGE mm, inner sep=0pt, text=white,
+                font=\fontsize{\BADGEPT}{\BADGEPT}\selectfont\bfseries},
+  ttl/.style={anchor=north, text width=\TW mm, align=center,
+              font=\cgtitle, inner sep=0pt},
+  sub/.style={anchor=north, text width=\SW mm, align=center,
+              font=\cgsub, inner sep=0pt},
+  flowarrow/.style={-{Stealth[length=\ARH,width=\ARH]}, draw=PTeal,
+                    line width=\ARW},
+  tide/.style={draw=PDeep, line width=2.4pt, smooth, samples=140},
+  zline/.style={draw=PInk, line width=1.5pt, dash pattern=on 4pt off 3pt},
+  look/.style={circle, draw=white, line width=0.9pt, minimum size=4.2mm,
+               inner sep=0pt},
+  lab/.style={font=\cglab, text=PInk, inner sep=1pt},
+}
+
+% The two estuary icons (steps 1 and 5) draw the low-water channel as one
+% smooth centreline and the flats as strokes of decreasing width around it,
+% so every band edge is a contour. Neither is clipped: thick strokes cut by a
+% clip path leave hairlines in poppler's renderer, so the strokes end exactly
+% on the frame (butt caps) or inside it.
+
+\begin{document}
+\begin{tikzpicture}[x=1mm, y=1mm, line cap=round, line join=round]
+\useasboundingbox (0,7) rectangle (\W,\YB);
+
+% ── the five cards ─────────────────────────────────────────────────────────
+\foreach \i in {0,1,3} {\filldraw[card] (\i*\CW+\i*\G,0) rectangle ++(\CW,\YB);}
+\filldraw[card, fill=PDeep, draw=PDeep] (2*\CW+2*\G,0) rectangle ++(\CW,\YB);
+\filldraw[card, fill=PMist, draw=PSand, line width=2pt]
+  (4*\CW+4*\G,0) rectangle (\W,\YB);
+\foreach \i in {0,...,3} {
+  \draw[flowarrow] (\i*\CW+\i*\G+\CW+1.2,\YI) -- (\i*\CW+\i*\G+\CW+\G-1.2,\YI);
+}
+
+% centre of card i
+\newcommand{\cx}[1]{#1*\CW+#1*\G+\CW/2}
+
+% ── 1 · the cube, built in the cloud ──────────────────────────────────────
+\node[ttl, text=PInk] at ({\cx{0}},\YT) {Sentinel-2\\data cube};
+\begin{scope}[shift={({\cx{0}},\YI)}, scale=\IS]
+  \node[cloud, cloud puffs=10, cloud puff arc=115, aspect=2.1,
+        draw=PDeep, line width=1.5pt, fill=PMist,
+        minimum width=\IS*44mm, minimum height=\IS*21mm] at (-10,12) {};
+  \node[text=PDeep, font=\cglab, align=center, inner sep=0pt] at (-10,12.4)
+    {\textbf{openEO}\\[-0.6mm] on CDSE};
+  \node[text=PDeep, font=\fontsize{25}{25}\selectfont] at (23,15) {\faSatellite};
+  % scenes stacked in time, back to front, coming out of the cloud
+  \foreach \k in {4,3,2,1} {
+    \filldraw[fill=PDeep!55!PTeal, draw=white, line width=1pt]
+      (-16+\k*1.8,-22+\k*1.8) rectangle ++(26,17);
+  }
+  % the front scene: an estuary at low water, seen as a grid of pixels; the
+  % channel enters and leaves horizontally, its butt caps on the frame
+  \fill[PMist!70!PSand] (-16,-22) rectangle ++(26,17);
+  \foreach \w/\c in {8.4/PSand!75!white, 5.4/PSand, 2.6/PTeal, 1.2/PDeep} {
+    \draw[\c, line width=\IS*\w*1mm, line cap=butt]
+      (-16,-16) .. controls (-10,-16) and (-8.5,-10.5) .. (-3,-10.5)
+      .. controls (2.5,-10.5) and (4,-14) .. (10,-14);
+  }
+  \draw[white, line width=0.45pt, step=2.6, shift={(-16,-22)}]
+    (0,0) grid (26,17);
+  \draw[white, line width=1pt] (-16,-22) rectangle ++(26,17);
+  \draw[-{Stealth[length=3mm,width=3mm]}, PSlate, line width=1.5pt]
+    (11.4,-22.4) -- (18.2,-15.6);
+  \node[font=\cglab, text=PInk, anchor=west, inner sep=1pt] at (18.8,-15.0) {time};
+\end{scope}
+\node[sub, text=PInk] at ({\cx{0}},\YS)
+  {built in the cloud,\\10\,m, 2023--2025};
+
+% ── 2 · every pixel, a wet/dry sensor ─────────────────────────────────────
+\node[ttl, text=PInk] at ({\cx{1}},\YT) {Each pixel:\\a wet/dry sensor};
+\begin{scope}[shift={({\cx{1}},\YI)}, scale=\IS]
+  \draw[tide, domain=-26:23] plot (\x, {10.5*sin(\x*13.5 + 20)});
+  \draw[zline] (-26.5,2) -- (25,2);
+  \node[lab, font=\cglab\itshape, anchor=west] at (25.5,2) {z};
+  \foreach \x in {-24,-17.5,-11,-4.5,2,8.5,15,21.5} {
+    \pgfmathsetmacro{\y}{10.5*sin(\x*13.5 + 20)}
+    \ifdim \y pt > 2pt
+      \node[look, fill=PTeal] at (\x,\y) {};
+    \else
+      \node[look, fill=PSand] at (\x,\y) {};
+    \fi
+  }
+  % the pixel itself, sitting at its elevation
+  \filldraw[fill=PSand!55!white, draw=PInk, line width=1.1pt]
+    (-32,-0.2) rectangle ++(4.4,4.4);
+  \node[look, fill=PTeal] at (-9,18.5) {};
+  \node[lab, anchor=west] at (-6.8,18.5) {wet};
+  \node[look, fill=PSand] at (-9,-18.5) {};
+  \node[lab, anchor=west] at (-6.8,-18.5) {dry};
+\end{scope}
+\node[sub, text=PInk] at ({\cx{1}},\YS)
+  {wet when the tide\\is above the pixel};
+
+% ── 3 · the lag, one per section of the estuary ───────────────────────────
+% on the filled card the mouth's tide is white and the inner one a light teal
+\colorlet{cgInside}{PTeal!45!white}
+\node[ttl, text=white] at ({\cx{2}},\YT) {Tidal lag per\\3-km section};
+\begin{scope}[shift={({\cx{2}},\YI)}, scale=\IS]
+  \draw[tide, draw=white, domain=-31:31] plot (\x, {9*sin(\x*11.25 + 90)});
+  \draw[tide, draw=cgInside, domain=-31:31] plot (\x, {9*sin((\x-9)*11.25 + 90)});
+  \draw[white!70!PDeep, line width=0.9pt, dash pattern=on 2pt off 2pt]
+    (0,9) -- (0,14.5) (9,9) -- (9,14.5);
+  \draw[{Stealth[length=2.6mm,width=2.6mm]}-{Stealth[length=2.6mm,width=2.6mm]},
+        white, line width=1.4pt] (0,14.5) -- (9,14.5);
+  \node[font=\fontsize{24}{24}\selectfont, text=white, anchor=south,
+        inner sep=1pt] at (4.5,15.2) {$\tau$};
+  % keys
+  \draw[white, line width=2.4pt] (-31,-19) -- (-25,-19);
+  \node[lab, text=white, anchor=west] at (-24.2,-19) {mouth};
+  \draw[cgInside, line width=2.4pt] (2,-19) -- (8,-19);
+  \node[lab, text=white, anchor=west] at (8.8,-19) {inside};
+\end{scope}
+\node[sub, text=white] at ({\cx{2}},\YS)
+  {profiled likelihood,\\zero at the mouth};
+
+% ── 4 · the flooding curve of one pixel ───────────────────────────────────
+\node[ttl, text=PInk] at ({\cx{3}},\YT) {Flooding curve\\on corrected tide};
+\begin{scope}[shift={({\cx{3}},\YI)}, scale=\IS]
+  \draw[PSlate, line width=1.2pt] (-30,21) -- (-30,-20.5) -- (31,-20.5);
+  \node[lab, text=PSlate, anchor=north west] at (-28.5,22) {NDWI};
+  \node[lab, text=PSlate, anchor=south east] at (31,-19.5) {tide};
+  \foreach \x/\y in {-26/-13, -21.5/-15.5, -17/-12.8, -12.5/-15, -8/-13.5,
+                     -3.5/-15.6} {
+    \node[look, fill=PSand] at (\x,\y) {};
+  }
+  \foreach \x/\y in {7/4, 10.5/12.5, 14.5/7, 18.5/14, 22.5/9, 26.5/13} {
+    \node[look, fill=PTeal] at (\x,\y) {};
+  }
+  \draw[zline] (3,-20.5) -- (3,-1.5);
+  % the logistic's argument is clamped: pgfmath overflows on exp(20)
+  \draw[PDeep, line width=2.6pt, smooth, samples=120, domain=-29:31]
+    plot (\x, {-14.5 + 26/(1 + exp(-max(min((\x-3)/1.6, 9), -9)))});
+  \node[circle, fill=PInk, draw=white, line width=1.3pt, minimum size=5mm,
+        inner sep=0pt] at (3,-1.5) {};
+  \node[lab, font=\cglab\itshape, anchor=south west] at (4,-20) {z};
+\end{scope}
+\node[sub, text=PInk] at ({\cx{3}},\YS)
+  {midpoint = elevation\\with its uncertainty};
+
+% ── 5 · the product: emerged time ─────────────────────────────────────────
+% "DEM + corrected tide" (71.6 mm at 22 pt bold) does not fit the 66 mm
+% title measure; the title follows card 4, whose midpoints are the DEM.
+\node[ttl, text=PInk] at ({\cx{4}},\YT) {Emerged time\\on corrected tide};
+\begin{scope}[shift={({\cx{4}},\YI)}, scale=\IS]
+  % a map of the share of time each pixel spends out of the water: the
+  % channel leaves the sea (left strip, which hides the butt-capped lead-in)
+  % and ends inside the frame, where the round caps close the flats around
+  % its head
+  \fill[white, rounded corners=1.8mm] (-30,-11) rectangle (30,21);
+  \foreach \w/\c in {18/PSand, 13.5/PSand!45!PMist, 9.5/PMist!80!PSlate!40!white,
+                     6.3/PTeal!45!PMist, 3.4/PTeal, 1.3/PDeep} {
+    \draw[\c, line width=\IS*\w*1mm, line cap=butt] (-29.6,2) -- (-15,2);
+    \draw[\c, line width=\IS*\w*1mm, line cap=round]
+      (-17,2) .. controls (-9,2) and (-9,10) .. (0,10)
+      .. controls (8,10) and (9,5) .. (16.5,5);
+  }
+  \fill[PDeep] (-26,-11) -- (-28.2,-11) arc[start angle=270, end angle=180,
+    radius=1.8] -- (-30,19.2) arc[start angle=180, end angle=90, radius=1.8]
+    -- (-26,21) -- cycle;
+  \draw[PRule, line width=1.1pt, rounded corners=1.8mm] (-30,-11) rectangle (30,21);
+  % legend: share of the time the ground is out of the water
+  \foreach \c [count=\k from 0] in {PDeep, PTeal, PTeal!45!PMist,
+                                    PMist!80!PSlate!40!white,
+                                    PSand!45!PMist, PSand} {
+    \fill[\c] (-22+\k*5.5,-21.5) rectangle ++(5.5,4.6);
+  }
+  \node[lab, anchor=east] at (-22.6,-19.2) {0};
+  \node[lab, anchor=west] at (11.6,-19.2) {100\,\%};
+\end{scope}
+\node[sub, text=PInk] at ({\cx{4}},\YS)
+  {habitat base layer\\for \textit{Zostera noltei}};
+
+% the badges last, over everything
+\foreach \i in {0,...,4} {
+  \node[badge] at (\i*\CW+\i*\G+6.5, 0) {\pgfmathparse{int(\i+1)}\pgfmathresult};
+}
+
+\end{tikzpicture}
+\end{document}

@@ -36,9 +36,20 @@ from .elevation import _fit_block
 SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
 CLEAR = (4, 5, 6, 7)
 T_CHUNK = 40
-TAU_DETECT_MIN = 10.0     # detection threshold demonstrated against the
-                          # matched nulls of Villaviciosa/Scheldt; below it
-                          # the operator stays at identity (conservative)
+TAU_DETECT_MIN = 0.0      # no detection threshold: the fitted lag of every
+                          # band is applied as measured (a fixed cut-off was
+                          # an artefact; the matched null is reported as the
+                          # significance band, not used as a gate). Negative
+                          # lags are clipped to 0 by causality, band by band.
+#: Per-pixel quality rule (2026-10-06, fixed before re-validation): an
+#: elevation is kept only if it is INTERPOLATED from the pixel's own record,
+#: i.e. at least this many clear observations were taken with the (lagged)
+#: water level below it and as many above it. Fewer than 3 on a side cannot
+#: tell a wet/dry transition from one misclassified or mislevelled scene
+#: (non-tidal residual ~0.13 m). It removes elevations pinned to the edge of
+#: the sampled range — the lowest inner flats of the Wadden when the lag
+#: moves the record off low water. Applied to MAREA and no delay alike.
+QUALITY_MIN_BRACKET = 3
 
 
 def extract(cube_path):
@@ -97,7 +108,7 @@ def extract(cube_path):
 
 
 def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
-                  min_obs=8, min_b=0.15, max_b=2.5, max_a=2.5):
+                  min_obs=8, min_b=0.15, max_b=2.5, max_a=2.5, min_bracket=0):
     """Per-pixel elevation from NDWI series under a level series ``h``.
 
     THE canonical inversion of the package: closed-form (a, b) sweep over a
@@ -105,6 +116,11 @@ def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
     amplitudes exploded in frozen prediction). Every experiment and the
     campaign call this one function — five near-copies were folded into it
     at delivery time. Returns ``(z, sigma)``, NaN where the guards reject.
+
+    ``min_bracket``: the quality rule (``QUALITY_MIN_BRACKET`` in the
+    products): keep ``z`` only with at least this many clear observations
+    whose level ``h`` is below it and as many above it. 0 (the default)
+    leaves the historical behaviour of every older experiment unchanged.
     """
     lo = float(np.min(h)) if lo is None else lo
     hi = float(np.max(h)) if hi is None else hi
@@ -118,6 +134,12 @@ def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
                                         h, grid, SG_GRID)
         ok = ((N >= min_obs) & (b > min_b) & (b < max_b)
               & (np.abs(a) < max_a))
+        if min_bracket:
+            clear = np.asarray(C[:, s]) > 0
+            hh = np.asarray(h, float)[:, None]
+            below = (clear & (hh < mu[None, :])).sum(axis=0)
+            above = (clear & (hh > mu[None, :])).sum(axis=0)
+            ok &= (below >= min_bracket) & (above >= min_bracket)
         z[s] = np.where(ok, mu, np.nan)
         sg_out[s] = np.where(ok, sg, np.nan)
     return z, sg_out
@@ -137,7 +159,7 @@ def build_bank(lat, lon, times, bank_taus=None, model="EOT20",
     Returns ``(bank, rising)``.
     """
     import pandas as pd
-    from eo_tides.model import model_tides
+    from .boundary import model_tides          # keeps sys.stdout intact (eo-tides/colorama)
     from . import tide_estimators as te
 
     bank_taus = list(BANK_TAUS if bank_taus is None else bank_taus)
@@ -172,9 +194,23 @@ TAU_BOUNDS = (-45.0, 180.0)
 def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
                 tau_detect_min=TAU_DETECT_MIN, model="EOT20",
                 tide_dir="tide_models", region_mask=None, boundary=None,
-                extraction=None, mouth_side="any", verbose=True):
+                extraction=None, mouth_side="any", verbose=True,
+                band_km=3.0, min_px_band=500, n_boot=30, min_scenes=80,
+                overpass_times=None, quality_min_bracket=QUALITY_MIN_BRACKET):
     """The full MAREA product for one cube. Writes ``out_dir``/{marea.npz,
     result.json, figure.png} and returns the result dict.
+
+    ``min_scenes``: the record must hold at least this many scenes with an
+    overpass time, or the run is refused (result.json "pocas_escenas").
+    The default 80 is the historical floor; a record restricted by a
+    scene rule (e.g. the transition-zone cloud screening) can be shorter.
+
+    ``quality_min_bracket``: see QUALITY_MIN_BRACKET (0 disables the rule).
+
+    ``overpass_times``: {date: timestamp} of the acquisitions, e.g. the
+    site's cached overpass_times.json. When given, it replaces the live
+    STAC query, so the record's instants are exactly the ones the caller
+    uses elsewhere and no network is needed.
 
     ``region_mask`` (H, W bool) restricts the INTERTIDAL pixels to one
     region while the mouth anchor and the geodesic distance still come from
@@ -234,12 +270,19 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     except ValueError:
         s_km = np.full(len(keep), np.nan)
 
-    times = overpass.get_overpass_times(
-        ex["bbox"], ("2016-01-01", "2025-12-31"), verbose=False)
+    if overpass_times is not None:
+        times = {str(k): pd.Timestamp(v).to_pydatetime()
+                 for k, v in dict(overpass_times).items()}
+        overpass_source = "given"
+    else:
+        times = overpass.get_overpass_times(
+            ex["bbox"], ("2016-01-01", "2025-12-31"), verbose=False)
+        overpass_source = "stac"
     have = np.array([s in times for s in ex["dates"]])
-    if have.sum() < 80:
+    if have.sum() < min_scenes:
         json.dump({"sitio": name, "estado": "pocas_escenas",
-                   "n_escenas": int(have.sum())},
+                   "n_escenas": int(have.sum()),
+                   "min_scenes": int(min_scenes)},
                   open(os.path.join(out_dir, "result.json"), "w"), indent=1)
         return None
     t_real = pd.DatetimeIndex(pd.to_datetime(
@@ -263,57 +306,89 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
 
     # interior tide (only with a usable mouth anchor)
     if np.isfinite(s_km).sum() > 5000:
-        edges, centers, band_of = te.make_bands(s_km, n_bands)
+        # bands of fixed length along the mouth distance (``n_bands`` is
+        # kept in the signature for compatibility; the estuary's length
+        # sets the count), monotone lag profile, scene-bootstrap interval
+        edges, centers, band_of = te.make_bands_fixed(s_km, band_km, min_px_band)
+        nb = len(centers)
         import yaml
         cfg2 = yaml.safe_load(open(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "configs", "m2.yaml"), encoding="utf-8"))
-        r2a = te.m2a_rasch(wet, C > 0, bank, band_of, centers, n_bands,
-                           sigma0=cfg2["sigma0_m"],
-                           sg_grid=tuple(cfg2["sigma_perfil_m"]),
-                           tau_bounds=TAU_BOUNDS,
-                           z_points=cfg2["z_puntos"],
-                           rng=np.random.default_rng(cfg2["seed"] + 31),
-                           max_px_band=cfg2["max_px_banda"]["m2a"])
+        fit_kw = dict(sigma0=cfg2["sigma0_m"],
+                      sg_grid=tuple(cfg2["sigma_perfil_m"]),
+                      tau_bounds=TAU_BOUNDS, z_points=cfg2["z_puntos"],
+                      max_px_band=cfg2["max_px_banda"]["m2a"], monotone=True)
+        r2a = te.m2a_rasch(wet, C > 0, bank, band_of, centers, nb,
+                           rng=np.random.default_rng(cfg2["seed"] + 31), **fit_kw)
         tau = np.asarray(r2a["tau"], float)
+        if n_boot:
+            t_b = time.time()
+            boot = te.bootstrap_lags(wet, C > 0, bank, band_of, centers, nb,
+                                     n_boot=n_boot, seed=cfg2["seed"],
+                                     **{**fit_kw, "max_px_band": 600})
+            tau_lo = np.nanpercentile(boot, 2.5, axis=0)
+            tau_hi = np.nanpercentile(boot, 97.5, axis=0)
+            if verbose:
+                print(f"[{name}] bootstrap of {n_boot} scene resamples "
+                      f"[{time.time() - t_b:.0f} s]", flush=True)
+        else:
+            boot = None
+            tau_lo = tau_hi = np.full(nb, np.nan)
     else:
         centers = np.array([0.0])
         band_of = np.zeros(len(keep), int)
         tau = np.array([0.0])
+        boot = None
+        tau_lo = tau_hi = np.array([np.nan])
     tau_used = np.where(np.abs(tau) > tau_detect_min, tau, 0.0)
-    # Physics veto. The interior lag is a propagation delay: non-negative,
-    # growing inland. A profile whose above-threshold bands include a
-    # NEGATIVE lag — the interior running AHEAD of the ocean — is noise
-    # straddling the detection threshold, not a tide (seen in Arousa:
-    # -10.3 and +10.5 min in adjacent bands). One incoherent band vetoes
-    # the whole profile; the honest product is then "one clock".
-    veto = bool((tau_used < 0).any())
-    if veto:
-        tau_used = np.zeros_like(tau_used)
+    # Causality. The interior lag is a propagation delay: non-negative. A
+    # band whose fitted lag is negative (the interior running AHEAD of the
+    # ocean) is clipped to 0, band by band; the other bands keep their
+    # measured lag. (Until 2026-09-23 a negative band above the detection
+    # threshold vetoed the whole profile; with the threshold gone that rule
+    # would zero every profile with one noisy band, so it was replaced.)
+    neg = tau_used < 0
+    veto = bool(neg.any())
+    tau_used = np.where(neg, 0.0, tau_used)
     if verbose:
         print(f"[{name}] tau={np.round(tau, 1)} -> "
               f"applied {np.round(tau_used, 1)}"
-              + ("  [physics veto: negative lag above threshold]"
+              + (f"  [causality: {int(neg.sum())} negative band(s) clipped to 0]"
                  if veto else ""), flush=True)
+
+    # The lag every pixel receives: the band profile smoothed along the
+    # mouth distance (Gaussian kernel, bandwidth = band length), anchored at
+    # 0 at the mouth, rounded to the minute. Pixels without a mouth
+    # distance keep the boundary's clock.
+    if len(centers) > 1:
+        tau_px = te.smooth_lag_profile(centers, tau_used, s_km, bandwidth_km=band_km)
+    else:
+        tau_px = np.zeros(len(keep))
+    tau_px = np.where(np.isfinite(tau_px), np.round(tau_px), 0.0)
+    if verbose:
+        print(f"[{name}] per-pixel lag: median {np.median(tau_px):.0f} min, "
+              f"max {tau_px.max():.0f} min, {int((tau_px > 0).sum()):,} px shifted", flush=True)
 
     lo, hi = float(h0.min()), float(h0.max())
     z = np.full(len(keep), np.nan)
     sg = np.full(len(keep), np.nan)
-    for k in range(len(centers)):
-        cols = np.where(band_of == k)[0]
+    for tv in np.unique(tau_px):
+        cols = np.where(tau_px == tv)[0]
         if not len(cols):
             continue
-        if not tau_used[k]:
+        if not tv:
             h_k = h0
         elif boundary is not None:
             # the exact shifted level, not the bank's linear interpolation
             # between 15-min shifts (a few cm at most, but the product and
             # a notebook re-inverting the same record should agree exactly)
             h_k = np.asarray(boundary.levels(
-                t_real - pd.Timedelta(minutes=float(tau_used[k]))), float)
+                t_real - pd.Timedelta(minutes=float(tv))), float)
         else:
-            h_k = bank.at(float(tau_used[k]))
-        z[cols], sg[cols] = _invert(Y[:, cols], C[:, cols], h_k, lo, hi)
+            h_k = bank.at(float(tv))
+        z[cols], sg[cols] = _invert(Y[:, cols], C[:, cols], h_k, lo, hi,
+                                    min_bracket=quality_min_bracket)
 
     # hypsometry with uncertainty (sigma as the per-pixel jitter)
     from .hypsometry import curve_with_uncertainty
@@ -325,18 +400,31 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         s_km=s_km.astype(np.float32), band=band_of.astype(np.int16),
         keep=keep, shape=np.array([H, W]),
         tau_min=tau, tau_usado_min=tau_used,
+        tau_lo_min=np.asarray(tau_lo, float), tau_hi_min=np.asarray(tau_hi, float),
+        tau_px_min=tau_px.astype(np.float32),
+        band_km=np.array([band_km]),
+        **({"tau_boot_min": boot} if boot is not None else {}),
         hyp_z=hyp["z"], hyp_area=hyp["area_km2"],
         hyp_lo=hyp["area_lo"], hyp_hi=hyp["area_hi"])
     result = {
         "sitio": name, "estado": "ok",
         "n_escenas": int(have.sum()), "n_px": int(len(keep)),
+        "record_dates": [str(s) for s in ex["dates"][have]],
+        "min_scenes": int(min_scenes), "overpass_source": overpass_source,
         "n_px_cota": int(np.isfinite(z).sum()),
         "s_max_km": (float(np.nanmax(s_km))
                      if np.isfinite(s_km).any() else None),
+        "band_km": float(band_km), "min_px_band": int(min_px_band),
+        "quality_min_bracket": int(quality_min_bracket),
         "centros_km": np.asarray(centers).tolist(),
         "tau_min": np.asarray(tau).tolist(),
         "tau_usado_min": np.asarray(tau_used).tolist(),
-        "con_operador": bool((tau_used != 0).any()),
+        "tau_lo_min": np.asarray(tau_lo, float).tolist(),
+        "tau_hi_min": np.asarray(tau_hi, float).tolist(),
+        "n_boot": int(n_boot),
+        "tau_px_median_min": float(np.median(tau_px)),
+        "tau_px_max_min": float(tau_px.max()),
+        "con_operador": bool((tau_px != 0).any()),
         "veto_fisico": veto,
         "hipsometria": {"integral": hyp["integral"],
                         "area_total_km2": hyp["area_total_km2"]},

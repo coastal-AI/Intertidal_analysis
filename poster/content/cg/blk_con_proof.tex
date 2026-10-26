@@ -1,0 +1,17 @@
+% Concept row, column D: the pilot result (previous work) with a QR, in the
+% sand outline, centred in its box. The one validation number on the sheet for
+% now, from the submitted abstract; the box says what it tests.
+% TODO(qr): choose the QR target (validation summary, abstract page, ...)
+% and replace the frame with
+%   {\setlength{\fboxsep}{1.5mm}\colorbox{white}{\qrcode[height=42mm]{<url>}}}
+% (a literal URL, as in blk_foot_qr.tex).
+{\color{PDeep}\bfseries\fontsize{27}{32}\selectfont
+ \cguse{\cgProofTitle}{Pilot result}\par}
+\vspace{2mm}
+\cguse{\cgProofBody}{R\'{\i}a de Villaviciosa, against 194 RTK-GNSS
+ points.}\par
+\vspace{6mm}
+\typeout{CGPLACEHOLDER: pilot-result QR (target not chosen)}%
+\noindent\cgframe{45mm}{45mm}{QR}\hspace{5mm}%
+\parbox[b]{\dimexpr\linewidth-50mm\relax}{\color{PSlate}\cgFine
+ \cguse{\cgProofQRLabel}{Details}}\par

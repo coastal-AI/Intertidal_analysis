@@ -1,0 +1,225 @@
+% CARTOGRASS 2026 poster, A0 portrait (841 x 1189 mm).
+% Simposio Ibérico de Cartografía y Seguimiento de Praderas Marinas,
+% Cartagena, 24-26 November 2026 (posters only, A0 vertical).
+%
+% Structure of the reference poster Jorge chose (Oiry et al., World Seagrass
+% Conference 2024): rows of panels, short sentences, big images.
+%
+%   1  header band        conference mark | title, kicker, authors | logos
+%   2  context row        text + photo | image pair | text
+%   3  concept row        concept | tide figure | OBJECTIVE | pilot result + QR
+%   4  materials/methods  sites, data, a pixel is a gauge | how MAREA works
+%   5  results            RESERVED grid, filled after the validation
+%   6  conclusions        RESERVED banner
+%   7  bottom strip       acknowledgments, credits, references, QR
+%
+% Every row sits on one four-column grid (A 165 | B 211 | C 211 | D 165 mm,
+% 15 mm gutters, 22 mm margins), the bottom strip included.
+%
+% Same family as poster.tex: its preamble files are reused unchanged; the new
+% macros (\cgpanel, \cgfig, \cgreserved, ...) live in content/cg/cg_macros.tex.
+% The prose is defined in content/cg/text_*.tex and placed by the blocks in
+% content/cg/blk_*.tex; figures are read from figures/cg/.
+%
+% Build: python poster/tools/cg/build_poster.py (from the repository root).
+% Two pdflatex passes: every panel is placed with `remember picture'. The log
+% lines CGPANEL / CGROW / CGFIG / CGTEXT report the geometry and any overflow.
+% usepdftitle=false: beamer would otherwise write its own (empty) \title into
+% the PDF metadata over the one set with \hypersetup below.
+\documentclass[final,t,usepdftitle=false]{beamer}
+% scale=1.12 sets \normalsize at 27.9 pt (\small 23.2 pt): fewer words than
+% poster.tex, so the body can be larger.
+\usepackage[orientation=portrait,size=a0,scale=1.12]{beamerposter}
+
+\input{preamble/packages}
+\input{preamble/colors}
+\input{preamble/layout}
+\input{preamble/theme}
+\input{preamble/tables}
+\input{content/cg/cg_macros}
+\input{preamble/fixes}      % must stay last: it undoes beamerposter's damage
+
+% The texts define macros only; without them every block sets its draft.
+\IfFileExists{content/cg/text_all.tex}{\input{content/cg/text_all}}%
+  {\typeout{CGTEXT: content/cg/text_all.tex not found, drafts used}}
+
+% PDF metadata (beamer loads hyperref; usepdftitle=false above keeps beamer
+% from overwriting the title). TODO(authors): confirm the author list.
+\hypersetup{pdftitle={MAREA: a method for mapping intertidal topography using
+  Sentinel-2 openEO data cubes},
+  pdfauthor={Jorge Alías Álvarez, Fernando García-González, Pablo González},
+  pdfsubject={CARTOGRASS 2026 poster, Cartagena, 24-26 November 2026},
+  pdfkeywords={intertidal topography, emerged time, tidal delay, Sentinel-2,
+  openEO, Zostera noltei}}
+
+\graphicspath{{figures/cg/}{figures/}}
+
+% ======================================================================
+% GEOMETRY. Every number on the sheet is here, in mm from the top-left
+% corner of the page. Change a height and everything below it moves.
+% ======================================================================
+\newcommand{\cgdef}[2]{\newlength{#1}\setlength{#1}{#2}}
+
+% --- horizontal grid: four columns, 22 mm side margins, 15 mm gutters ----
+\cgdef{\cgMargin}{22mm}
+\cgdef{\cgGut}{15mm}
+\cgdef{\wFull}{797mm}                                        % 841 - 2 x 22
+\cgdef{\wA}{165mm}  \cgdef{\xA}{\cgMargin}                   % x = 22
+\cgdef{\wB}{211mm}  \cgdef{\xB}{\dimexpr\xA+\wA+\cgGut\relax} % 202
+\cgdef{\wC}{211mm}  \cgdef{\xC}{\dimexpr\xB+\wB+\cgGut\relax} % 428
+\cgdef{\wD}{165mm}  \cgdef{\xD}{\dimexpr\xC+\wC+\cgGut\relax} % 654
+\cgdef{\wHalf}{\dimexpr\wA+\cgGut+\wB\relax}               % 391 = A+B = C+D
+\cgdef{\wPair}{\dimexpr\wB+\cgGut+\wC\relax}               % 437 = B+C
+\cgdef{\wSub}{\dimexpr(\wHalf-\cgGut)/2\relax}             % 188: half of a half
+\cgdef{\xSubB}{\dimexpr\xA+\wSub+\cgGut\relax}
+
+% --- vertical budget -------------------------------------------------
+% 2026-10-19: the method flow chart needed 12 mm more than the 252 mm the
+% Methods row had. They come from the row gaps (11 -> 10 mm, six gaps) and
+% the conclusions banner (46 -> 40 mm, padding 9 -> 6 mm); every Results
+% panel keeps its exact size (\hRes stays 286 mm: see the CGPANEL res-* lines).
+\cgdef{\gapRow}{10mm}     % between rows
+\cgdef{\gapIn}{12mm}      % between panels stacked inside a row
+\cgdef{\hHead}{118mm}     % header band, full bleed
+\cgdef{\hCtx}{149mm}      % context row: the image pair and its caption line
+\cgdef{\hCon}{146mm}      % concept row: the tide figure and its caption line
+\cgdef{\hSec}{20mm}       % a section heading over its rule
+\cgdef{\gapSec}{6mm}      % heading rule to the panels under it
+\cgdef{\hMM}{264mm}       % materials and methods panels
+\cgdef{\hConc}{40mm}      % conclusions banner
+\cgdef{\hFoot}{74mm}      % bottom strip, full bleed to the bottom edge
+
+\cgdef{\yCtx}{\dimexpr\hHead+\gapRow\relax}
+\cgdef{\yCon}{\dimexpr\yCtx+\hCtx+\gapRow\relax}
+\cgdef{\ySecMM}{\dimexpr\yCon+\hCon+\gapRow\relax}
+\cgdef{\yMM}{\dimexpr\ySecMM+\hSec+\gapSec\relax}
+\cgdef{\ySecRes}{\dimexpr\yMM+\hMM+\gapRow\relax}
+\cgdef{\yRes}{\dimexpr\ySecRes+\hSec+\gapSec\relax}
+\cgdef{\yFoot}{\dimexpr1189mm-\hFoot\relax}
+\cgdef{\yConc}{\dimexpr\yFoot-\gapRow-\hConc\relax}
+% The results grid takes whatever the rows above and below leave.
+\cgdef{\hRes}{\dimexpr\yConc-\gapRow-\yRes\relax}
+
+% --- materials and methods: left half = the study sites and the data (one
+%     panel), then one real pixel; right half = the method flow chart, the
+%     whole height of the row
+\cgdef{\hMat}{176.5mm}
+\cgdef{\gapPix}{10mm}     % the materials panel to the pixel panel under it
+\cgdef{\yPix}{\dimexpr\yMM+\hMat+\gapPix\relax}
+\cgdef{\hPix}{\dimexpr\hMM-\hMat-\gapPix\relax}
+
+% --- results: left half = the Ems maps (half width, room for three maps side
+%     by side) over two small panels; right half = the emerged-time map (the
+%     largest slot) over a wide, low panel. Each slot is its panel's height
+%     less 36 mm: the title and a one-line takeaway to come.
+%     2026-10-19 (round 4): the two small panels sit on the grid, A | B
+%     (165 | 211 mm, gutter at 187-202 mm like every other row that splits A
+%     from B), not as equal halves of the half (188 | 188, gutter at
+%     210-225 mm): the result figures are exported at these slot sizes.
+\cgdef{\hResC}{148mm}
+\cgdef{\yResAB}{\dimexpr\yRes+\hResC+\cgGut\relax}
+\cgdef{\hResAB}{\dimexpr\hRes-\hResC-\cgGut\relax}
+\cgdef{\hResE}{84mm}
+\cgdef{\hResD}{\dimexpr\hRes-\hResE-\cgGut\relax}
+\cgdef{\yResE}{\dimexpr\yRes+\hResD+\cgGut\relax}
+\cgdef{\figResCH}{\dimexpr\hResC-36mm\relax}
+\cgdef{\figResABH}{\dimexpr\hResAB-36mm\relax}
+\cgdef{\figResDH}{\dimexpr\hResD-36mm\relax}
+\cgdef{\figResEH}{\dimexpr\hResE-36mm\relax}
+
+% --- bottom strip, inside the band (12 mm kept clear of the trim edge), on
+%     the grid: acknowledgments A, data B, references C (to the QR), QR at
+%     the right edge of D
+\cgdef{\yFootIn}{\dimexpr\yFoot+10mm\relax}
+\cgdef{\hFootIn}{\dimexpr\hFoot-10mm-12mm\relax}
+\cgdef{\wAck}{\wA}
+\cgdef{\wCred}{\wB}    \cgdef{\xCred}{\xB}
+\cgdef{\wQR}{125mm}    \cgdef{\xQR}{\dimexpr\xD+\wD-\wQR\relax}
+\cgdef{\xRefs}{\xC}
+\cgdef{\wRefs}{\dimexpr\xQR-\cgGut-\xRefs\relax}
+
+% --- header band --------------------------------------------------------
+\cgdef{\wHeadSide}{125mm}
+\cgdef{\gapHead}{20mm}
+\cgdef{\xHeadMid}{\dimexpr\xA+\wHeadSide+\gapHead\relax}
+\cgdef{\wHeadMid}{\dimexpr\wFull-2\wHeadSide-2\gapHead\relax}
+\cgdef{\xHeadRight}{\dimexpr\xD+\wD-\wHeadSide\relax}
+
+% --- figure slots: the size each figure must be exported at -----------
+% (width x height; figure makers export at exactly this size, fonts >= 20 pt)
+\cgdef{\figCtxW}{\wB}      \cgdef{\figCtxH}{136mm}  % ctx_lowtide, ctx_hightide
+\cgdef{\figConW}{\wB}      \cgdef{\figConH}{132mm}  % \cgConceptFigure (b1)
+\cgdef{\figSitesW}{\wHalf}\cgdef{\figSitesH}{54mm} % sites_map_strip
+\cgdef{\figFlowW}{\wHalf}  \cgdef{\figFlowH}{244.6mm}% method_flow (\hMM less its title)
+\cgdef{\figPixW}{\wHalf}   \cgdef{\figPixH}{57.5mm} % pixel_gauge (\hPix less its title)
+\cgdef{\figPhotoGap}{7mm}  % text to photo, column A of the context row
+\newlength{\cgPhotoH}      % set in blk_ctx_left.tex (photo ends level with
+                           % the bottom of the image pair)
+
+% The concept row has ONE figure slot (\figConW x \figConH), filled by
+% b1_tide_arrives_late (caption \cgCapLate). b1 prints its own data line.
+\newcommand{\cgConceptFigure}{b1_tide_arrives_late}
+\newcommand{\cgConceptCaption}{\cguse{\cgCapLate}{The tide arrives late.}}
+
+\begin{document}
+\begin{frame}[t]{}
+\begin{cgsheet}
+% ---------------------------------------------------------------- bands
+\cgband{PDeep}{0mm}{\hHead}
+\cgband{PMist}{\yFoot}{\hFoot}
+
+% ------------------------------------------------------------ 1 header
+\cgrow{header}{0mm}{\hHead}
+\cgpanel[c]{head-conference}{\xA}{0mm}{\wHeadSide}{\hHead}{\input{content/cg/blk_head_conference}}
+\cgpanel[c]{head-title}{\xHeadMid}{0mm}{\wHeadMid}{\hHead}{\input{content/cg/blk_head_title}}
+\cgpanel[c]{head-logos}{\xHeadRight}{0mm}{\wHeadSide}{\hHead}{\input{content/cg/blk_head_logos}}
+\cgrowend
+
+% ------------------------------------------------------- 2 context row
+\cgrow{context}{\yCtx}{\hCtx}
+\cgpanel{ctx-left}{\xA}{\yCtx}{\wA}{\hCtx}{\input{content/cg/blk_ctx_left}}
+\cgpanel{ctx-images}{\xB}{\yCtx}{\wPair}{\hCtx}{\input{content/cg/blk_ctx_images}}
+\cgpanel{ctx-right}{\xD}{\yCtx}{\wD}{\hCtx}{\input{content/cg/blk_ctx_right}}
+\cgrowend
+
+% ------------------------------------------------------- 3 concept row
+\cgrow{concept}{\yCon}{\hCon}
+\cgpanel{con-concept}{\xA}{\yCon}{\wA}{\hCon}{\input{content/cg/blk_con_concept}}
+\cgpanel{con-figure}{\xB}{\yCon}{\wB}{\hCon}{\input{content/cg/blk_con_figure}}
+\cgfilled[c]{con-objective}{PMist}{10mm}{\xC}{\yCon}{\wC}{\hCon}{\input{content/cg/blk_con_objective}}
+\cgframed[c]{con-proof}{PSand}{7mm}{\xD}{\yCon}{\wD}{\hCon}{\input{content/cg/blk_con_proof}}
+\cgrowend
+
+% ------------------------------------------ 4 materials and methods
+\cgrow{methods}{\ySecMM}{\dimexpr\hSec+\gapSec+\hMM\relax}
+\cgpanel[b]{sec-methods}{\xA}{\ySecMM}{\wFull}{\hSec}{\input{content/cg/blk_sec_methods}}
+\cgpanel{mm-materials}{\xA}{\yMM}{\wHalf}{\hMat}{\input{content/cg/blk_mm_materials}}
+\cgpanel{mm-pixel}{\xA}{\yPix}{\wHalf}{\hPix}{\input{content/cg/blk_mm_pixel}}
+\cgpanel{mm-method}{\xC}{\yMM}{\wHalf}{\hMM}{\input{content/cg/blk_mm_method}}
+\cgrowend
+
+% ------------------------------------------------ 5 results (reserved)
+\cgrow{results}{\ySecRes}{\dimexpr\hSec+\gapSec+\hRes\relax}
+\cgpanel[b]{sec-results}{\xA}{\ySecRes}{\wFull}{\hSec}{\input{content/cg/blk_sec_results}}
+\cgpanel{res-c}{\xA}{\yRes}{\wHalf}{\hResC}{\input{content/cg/blk_res_c}}
+\cgpanel{res-a}{\xA}{\yResAB}{\wA}{\hResAB}{\input{content/cg/blk_res_a}}
+\cgpanel{res-b}{\xB}{\yResAB}{\wB}{\hResAB}{\input{content/cg/blk_res_b}}
+\cgpanel{res-d}{\xC}{\yRes}{\wHalf}{\hResD}{\input{content/cg/blk_res_d}}
+\cgpanel{res-e}{\xC}{\yResE}{\wHalf}{\hResE}{\input{content/cg/blk_res_e}}
+\cgrowend
+
+% -------------------------------------------- 6 conclusions (reserved)
+\cgrow{conclusions}{\yConc}{\hConc}
+\cgfilled[c]{conclusions}{PDeep}{6mm}{\xA}{\yConc}{\wFull}{\hConc}{\input{content/cg/blk_conclusions}}
+\cgrowend
+
+% ----------------------------------------------------- 7 bottom strip
+\cgrow{footer}{\yFootIn}{\hFootIn}
+\cgpanel{foot-ack}{\xA}{\yFootIn}{\wAck}{\hFootIn}{\input{content/cg/blk_foot_ack}}
+\cgpanel{foot-credits}{\xCred}{\yFootIn}{\wCred}{\hFootIn}{\input{content/cg/blk_foot_credits}}
+\cgpanel{foot-refs}{\xRefs}{\yFootIn}{\wRefs}{\hFootIn}{\input{content/cg/blk_foot_refs}}
+\cgpanel{foot-qr}{\xQR}{\yFootIn}{\wQR}{\hFootIn}{\input{content/cg/blk_foot_qr}}
+\cgrowend
+\end{cgsheet}
+\end{frame}
+\end{document}

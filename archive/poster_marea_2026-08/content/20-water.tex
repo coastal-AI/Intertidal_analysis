@@ -1,0 +1,31 @@
+\begin{pblock}{Choosing the water detector}
+Four detectors were run in \term{one} backend job over byte-identical dates
+and cloud masks, so every difference is the index and not the sampling.
+Scored by rank correlation between water frequency and LiDAR elevation —
+a near model-free arbiter, since a lower pixel must flood more often:
+
+\vspace{3mm}
+\begin{tabular}{@{}l r l@{}}
+\toprule
+Index & {Spearman $\rho$} & Bands \\
+\midrule
+\textbf{NDWI}  & -0.624 & B03/B08, native 10\,m \\
+SCL (class 6)  & -0.586 & scene classification, 20\,m \\
+AWEI           & -0.584 & four-band \\
+MNDWI          & -0.559 & B03/B11, SWIR at 20\,m \\
+\bottomrule
+\end{tabular}
+
+\vspace{5mm}
+NDWI wins for a physical reason: both its bands are natively 10\,m,
+so no resampling smears the waterline that carries the signal. MNDWI's SWIR
+band is the problem — wet sediment reflects like water, so it over-detects.
+Over the whole Bay of Santander (220\,km\textsuperscript{2}, 247
+scenes) SCL and NDWI agree on 91.7\,\% of pixels, while MNDWI
+claims \emphnum{five times} the intertidal area.
+
+\vspace{4mm}
+\pfig[\linewidth]{29_santander_tres}
+\figcap{Bay of Santander: the three detectors on identical observations, and
+the two difference maps. Red is where the other detector sees more water.}
+\end{pblock}

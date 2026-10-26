@@ -1,314 +1,484 @@
-# Intertidal Analysis — MAREA
+# MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes
 
-Mapping intertidal topography from optical satellite time series, with the
-tide measured from the imagery itself.
+*The tide arrives late: MAREA reads the delay from satellite images and corrects the maps for it.*
 
-**MAREA** (*Mudflat Altimetry via Remotely-Estimated tides from the
-Archive*): every published intertidal-topography method assumes one uniform
-water level per scene, taken from an ocean tide model at the estuary mouth.
-Inside an estuary that is false — the tide arrives late and deformed. MAREA
-treats every intertidal pixel as a binary threshold sensor, measures the
-interior tide's phase lag by profiled Bernoulli likelihood, corrects the
-elevation inversion with it only where the correction beats a matched null,
-and delivers a DEM with calibrated per-pixel uncertainty, declared
-hydraulics, and demonstrated limits.
+Research code behind the CARTOGRASS 2026 poster (Cartagena, 24-26 November 2026).
 
-![Inside an estuary the tide arrives late: the assumed uniform level is wrong, worse inland; MAREA estimates one clock per band of along-channel distance](docs/figures/interior_tide_schematic.png)
+* **What it gives:** maps of intertidal elevation, with its uncertainty, and
+  of emerged time (emersion time: the share of time the ground spends out of
+  the water), at 10 m from the Sentinel-2 archive, with the delay of the tide
+  inside estuaries and tidal basins corrected.
+* **Status:** the validation is in progress (October 2026). This page
+  describes the method and the validation design and reports no validation
+  result.
+* **Poster:** [PDF, A0, 2.3 MB](poster/CARTOGRASS2026_poster_draft_2026-10-20.pdf)
+* **Cite:** [how to cite](#how-to-cite) · **Contact:** Jorge Alías Álvarez,
+  jorge.alias.alvarez@gmail.com
 
-The flagship site the method was built and validated on — the Ría de
-Villaviciosa (Asturias), with the intertidal zone, the along-channel
-distance axis, the tide anchor and the RTK validation transect, plus what
-ten years of the archive actually sampled:
+## What MAREA is
 
-![Study area: Ría de Villaviciosa with intertidal zone, geodesic distance contours, tide anchor, RTK transect, location map and tide-sampling histogram](docs/figures/study_area.png)
+MAREA maps the elevation of intertidal flats, and the share of time each spot
+spends out of the water (emerged time), from the Sentinel-2 archive. A 10 m
+pixel on a tidal flat is seen many times by the satellite, at different
+stages of the tide; whether it looks wet or dry in each image, together with
+the water level at the time of that image, fixes its elevation
+(Bishop-Taylor et al. 2019; Granadeiro et al. 2021). Global tide models give
+the tide at the open coast, but inside estuaries and tidal basins the tide
+arrives up to 1.5-2 hours later, so maps made with the coastal tide misjudge
+when the flats flood. Granadeiro et al. (2021) showed that the Sentinel-2
+archive holds this delay. MAREA measures it section by section along the
+channel: one delay for each 3-km section (zero at the mouth, never
+decreasing inland), read from the images themselves. It then reads the tide
+at the mouth that many minutes earlier, and only then works out the
+elevation of every pixel. The images come as openEO data cubes from the
+Copernicus Data Space Ecosystem; the tide at the mouth comes from the global
+tide model EOT20 and, where they exist, from tide gauges at the mouth.
+(*Marea* is Spanish for tide; in the code the name reads *Mudflat Altimetry
+via Remotely-Estimated tides from the Archive*.)
 
-## Status
+## The poster
 
-The classification → per-pixel elevation → DEM pipeline and the campaign
-tooling are the stable core. Two parts are **under active construction** and
-their interfaces and results may still change:
+**MAREA: a method for mapping intertidal topography using Sentinel-2 openEO
+data cubes.** Jorge Alías Álvarez¹, Fernando García-González², Pablo
+González¹. ¹University of Oviedo, Spain; ²Instituto Español de Oceanografía
+(IEO-CSIC), Spain. CARTOGRASS 2026, Simposio Ibérico de Cartografía y
+Seguimiento de Praderas Marinas, Cartagena, 24-26 November 2026.
+Authors as on the poster; the affiliations are being confirmed with the
+co-authors.
 
-- **Interior-tide correction** (the MAREA operator): gated and validated on
-  the study sites, but still being consolidated for general use.
-- **Bathymetry** (submerged, below the lowest observed tide): exploratory —
-  see the negative results before relying on anything here.
+* The poster as a PDF (A0, 2.3 MB; draft of 20 October 2026):
+  [`poster/CARTOGRASS2026_poster_draft_2026-10-20.pdf`](poster/CARTOGRASS2026_poster_draft_2026-10-20.pdf).
+  Its Results panels are left blank, and its Conclusions marked pending,
+  until the validation is complete.
+* The QR code in the poster's bottom strip opens this page.
+* Sources, figures and the scripts that draw them: [`poster/`](poster/README.md).
 
-## Architecture: how the data flows
+## How MAREA works: follow one pixel
 
-```mermaid
-flowchart TD
-    A["Sentinel-2 L2A archive<br>(Copernicus, via openEO)"] -->|"one batch job per site"| B[("cached datacube<br>bands × time × y × x")]
-    B -->|"streamed in time blocks<br>(bounded RAM)"| C["water detection<br>NDWI wet/dry + SCL clouds"]
-    C --> D["reference map<br>stable water / stable land / transition"]
-    D --> E["per-pixel wet/dry series<br>(intertidal pixels only)"]
-    T["tide model (EOT20)<br>evaluated at each REAL overpass instant"] --> M
-    E --> M["MAREA: interior clocks τ per band of<br>along-channel distance s<br>profiled likelihood + matched null"]
-    E --> H["per-pixel elevation fit<br>NDWI = a + b·Φ((h−z)/σ)"]
-    M -->|"corrected level h(t−τ)<br>only where adopted"| H
-    H --> P["products: DEM · σ_z (twin-calibrated)<br>hydroperiod · ponding/spill layers"]
-    P --> V["validation: RTK · EMODnet · LiDAR ·<br>held-out tide gauges"]
-    V -.->|"gates: every adoption pre-registered,<br>every negative kept"| M
-```
+![Flow chart in six cards: (1) the pixel is seen many times in a Sentinel-2 data cube and each cloud-free look says wet or dry; (2) the tide at the mouth reaches the pixel's 3-km section some minutes later, and the pixel is wet when that water stands above its ground; (3) the section's delay is the one that best splits the wet and dry looks of its pixels; (4) the midpoint of the pixel's flooding curve on the corrected tide is its elevation and the width of the curve its uncertainty; (5) its emerged time is the share of time the corrected tide stays below its ground; (6) all pixels give maps of elevation, uncertainty and emerged time.](poster/figures/cg/method_flow.png)
 
-The same flow, walked on real data — from the raw archive to one pixel's
-S-curve to the DEM:
+*How MAREA works, followed for one imaginary pixel (the method panel of the
+poster). Schematic: the looks and the tide are simulated and the delays shown
+are examples, not results; the outline and the 3-km sections are those of the
+Ems-Dollard, from Sentinel-2. Drawn by `poster/tools/cg/fig_method_flow.py`.
+Tap the figure to enlarge it.*
 
-![Workflow on real Villaviciosa data: the multi-temporal archive, NDWI classification, one pixel's record with its fitted transition, and the resulting DEM](docs/figures/workflow.png)
+### Step by step, with the code
 
-The object everything revolves around is the **datacube** — one download
-per site, then never touched again (drawn below by
-`pyintertidal.explain.describe_cube()` from the real ten-year Villaviciosa
-cube, real downsampled scenes, clouds included):
+1. **Images.** Sentinel-2 L2A at 10 m, 2023-2025 (Sentinel-2A, 2B and 2C),
+   downloaded as openEO data cubes from the Copernicus Data Space Ecosystem.
+   A *look* is a cloud-free view of the pixel: its scene classification
+   (SCL) is one of the classes 4-7 (vegetation, bare ground, water,
+   unclassified: not cloud, shadow or snow), in a scene with little cloud (at
+   most 5 % cloudy over the frame or, failing that, 10 % over the transition
+   zone between permanent water and land). In each look the pixel is wet when
+   the water index NDWI = (B03 - B08) / (B03 + B08), from green and
+   near-infrared light, is above 0. Code: `pyintertidal.cube.SentinelCube`
+   and `experiments/download_cube_zarr.py` (download),
+   `pyintertidal.stability.reference_and_clouds` and `filter_dates` (the
+   scene screening), `pyintertidal.marea.extract` (the looks).
+2. **Tide at the mouth, h(t).** The water level at each image's acquisition
+   time (the catalog time of the scene, `overpass_times.json`) from EOT20
+   (through eo-tides and pyTMD), averaged with the tide gauges at the mouth
+   where they exist (four of the five study sites;
+   `pyintertidal.boundary.make_boundary`). Heights are in meters on the
+   vertical scale of that tide series (about mean sea level), not on a
+   national datum such as Alicante (Spain) or NAP (the Netherlands); a
+   comparison with a survey first removes the median offset and reports it
+   separately.
+3. **The delay of its 3-km section, τ.** The distance from the mouth is
+   measured along the water (`pyintertidal.geometry.along_distance`), and the
+   intertidal zone is cut into sections of 3 km of that distance
+   (`pyintertidal.tide_estimators.make_bands_fixed`; a section with fewer
+   than 500 pixels is merged with the next). For each section, one delay: the
+   τ for which the mouth tide read τ minutes earlier, h(t - τ), best explains
+   the wet and dry looks of its pixels together (a seeded sample of at most
+   1,200 pixels per section, `configs/m2.yaml`; a profiled Bernoulli
+   likelihood in which every pixel refits its own elevation and transition
+   width for each candidate τ; `pyintertidal.tide_estimators.m2a_rasch`). τ
+   is zero at the mouth and can only grow inland; 30 bootstrap resamples of
+   the scenes give its interval. Each pixel then receives the section profile
+   smoothed along the channel (3-km Gaussian kernel), rounded to the minute.
+   MAREA shifts the tide in time, not in height: wet/dry images can time the
+   tide but cannot measure its amplification ([`docs/METHOD.md`](docs/METHOD.md)).
+4. **Its elevation, z.** On the corrected tide the pixel's water index
+   follows a flooding curve, NDWI = a + b Φ((h(t - τ) - z) / σ), fitted by
+   least squares (`pyintertidal.marea.invert_series`). Its midpoint z is the
+   elevation (meters, on the same scale as h). Its width σ (one of eight
+   steps from 0.03 to 0.65 m) is what the poster shows as the uncertainty;
+   whether σ is a calibrated error bar is one of the open questions. A pixel
+   is left empty unless it has at least eight cloud-free looks, a plausible
+   curve (wet-dry contrast b between 0.15 and 2.5, |a| < 2.5) and, since
+   2026-10-06, at least three looks with the water below its ground and three
+   above it. That last condition is the quality rule
+   `marea.QUALITY_MIN_BRACKET = 3`, the default of `reconstruct` and of
+   validation v2. The 10 m production products of the study sites, among them
+   the one in `products_marea/`, were made before the rule existed: their
+   `result.json` has no `quality_min_bracket` key, which means no bracket
+   rule. The method-comparison scripts v14-v19 score them with that earlier
+   rule and report the rule of three as a variant.
+5. **Its emerged time, E(z).** The share of time the corrected tide stays
+   below the ground, h(t - τ) < z, over a continuous tide record (every time
+   step, not only the image times): `1 - pyintertidal.hydroperiod.hydroperiod(z, h)`.
+6. **All pixels: the maps.** Elevation with its uncertainty, and emerged
+   time: a base layer for the potential habitat of *Zostera noltei*, whose
+   limits ecologists set.
 
-![The Villaviciosa datacube: bands × time, real thumbnails](docs/figures/datacube.svg)
+`pyintertidal.marea.reconstruct(cube, out_dir)` runs steps 1-4 on a
+downloaded cube and writes `marea.npz`, `result.json` and `figure.png`
+([`docs/products.md`](docs/products.md) describes every product). Two parts
+of steps 1-2 are left to the caller:
 
+* **The scene screening.** `reconstruct` uses every scene of the cube that
+  has an acquisition time (from `overpass_times`, or else from the STAC
+  catalog). The production runs screened the scenes first
+  (`pyintertidal.stability.reference_and_clouds` and `filter_dates`) and
+  passed only the times of the screened scenes. Its default `min_scenes=80`
+  refuses shorter records; the production runs used 40.
+* **The mouth gauges.** By default its tide at the mouth is EOT20 alone, as at
+  Villaviciosa. For the average with the mouth gauges used at the other four
+  sites, pass `boundary=pyintertidal.boundary.make_boundary(aoi, n_gauges=1)`
+  (two at the Westerschelde; `exclude=` names the gauges kept as checks).
+  Each study site's choices (gauges, the gauges held out as checks, the sea
+  edge of the frame) are in `experiments/benchmark/config.py` (`BOUNDARY`,
+  `HELD_OUT`, `MOUTH_SIDE`).
 
+The derivation of the pixel model and of the delay estimator is in
+[`docs/METHOD.md`](docs/METHOD.md); a worked example on one real pixel, in
+the development state of September 2026, is in
+[`docs/one_pixel_marea_example.md`](docs/one_pixel_marea_example.md).
 
-Rotate the cube 90° and you get the object the estimators actually
-consume — one pixel's history through the archive; panel (c) of the
-workflow figure above shows a real one, 366 observations wide.
+## Validation: design and status
 
-MAREA's unit of estimation sits between the pixel and the scene: **bands
-of along-channel distance** from the mouth, because the interior tide is
-a function of how far the wave has travelled *through the water*, not of
-straight-line position:
+**Status (26 October 2026): in progress.** The specification is
+[`docs/validation_v2_spec.md`](docs/validation_v2_spec.md). Its code is
+committed up to milestone V2: the inputs, the processing settings, the water
+levels, the reference data and the command line (V0, V1), and the comparison
+of the delay with the tide gauges inside the estuaries (V2). The runs on the
+10 m data cubes are under way; their results will be added to this
+repository, and to the poster's Results and Conclusions, when they are
+complete.
 
-![MAREA's estimation unit: bands of geodesic along-channel distance over the real ria, sharing one clock each](docs/figures/bands_map.png)
+The design, in short:
 
-## The method, in equations
+* **Two questions.** Is MAREA's delay a good estimate of the delay that tide
+  gauges inside the estuary measure, compared with other ways of estimating
+  it (from images, from global and regional tide models, from physics)? And
+  is MAREA a good method for intertidal elevation compared with the state of
+  the art, and where? The non-circular test of the delay is whether the
+  correction improves the elevation against independent surveys (MAREA
+  against the same inversion with no delay).
+* **Same inputs for every method**, across a pre-registered space of
+  processing settings (cloud handling, water index, water detection, band
+  preprocessing, time window, number of images); every competitor also gets
+  an "as published" row; deviations are declared.
+* **Five sites**: the Ría de Villaviciosa and the Ría de Ferrol (Spain), the
+  Westerschelde, the Vlie basin of the Wadden Sea and the Ems-Dollard (the
+  Netherlands and Germany).
+* **Independent checks, never used to make the maps**: an RTK-GNSS survey and
+  PNOA airborne LiDAR at Villaviciosa; Rijkswaterstaat's Vaklodingen depth
+  surveys at the Westerschelde, Wadden Sea and Ems-Dollard sites; tide gauges
+  inside four of the sites.
+* **Home advantage, declared**: MAREA's settings were developed on these same
+  sites, gauges and surveys. The specification lists every check that
+  influenced a setting (the comparison with the Harlingen gauge widened the
+  range of delays the fit may try), reports every delay result also without
+  those gauges, and lists the results the authors had seen before the
+  pre-registration lock (§1.7 and §9.9).
+* **The RTK survey**: validation v2 reads only its development points.
+  `pyintertidal.rtk.load_rtk` returns those only, `tests/test_r1_guard.py`
+  checks that no other code asks for the rest, and only
+  `experiments/v3_open_reserved.py` may open the reserved part, logging every
+  opening to `results/v3_aperturas.jsonl`. That log holds one run, on
+  2026-08-21, which scored four development maps made before the current
+  MAREA products; the log records that this run consumed the reserved set,
+  and `docs/PHASE_LOG.md` reports it with its numbers. The reserved points
+  are therefore not an untouched blind test; validation v2 does not score
+  them. The survey files in `data/` hold every point: the guard binds this
+  repository's code, not the files.
+* **Only 10 m results will be reported**, and a method that cannot give a
+  result at a site is reported as NOT COMPUTABLE there; its rules are never
+  relaxed to obtain one.
 
-**The pixel model, derived in four steps.**
+The "Pilot result" box on the poster is earlier work, from the submitted
+abstract (the poster restates the abstract's percentage against the mean
+spring range); it is not part of validation v2. Alongside the validation, the
+method-comparison scripts `experiments/v14`-`v19` (number of scenes, length
+of the time window, errors by section and by elevation, computing cost, and
+tables at one fixed configuration) are running on the existing 10 m inputs of
+each site; their outputs are not in this repository.
 
-1. *Linear mixing* — where the shape a + b·f comes from. A 10 m pixel is
-   not wet or dry — the sensor averages whatever is inside. With a fraction
-   $f$ of the pixel flooded:
+## Repository map
 
-   $$\mathrm{NDWI} \;=\; (1-f)\cdot\mathrm{NDWI_{dry}} \;+\; f\cdot\mathrm{NDWI_{wet}} \;=\; a + b\,f$$
-
-   where $a$ is this pixel's own dry level (its albedo, its sediment) and
-   $b$ the dry→wet jump. Because $a$ and $b$ are fitted per pixel, albedo
-   differences between pixels are normalised for free.
-2. *The flooded fraction is a CDF — geometry, not hypothesis.* Inside the
-   pixel the ground is not flat; at water level $h$, exactly the part of
-   the internal terrain lying below $h$ is flooded:
-   $f(h) = \Pr(\text{internal elevation} \le h)$, the cumulative
-   distribution of the pixel's internal relief.
-3. *The one real assumption.* The internal micro-elevations are modelled
-   as Gaussian with mean $z$ (the pixel's median elevation) and spread
-   $\sigma$ (its internal roughness) — defensible because micro-relief is
-   the sum of many small independent irregularities, and because the real
-   curves do have that symmetric S shape. The Gaussian CDF is
-   $\Phi\!\left(\frac{h-z}{\sigma}\right)$.
-4. *Put together:*
-
-$$\mathrm{NDWI}(h) \;=\; a + b\,\Phi\!\left(\frac{h-z}{\sigma}\right).$$
-
-Read it physically: $h \ll z$ gives $\Phi\approx 0$ → you see $a$, the dry
-pixel; $h \gg z$ gives $a+b$, the flooded pixel; and at $h=z$ exactly half
-the internal terrain is under water, $\Phi=\tfrac12$ — **the transition
-midpoint IS the elevation**. A flat pixel (small $\sigma$) floods almost
-as a step; a rough one floods gradually (wide S). Fitting this curve to a
-pixel's archive therefore reads off $z$ and $\sigma$ — with the caveats
-that the fitted $\sigma$ also absorbs water-level error (deconvolved in
-`b2_sigma`) and that the wet plateau is not truly flat (the first
-submerged metre keeps rising — `p11`'s master curve; a richer model was
-tried and gated out in `p12`).
-
-![One pixel in cross-section at three tide states, and the S-curve they trace: a, b, z and sigma each with a physical meaning](docs/figures/pixel_model_schematic.png)
-
-**The binary reduction.** For estimating the *tide* rather than the
-terrain, each observation is reduced to wet/dry ($y_{pt}\in\{0,1\}$) and
-the amplitudes are fixed at 0/1, leaving two parameters per pixel. Under a
-candidate interior clock $\tau$ (the water level each scene "really" had is
-$h(t-\tau)$), the probability of seeing pixel $p$ wet in scene $t$ is
-$P_{pt}=\Phi\!\left(\frac{h(t-\tau)-z_p}{\sigma_p}\right)$ and the
-Bernoulli log-likelihood of the whole record is
-
-$$\ell(\tau) \;=\; \sum_p \max_{z_p,\sigma_p} \sum_t
-\Big[\,y_{pt}\log P_{pt} + (1-y_{pt})\log(1-P_{pt})\Big].$$
-
-In compact form this is a *profile likelihood*: the bracket is just the
-log of the Bernoulli pmf,
-$y\log P + (1-y)\log(1-P) = \log\big[P^{y}(1-P)^{1-y}\big]$,
-sums of logs are the log of the joint
-product, and gathering the terrain parameters as nuisances
-$\eta=\{z_p,\sigma_p\}$,
-
-$$\ell(\tau) \;=\; \max_{\eta}\, \log L(\tau,\eta).$$
-
-The per-pixel and global maxima coincide because each pixel's parameters
-appear only in its own terms — which is also what makes the problem
-computable: thousands of independent 2-parameter mini-fits inside a 1-D
-sweep over $\tau$, instead of one joint optimisation of ~24,000 unknowns.
-
-The inner $\max$ is the *profiling*, and "best terrain" means exactly
-this: to evaluate a candidate clock, every pixel re-fits its own
-$(z_p,\sigma_p)$ to the values that best explain its record *under that
-clock*. Without it the contest would be rigged — terrain fitted once
-under $\tau=0$ and frozen would make every other candidate carry a
-mis-fitted terrain that is not its fault, and terrain error would
-masquerade as clock evidence. With it, every candidate presents its best
-case, and the only thing left to decide between clocks is what terrain
-*cannot absorb*: a level shift is absorbed by $z$ (datum invariance), but
-the wrong clock makes the wet/dry pattern contradict the tide's *ordering
-across dates* — scene A carried more water than B yet A is dry and B wet —
-and no fixed elevation can fix a contradiction that changes sign between
-scenes. The estimator (M2a) maximises $\ell(\tau)$ per band of
-along-channel distance $s$, with $\tau=0$ anchored at the mouth, where the
-ocean model is trusted.
-
-**What is provably not estimable.** Propagating into an estuary, the tide
-does not only arrive *late* (the phase $\tau$, which we estimate) — it can
-also arrive *amplified or damped*: channel convergence amplifies it,
-friction damps it. That factor is the **gain** $\alpha$, and the interior
-level is modelled as
-$h_{\mathrm{int}}(t) = \alpha\,h_{\mathrm{mouth}}(t-\tau) + \mathrm{datum}$. Any hydraulician would love to read $\alpha$ off
-the imagery too — and the theorem says it cannot be done. With gain, the
-wet probability is $P=\Phi\!\big(\frac{\alpha h - z}{\sigma}\big)$;
-multiply all three of $(\alpha, z, \sigma)$ by the same $c$ and
-
-$$\frac{(c\alpha)h - (cz)}{c\sigma} = \frac{\alpha h - z}{\sigma}$$
-
-— the $c$ cancels, every margin and hence the entire likelihood is
-unchanged. Concretely: a world with $\alpha=1.2$ over terrain
-$(z,\sigma)=(1.2\,\mathrm{m}, 0.24\,\mathrm{m})$ produces *exactly the
-same wet/dry record* as a world with $\alpha=1$ over
-$(1.0\,\mathrm{m}, 0.20\,\mathrm{m})$. They are observationally the same
-world: no amount of binary data distinguishes them. The same holds for a
-datum shift, absorbed by $z$. Only *phase* survives, because a time shift
-reorders the pattern across dates and no static rescaling can mimic a
-reordering. This affine theorem is enforced as a specification (gain and
-datum come from the boundary model at the mouth; phase comes from the
-imagery) and verified numerically in `m2_gate_sim`: a gain of 1.0–1.3 is
-planted and the $\mathrm{NLL}(\alpha)$ profile comes out flat to machine
-precision — the theorem as an executable test. If that profile ever
-stopped being flat, it would not mean the gain became measurable; it
-would mean a bug.
-
-**Adoption against a matched null.** An estimator always returns *some*
-number — with cloud gaps, pixel noise and capricious sampling, the argmax
-lands somewhere even when the true lag is zero. So before any measured lag
-is believed, we ask: *what would this machinery read if there were nothing
-to measure?* We answer by building a replica world with the effect
-removed and everything else kept: the **same pixels** (same elevations,
-contrasts, calibrated noise), the **same cloud masks** (a scene cloudy in
-reality is cloudy in the replica) and the **same acquisition times**, but
-a uniform tide — no interior lag, by construction. Running the identical
-estimator over several such replicas yields the *null band*: the lags
-that pure sampling noise fabricates. A real measurement is adopted only
-if it leaves that band; anything inside it can be produced by a world
-with no interior tide and is therefore — as a matter of logic, not
-opinion — not evidence of one. The kitchen-scale analogy: weigh
-*nothing* ten times first; if the empty scale reads −3 to +4 g, a +2 g
-reading proves nothing and a +30 g reading does. "Matched" is the crucial
-word — the empty-scale test is run on *your* scale, in *your* kitchen,
-not on an idealised catalogue scale. In Villaviciosa this rule cut both
-ways: mid-estuary bands measured small lags the null also fabricates
-(not corrected), and only the estuary head left the band (corrected).
-
-**Scoring.** Elevations are always judged by the triad — centred RMSE
-$\sqrt{\overline{(e-\tilde e)^2}}$ (datum-free), regression slope of
-estimate on truth (1 = undistorted relief), and Pearson $r$ — because
-optimising RMSE alone repeatedly produced flattened relief with better
-numbers (three separate incidents in the phase log).
-
-**Uncertainty.** The per-pixel error bar $\sigma_z$ is *not* the analytic
-Cramér–Rao bound — that bound was validated and refuted (`p13`: 9 %
-coverage at 68 % nominal), because it measures only the fit's statistical
-error (~5 cm) while the dominant error is the shared, systematic
-water-level term. Instead, $\sigma_z$ is tabulated from planted recoveries
-in a simulator calibrated on the archive itself (real cloud masks, real
-acquisition times, measured noise and level jitter), and checked for
-coverage against held-out ground truth.
-
-**Sampling limits.** A sun-synchronous satellite samples each tidal
-constituent at its aliased period
-$T_a = \left|\,1/(f \bmod 1\,\mathrm{day}^{-1})\,\right|$. S2's period divides the solar day exactly
-($T_a=\infty$: frozen), K1/P1 alias onto the annual cycle; M2 aliases to
-14.8 days and is the workhorse. Consequences — such as the never-observed
-extreme low tides — are declared, not interpolated away.
-
-![Sun-synchronous sampling: M2 aliases to a 14.8-day wave, S2 is frozen at one phase forever](docs/figures/sampling_schematic.png)
-
-## Scaling: the north-coast campaign
-
-The same pipeline, unchanged, over every cell of the northern Spanish
-coast: 130 terrain-following cells derived from the OSM coastline (v1's
-rectangles cut rias in half — these follow the shore and keep every
-estuary whole), identical configuration and seeds everywhere, and one
-verdict per cell:
-
-![The 130 terrain-following campaign cells, coloured by per-cell verdict](docs/figures/north_cells.png)
-
-## Repository layout
-
-```
-Intertidal_analysis/
-├── pyintertidal/          The package: one function per scientific step,
-│                          explicit parameters, no run_everything().
-│                          Function-by-function reference in CATALOG.md.
-├── research/              The evidence: eight executed notebooks, one per
-│                          deduction — negative results and the Santander
-│                          SCL/marsh audit included.
-├── experiments/           The gated experiments (m/b/p series) and the
-│                          campaign runner; its README maps every script to
-│                          its question and verdict. (The 150+ verbatim
-│                          exploratory prototypes are published separately.)
-├── results/               The sealed verdicts the notebooks read — every
-│                          JSON carries the SHA-256 of its inputs.
-├── configs/               Pre-registered gate criteria with rationale.
-├── tests/                 Guards (R1 reserved-data lock) and pinned gate
-│                          verdicts.
-├── docs/                  PHASE_LOG.md (the dated diary), the
-│                          INVESTIGATION_MAP.md (every line of inquiry ever
-│                          pursued, outcome and record) and figures/.
-├── modelo_generativo/     The multiband dataset generator feeding the
-│                          conditional image model (TideGAN).
-├── intertidal/            Legacy package predating the project, kept as-is
-│                          (the dataset generator still runs on it).
-└── *.ipynb                The founding notebooks (Foz, tide-model tests,
-                           method comparison), kept as the origins record —
-                           see docs/INVESTIGATION_MAP.md §0.
-
-Not yet published (accompany the paper): deliverables/ — poster, flagship
-DEM, north-coast census, method animation — and the worked study notebooks.
-```
+| path | what is there |
+|---|---|
+| [`pyintertidal/`](pyintertidal/README.md) | the MAREA library: data cubes, water detection, tides, the delay estimator, the per-pixel inversion, derived products |
+| [`experiments/`](experiments/README.md) | the scripts: validation v2 ([`validation_v2.py`](experiments/validation_v2.py) and [`benchmark/`](experiments/benchmark/README.md)), the method comparison on the existing 10 m inputs (`v14`-`v19`, [`fixedcfg/`](experiments/fixedcfg/README.md)), and the development record |
+| [`tests/`](tests/README.md) | unit tests on small synthetic data, and the guard of the reserved RTK points |
+| `configs/` | pre-registered thresholds (`configs/m2.yaml` is read by the production engine) |
+| `data/` | the RTK-GNSS field survey of the Ría de Villaviciosa |
+| [`docs/`](docs/README.md) | the method, the validation specification, the products guide, worked examples and their figures |
+| `notebooks/` | the notebook that explores the validation cubes, and the one-pixel walkthrough |
+| [`poster/`](poster/README.md) | the CARTOGRASS 2026 poster: LaTeX sources, figures, the scripts that draw them, the PDF |
+| `products_marea/` | the 10 m MAREA product of the Ría de Villaviciosa (97 screened scenes of 2023-2025, EOT20 at the mouth, made before the quality rule of step 4), used by the second example below |
+| `products_villaviciosa/hsr_eot20_2023-2025.tif` | the canonical 10 m grid of Villaviciosa (EPSG:32630), on which `pyintertidal.rtk.load_rtk` places the RTK survey and the second example writes its GeoTIFF |
+| `products_ferrol/`, `products_{escalda,wadden,ems}_10m/` | `overpass_times.json`: the acquisition time of every scene of the Ferrol, Dutch and German sites |
+| `sealed/` | the registry of sealed data files (`pyintertidal.seal`) |
+| `data_v4/gauges/ioc_stations.json` | the IOC station list read by `pyintertidal.boundary.make_boundary` |
+| `results/` | verdicts of the development experiments, kept as the record of what had been seen before the validation's pre-registration lock |
+| `archive/` | legacy code, notebooks and the earlier poster draft, kept for the record and not maintained |
 
 ## Installation
 
 ```bash
-git clone https://github.com/coastal-AI/Intertidal_analysis.git
+git clone --depth 1 https://github.com/coastal-AI/Intertidal_analysis.git   # current files only; a full clone also fetches the working branch's history (several hundred MB)
 cd Intertidal_analysis
-python -m venv .venv
-# Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
+python -m venv .venv            # Python 3.13 (the validation runs use 3.13.3)
+# Windows: .venv\Scripts\activate      Linux/macOS: source .venv/bin/activate
+pip install numpy scipy pandas xarray rasterio shapely matplotlib requests   # enough for the examples
 ```
 
-Data access uses openEO (Copernicus Data Space; free account, OIDC login on
-first use) and global tide models via eo-tides/pyTMD (EOT20 by default).
+* `import pyintertidal` needs numpy, scipy, pandas, xarray, rasterio,
+  shapely, matplotlib and requests (enough for examples 1 and 2);
+  `marea.reconstruct` on a real cube also needs PyYAML, pyproj, netCDF4 or
+  h5netcdf, pyTMD and eo-tides.
+* The full, pinned environment of the validation runs is
+  [`requirements-cluster.txt`](requirements-cluster.txt) (openEO, pyTMD and
+  eo-tides, geopandas, scikit-image, netCDF4, zarr, and more). It pins a CPU
+  build of PyTorch for one optional cloud mask, so install in this order (the
+  PyPI builds of torch and torchvision are the CUDA ones):
 
-## Quick start
+  ```bash
+  pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cpu
+  pip install -r requirements-cluster.txt
+  ```
+* `requirements.txt` is an older, shorter list that no longer matches that
+  environment.
+* Only for parts of the validation: R 4.4 with nplr, lmodel2 and mgcv (the
+  re-implementation of Granadeiro et al. 2021), and a separate environment
+  with DEA Intertidal 2.5.3 (`experiments/fixedcfg/`).
 
-The study notebook is the guided path. The campaign equivalent is one call:
+## Minimal examples
+
+Run from the repository root.
+
+**1. MAREA on synthetic data** (no download, about 15 s). Two 3-km sections:
+at the mouth the tide is on time, inland it arrives 60 minutes late. The
+script plants that delay, recovers it from the wet/dry looks alone, and
+inverts the elevations with and without it.
+
+<details>
+<summary>Show the code (Python, 65 lines)</summary>
 
 ```python
-from pyintertidal import marea
-result = marea.reconstruct("ndwi_cube_<site>.nc", out_dir="products_<site>")
+import numpy as np
+import pandas as pd
+from scipy.stats import norm
+
+from pyintertidal import marea, tide_estimators as te
+from pyintertidal.hydroperiod import hydroperiod
+
+rng = np.random.default_rng(0)
+
+# 1. Images: 300 acquisitions near 11:00 UTC over three years (a sun-synchronous satellite).
+t0 = pd.Timestamp("2023-01-01 11:00")
+days = np.sort(rng.choice(3 * 365, 300, replace=False))
+times = t0 + pd.to_timedelta(days, "D") + pd.to_timedelta(rng.normal(0, 5, days.size), "min")
+hours = np.asarray((times - t0) / pd.Timedelta(hours=1))
+
+
+# 2. Tide at the mouth, h(t): a synthetic semidiurnal tide in metres above mean sea level.
+def mouth_tide(t_hours):
+    return 1.2 * np.cos(2 * np.pi * t_hours / 12.4206) + 0.3 * np.cos(2 * np.pi * t_hours / 12.6583)
+
+
+# 3. Two sections of channel: at the mouth the tide is on time; inland it arrives 60 min late.
+planted_delay_min = np.array([0.0, 60.0])
+section = np.repeat([0, 1], 400)                      # 400 pixels per section
+z_true = rng.uniform(-0.9, 0.9, section.size)         # ground elevation of each pixel (m)
+water = np.stack([mouth_tide(hours - planted_delay_min[k] / 60.0) for k in section], axis=1)
+clear = rng.random(water.shape) < 0.7                 # cloud-free looks (70 %)
+ndwi = (-0.3 + 0.6 * norm.cdf((water - z_true) / 0.10)
+        + rng.normal(0.0, 0.05, water.shape))         # water index of each look
+wet = clear & (ndwi > 0)                              # each look: wet or dry
+
+# The tide at the mouth read tau minutes earlier, for every tau the fit may try.
+shifts = np.arange(-45.0, 181.0, 15.0)
+bank = te.ShiftBank(shifts, [mouth_tide(hours - s / 60.0) for s in shifts])
+
+# 4. One delay per section, from the wet/dry looks alone (zero at the mouth, never decreasing inland).
+fit = te.m2a_rasch(wet, clear, bank, section, np.array([1.5, 4.5]), 2,
+                   tau_bounds=(-45.0, 180.0), sg_grid=marea.SG_GRID,
+                   rng=np.random.default_rng(1))
+print("planted delay per section (min):", planted_delay_min)
+print("fitted delay per section (min): ", np.round(fit["tau"], 1))
+
+# 5. Each pixel's elevation: the midpoint of its flooding curve on the corrected tide.
+Y = np.where(clear, ndwi, 0.0)
+lo, hi = bank.at(0.0).min(), bank.at(0.0).max()
+z_marea = np.full(section.size, np.nan)
+z_nodelay = np.full(section.size, np.nan)
+for k, tau in enumerate(fit["tau"]):
+    cols = section == k
+    z_marea[cols], _ = marea.invert_series(Y[:, cols], clear[:, cols], bank.at(tau), lo, hi,
+                                           min_bracket=marea.QUALITY_MIN_BRACKET)
+    z_nodelay[cols], _ = marea.invert_series(Y[:, cols], clear[:, cols], bank.at(0.0), lo, hi,
+                                             min_bracket=marea.QUALITY_MIN_BRACKET)
+inland = section == 1
+for label, z in (("without the delay", z_nodelay), ("with the fitted delay", z_marea)):
+    err = z[inland] - z_true[inland]
+    print(f"inland section, {label}: RMS elevation error {np.sqrt(np.nanmean(err ** 2)):.3f} m, "
+          f"{np.isfinite(err).sum()} of {inland.sum()} pixels mapped")
+
+# 6. Emerged time: share of time the corrected tide stays below the ground, over one year
+#    of continuous tide (every 10 min), not only at image times.
+year = np.arange(0.0, 365 * 24, 1 / 6)
+emerged = 1.0 - hydroperiod(z_marea[inland], mouth_tide(year - fit["tau"][1] / 60.0))
+print("inland section, emerged time of the lowest and highest mapped pixels:",
+      np.round([emerged[np.nanargmin(z_marea[inland])], emerged[np.nanargmax(z_marea[inland])]], 2))
 ```
 
-which writes the DEM, the interior-tide profile, the hypsometry with
-uncertainty, and a self-describing `result.json` with input hashes.
+</details>
 
-## Conventions
+With Python 3.13.3 and the versions pinned in `requirements-cluster.txt` it
+prints the following. These numbers describe synthetic data only: they are
+not a validation result, and the 0.191 m is not the 0.19 m of the poster's
+pilot box.
 
-* English throughout — code, comments, docs, file names. Two deliberate
-  exceptions: keys of previously sealed artifacts (`result.json`,
-  `configs/*.yaml`, stored `.npz`) keep the names they were recorded with,
-  and `experiments/prototypes/` is preserved verbatim as the historical
-  record.
-* No label leaks: the reserved RTK set is locked by a runtime guard
-  (`tests/test_r1_guard.py`); the only opener is
-  `experiments/v3_open_reserved.py`, run by a human, and every opening is
-  logged.
-* Every adopted mechanism passed a pre-registered gate against a matched
-  null; every retired one is documented with its control.
+```
+planted delay per section (min): [ 0. 60.]
+fitted delay per section (min):  [ 0.  59.8]
+inland section, without the delay: RMS elevation error 0.191 m, 400 of 400 pixels mapped
+inland section, with the fitted delay: RMS elevation error 0.019 m, 400 of 400 pixels mapped
+inland section, emerged time of the lowest and highest mapped pixels: [0.22 0.78]
+```
+
+**2. Open the Villaviciosa product kept in the repository** and write its
+elevation as a GeoTIFF.
+
+```python
+import json
+
+import numpy as np
+
+from pyintertidal.raster import grid_of, write_geotiff
+
+prod = np.load("products_marea/marea.npz")
+H, W = prod["shape"]
+z = np.full(H * W, np.nan, np.float32)
+z[prod["keep"]] = prod["z"]                 # elevation (m, tide-model scale) of each intertidal pixel
+z = z.reshape(H, W)
+
+info = json.load(open("products_marea/result.json", encoding="utf-8"))
+print(info["n_escenas"], "scenes;", info["n_px_cota"], "of", info["n_px"], "intertidal pixels have an elevation")
+
+# marea.npz stores pixel indices on the site's canonical 10 m grid (EPSG:32630),
+# which is the grid of this GeoTIFF:
+transform, crs, shape = grid_of("products_villaviciosa/hsr_eot20_2023-2025.tif")
+assert shape == (H, W), f"marea.npz frame {H}x{W} is not the canonical 10 m grid {shape}"
+write_geotiff("villaviciosa_marea_elevation.tif", z, transform, crs)
+```
+
+**3. Real data.** To map a site from scratch you need:
+
+* **A Sentinel-2 L2A cube** with the bands B03, B08 and SCL: a free account on
+  the [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/)
+  and an openEO login (OIDC, in the browser on first use). For example
+  `cube = pyintertidal.SentinelCube(pyintertidal.sites.get("villaviciosa"), ("2023-01-01", "2025-12-31"), water="ndwi")`
+  and `cube.ensure(pyintertidal.scenes.connect())` write one netCDF cube.
+  The validation cubes (nine bands, one Zarr store per site and year) are
+  downloaded with `python -X utf8 -m experiments.download_cube_zarr --login`,
+  then `python -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023-2025`.
+  The Zarr stores are read by the validation harness (`experiments/zarr_cubes.py`),
+  not by `reconstruct`, which reads the netCDF cube. Every download uses the
+  openEO processing credits of the account; a free account's monthly
+  allowance limits how many site-years it can fetch.
+* **The acquisition time of every scene**: `pyintertidal.overpass.get_overpass_times`
+  reads it from the STAC catalog; the study sites' files are kept as
+  `products_*/overpass_times.json`.
+* **The EOT20 tide model**: download
+  <https://www.seanoe.org/data/00683/79489/data/85762.zip> (2.3 GB), extract
+  the inner `ocean_tides.zip` and place the files in
+  `tide_models/EOT20/ocean_tides/`.
+* **Optionally, tide gauges at the mouth**, from the IOC Sea Level Station
+  Monitoring Facility: `boundary = pyintertidal.boundary.make_boundary(aoi, tide_model="EOT20", n_gauges=1)`
+  downloads the nearest gauge into `data_v4/gauges/` (station list
+  `data_v4/gauges/ioc_stations.json`) and averages it with EOT20; pass it as
+  `reconstruct(..., boundary=boundary)`. (`python -X utf8 -m experiments.validation_v2 fetch ioc`
+  fills the separate gauge cache of validation v2,
+  `data_v4/gauges/ioc_2017-2025/`, which `reconstruct` does not read.)
+
+Then `pyintertidal.marea.reconstruct("ndwi_cube_<site>.nc", "products_<site>", tide_dir="tide_models", overpass_times=...)`.
+For validation v2, `python -X utf8 -m experiments.validation_v2 check-env`
+lists every input each step needs and how to obtain it.
+
+## Data sources and credits
+
+* Contains modified Copernicus Sentinel data (2016-2025), processed with
+  openEO on the Copernicus Data Space Ecosystem.
+* Tide gauges: IOC Sea Level Station Monitoring Facility; Rijkswaterstaat;
+  WSV (PEGELONLINE); Puertos del Estado (REDMAR).
+* Bathymetry: Rijkswaterstaat (Vaklodingen). LiDAR: PNOA, © Instituto
+  Geográfico Nacional de España (CC BY 4.0). Tide model: EOT20 (DGFI-TUM).
+  Basemap of the poster maps: Natural Earth.
+* Validation v2 also reads, where installed, other global tide models (FES2022,
+  GOT, TPXO), the Copernicus Marine Service regional models (AMM15, IBI) and
+  EMODnet Bathymetry; they will be credited with the results that use them.
+  The satellite basemap of `pyintertidal.viz.plot_aoi`, seen in some archived
+  notebooks, is Esri World Imagery.
+* RTK-GNSS survey of the Ría de Villaviciosa: the authors' field survey
+  (`data/`).
+* Vendored code: `experiments/benchmark/vendor/spa.py`, the NREL Solar
+  Position Algorithm as implemented in pvlib python 0.13.0 (BSD-3-Clause,
+  [`LICENSE-pvlib.txt`](experiments/benchmark/vendor/LICENSE-pvlib.txt)).
+
+References cited on the poster:
+
+1. Bishop-Taylor, R. et al. (2019). Between the tides: modelling the
+   elevation of Australia's exposed intertidal zone at continental scale.
+   *Estuarine, Coastal and Shelf Science* 223, 115-128.
+2. Granadeiro, J. P. et al. (2021). Using Sentinel-2 images to estimate
+   topography, tidal-stage lags and exposure periods over large intertidal
+   areas. *Remote Sensing* 13(2), 320.
+3. Schramm, M. et al. (2021). The openEO API – harmonising the use of Earth
+   observation cloud services using virtual data cube functionalities.
+   *Remote Sensing* 13(6), 1125.
+4. Hart-Davis, M. G. et al. (2021). EOT20: a global ocean tide model from
+   multi-mission satellite altimetry. *Earth System Science Data* 13,
+   3869-3884.
+
+## How to cite
+
+Until the paper is published, please cite the poster:
+
+> Alías Álvarez, J., García-González, F., González, P. (2026). MAREA: a
+> method for mapping intertidal topography using Sentinel-2 openEO data
+> cubes. Poster, CARTOGRASS 2026, Simposio Ibérico de Cartografía y
+> Seguimiento de Praderas Marinas, Cartagena, Spain, 24-26 November 2026.
+> Code: https://github.com/coastal-AI/Intertidal_analysis
+
+```bibtex
+@misc{alias2026marea,
+  author       = {Al{\'\i}as {\'A}lvarez, Jorge and Garc{\'\i}a-Gonz{\'a}lez, Fernando and Gonz{\'a}lez, Pablo},
+  title        = {{MAREA}: a method for mapping intertidal topography using {Sentinel-2} {openEO} data cubes},
+  howpublished = {Poster, CARTOGRASS 2026, Simposio Ib{\'e}rico de Cartograf{\'\i}a y Seguimiento de Praderas Marinas, Cartagena, Spain},
+  month        = nov,
+  year         = {2026},
+  note         = {Code: \url{https://github.com/coastal-AI/Intertidal_analysis}}
+}
+```
+
+[`CITATION.cff`](CITATION.cff) describes the software; it will carry a DOI
+when one exists.
+
+## License
+
+No license has been chosen yet; the authors will add one. Until then, please
+contact the authors before reusing the code or the data. Third-party code
+keeps its own license (see Data sources and credits).
+
+<!-- Acknowledgments: to be supplied by the authors (funding, projects, field team), as on the poster (\cgAckBody). -->
+
+## Contact
+
+Jorge Alías Álvarez, jorge.alias.alvarez@gmail.com

@@ -1,0 +1,100 @@
+\documentclass[tikz,border=0pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[sfdefault,book]{FiraSans}
+\usepackage{xcolor}
+\input{preamble/colors}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
+\input{tikz/_common}
+\begin{document}
+% Natural width is exactly 24.1 cm — the poster's column — so the figure is
+% placed at 1:1 and its labels keep the size they were set in. Box widths are
+% derived from the longest label at 19 pt, not guessed: four boxes of 5.65 cm
+% with 0.5 cm gaps sum to 24.1 cm exactly.
+\begin{tikzpicture}[x=1cm,y=1cm]
+
+  \node[cloudbox, minimum width=24.1cm, minimum height=1.75cm,
+        anchor=north west] (job) at (0,11.3)
+       {\begin{tabular}{@{}c@{}}
+          \ttl \textcolor{white}{One openEO batch job}\\[0.5mm]
+          \subw B03 · B08 · SCL, clipped to the polygon
+        \end{tabular}};
+
+  \node[keybox, minimum width=7.2cm, minimum height=1.6cm,
+        anchor=north west] (cube) at (0,8.5)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Cached cube\\[0.5mm] \sub one netCDF, streamed
+        \end{tabular}};
+
+  \node[box, minimum width=5.65cm, minimum height=2.4cm,
+        anchor=north west] (ref) at (0,5.6)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Reference map\\[0.5mm]
+          \sub water · land ·\\[-0.3mm] \sub transition
+        \end{tabular}};
+  \node[box, minimum width=5.65cm, minimum height=2.4cm,
+        anchor=north west] (clouds) at (6.15,5.6)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Cloud filter\\[0.5mm]
+          \sub measured on\\[-0.3mm] \sub the flat only
+        \end{tabular}};
+  \node[box, minimum width=5.65cm, minimum height=2.4cm,
+        anchor=north west] (wf) at (12.3,5.6)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Frequency\\[0.5mm]
+          \sub and the tidal\\[-0.3mm] \sub window
+        \end{tabular}};
+  \node[box, minimum width=5.65cm, minimum height=2.4cm,
+        anchor=north west] (tide) at (18.45,5.6)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Tides\\[0.5mm]
+          \sub at each exact\\[-0.3mm] \sub overpass
+        \end{tabular}};
+
+  \node[keybox, minimum width=11.6cm, minimum height=2.2cm,
+        anchor=north west] (marea) at (0,2.3)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Interior tide --- MAREA\\[0.5mm]
+          \sub clocks $\tau(s)$ from the wet/dry likelihood,\\[-0.3mm]
+          \sub anchored at the mouth
+        \end{tabular}};
+  \node[box, minimum width=12.0cm, minimum height=2.2cm,
+        anchor=north west] (op) at (12.1,2.3)
+       {\begin{tabular}{@{}c@{}}
+          \ttl Operator $h(s,t)=h_B(t-\tau(s))$\\[0.5mm]
+          \sub mouth-phase audit · adopted only\\[-0.3mm]
+          \sub where it beats a matched null
+        \end{tabular}};
+
+  \node[keybox, minimum width=10.4cm, minimum height=1.8cm,
+        anchor=north west] (hsr) at (0,-0.9)
+       {\begin{tabular}{@{}c@{}}
+          \ttl HSR fit, corrected clock\\[0.5mm]
+          \sub $\mu$, $\sigma$ per pixel, per epoch
+        \end{tabular}};
+  \node[outbox, minimum width=13.2cm, minimum height=1.8cm,
+        anchor=north west] (out) at (10.9,-0.9)
+       {\begin{tabular}{@{}c@{}}
+          \ttl DEM · $\sigma_z$ · hydraulics · hypsometry\\[0.5mm]
+          \sub COG + STAC provenance
+        \end{tabular}};
+
+  \draw[flow] (3.6,9.55) -- (3.6,8.5);
+  \draw[flow] (3.6,6.9) -- (3.6,5.6);
+  \draw[flow] (5.65,4.4) -- (6.15,4.4);
+  \draw[flow] (11.8,4.4) -- (12.3,4.4);
+  \draw[flow] (17.95,4.4) -- (18.45,4.4);
+  \draw[flow] (15.1,3.2) -- (15.1,2.9) -- (5.8,2.9) -- (5.8,2.3);
+  \draw[flow] (21.3,3.2) -- (21.3,2.9) -- (18.0,2.9) -- (18.0,2.3);
+  \draw[flow] (11.6,1.2) -- (12.1,1.2);
+  \draw[flow] (5.2,0.1) -- (5.2,-0.9);
+  \draw[flow] (18.1,0.1) -- (18.1,-0.9);
+  \draw[flow] (10.4,-1.8) -- (10.9,-1.8);
+
+  \node[anchor=west, font=\fontsize{17}{21}\selectfont, text=PSlate]
+       at (7.6,7.7) {downloaded once — everything below is local};
+  \node[anchor=west, font=\fontsize{17}{21}\selectfont, text=PSlate]
+       at (0,-3.3) {every stage faces a pre-registered gate against a
+       matched null before its output is trusted};
+
+\end{tikzpicture}
+\end{document}

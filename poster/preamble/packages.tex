@@ -1,0 +1,40 @@
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{csquotes}
+
+% Fira Sans: a humanist grotesque with real character at display size, and
+% verified complete here — Type1, TFM and map all present, and it embeds and
+% subsets cleanly. Inter was the first choice but its MiKTeX package is
+% incomplete on this machine (missing NFSS font descriptors, and its `lining'
+% option references a \newif the package never declares); TeX Gyre Heros also
+% works but is a Helvetica clone with nothing to say. `book' is Fira's regular
+% weight, which holds up better than Light across a 1 m sheet.
+\usepackage[sfdefault,book]{FiraSans}
+% Without a scalable typewriter, \texttt falls back to EC, which METAFONT
+% renders as a Type 3 BITMAP — visibly jagged blown up to a metre, and
+% something print shops reject. Fira Mono is Type 1 and matches the text face.
+\usepackage[scaled=0.92]{FiraMono}
+\usepackage{microtype}
+
+\usepackage{graphicx}
+% adjustbox deliberately absent: it pulls in collectbox, which is not
+% installed here, and nothing on this poster crops or trims a figure.
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{ragged2e}
+\usepackage{enumitem}
+\usepackage{qrcode}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+
+% Deliberate omissions, each for a reason rather than an oversight:
+%   tcolorbox  — it is exactly the heavy rounded-block look this poster avoids,
+%                and instantiating it a dozen times costs real time at A0;
+%   caption    — documents its own beamer incompatibility, and a poster has no
+%                floats; \figcap in theme.tex does the job;
+%   hyperref   — nothing is clickable on paper, and it fights beamer;
+%   biblatex   — biber is not in this MiKTeX package database at all, and a
+%                poster carries six references that can be typed by hand.

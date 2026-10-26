@@ -1,0 +1,34 @@
+% Header, centre. \cgTitle is the title submitted to CARTOGRASS 2026, word
+% for word (content/cg/text_header.tex), set at 64 pt in two lines broken
+% after "intertidal" (\cgTitleBreak; 409 and 491 mm in the 507 mm measure),
+% so it leads the 44 pt section headings by a clear step. The fallback
+% repeats it.
+% Round 3 (2026-10-19): \parskip 0. The panel's default \parskip (0.38
+% \baselineskip, about 4.5 mm) was added at each of the three paragraph breaks
+% on top of the explicit gaps, so the block took 107.6 of the 118-mm band and,
+% centred, its title stood 5 mm under the top edge of the paper (the logo
+% frames start 14-16 mm down, the footer keeps 12 mm clear). The gaps are now
+% the only space between the lines: the block is at most 96 mm, so centred in
+% the band it starts at least 11 mm below the edge.
+\setlength{\parskip}{0pt}%
+{\color{white}\fontsize{64}{72}\selectfont\bfseries
+ \def\cgTitleBreak{\\}%
+ \cguse{\cgTitle}{MAREA: a method for mapping intertidal\\topography using
+ Sentinel-2 openEO data cubes}\par}
+\vspace{5mm}
+{\color{PMist}\fontsize{33}{40}\selectfont\itshape
+ \cguse{\cgKicker}{The tide arrives late: MAREA reads the delay from
+ satellite images and corrects the maps for it.}\par}
+\vspace{6mm}
+% TODO(authors): names, order and affiliations to be confirmed by Jorge (see
+% the note in content/cg/text_header.tex).
+{\color{white}\fontsize{30}{36}\selectfont\bfseries
+ \cguse{\cgAuthors}{Jorge Al\'{\i}as \'Alvarez\textsuperscript{1},
+ Fernando Garc\'{\i}a-Gonz\'alez\textsuperscript{2},
+ Pablo Gonz\'alez\textsuperscript{1}}\par}
+\vspace{2mm}
+{\color{PMist}\fontsize{23}{28}\selectfont
+ \cguse{\cgAffilA}{\textsuperscript{1}University of Oviedo, Spain}\qquad
+ \cguse{\cgAffilB}{\textsuperscript{2}Instituto Espa\~nol de
+ Oceanograf\'{\i}a (IEO-CSIC), Spain}\qquad
+ \cguse{\cgContact}{jorge.alias.alvarez@gmail.com}\par}

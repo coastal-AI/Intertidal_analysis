@@ -83,6 +83,8 @@ def patch_botocore_ssl():
     inner = session.create_urllib3_context
 
     def create_urllib3_context(*args, **kwargs):
+        """botocore's own context factory, run with the original
+        ``ssl.SSLContext`` restored for the duration of the call."""
         current = ssl.SSLContext
         ssl.SSLContext = original
         try:

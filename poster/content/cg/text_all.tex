@@ -1,0 +1,48 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- all texts. \input{content/cg/text_all} once,
+% after preamble/theme (the texts use \term, \emphnum, \step and the palette).
+% Loading defines macros only; nothing is typeset. Each file is guarded, so a
+% second \input is harmless.
+%
+%   text_header.tex       \cgTitle (\cgTitleBreak) \cgKicker \cgAuthors
+%                         \cgAffilA \cgAffilB \cgAffils \cgContact
+%                         \cgConference \cgConferenceLong
+%   text_context.tex      \cgWhyTitle/\cgWhyBody \cgWhyPhoto
+%                         \cgGapsTitle/\cgGapsBody
+%                         \cgSeeTitle/\cgSeeBody \cgSeeQuote
+%                         \cgObjectiveLabel \cgObjective \cgObjectiveWhy
+%                         \cgProofTitle/\cgProofBody \cgProofQRLabel
+%   text_methods.tex      \cgMethodsHeading \cgSitesTitle
+%                         \cgDataTitle/\cgDataBody
+%                         \cgRefTitle/\cgRefNote/\cgSitesBody
+%                         \cgStepsTitle/\cgStepsNote (flow chart panel),
+%                         \cgStepsBody (fallback only)
+%                         \cgPixTitle/\cgPixNote (one real pixel)
+%                         \cgItemLabel (list bullet)
+%   text_results.tex      \cgResultsHeading \cgResultsTag \cgPendingMark
+%                         \cgRes{A..E}Title / \cgRes{A..E}Body
+%   text_conclusions.tex  \cgConclTitle \cgConclTag \cgConclA \cgConclB \cgConclC
+%   text_footer.tex       \cgAckTitle/\cgAckBody
+%                         \cgCreditsTitle/\cgCreditsBody (\cgCreditsBodyFull)
+%                         \cgRefsTitle/\cgRefsBody (\cgRefsBodyFull)
+%                         \cgRepoQRLabel \cgRepoText
+%   text_captions.tex     \cgCapSites \cgCapTidePair \cgCapLate \cgCapHours
+%                         \cgCapFlow \cgCapPixel
+%
+% Word budget (design review, 2026-10-16): about 550 words on the whole sheet
+% (the reference poster carries about 450), captions, header, bottom strip and
+% the words inside the figures included. Counted on the compiled PDF with
+% pdftotext (a word = a token with at least one letter); the integration
+% report gives the count by row.
+%
+% Lists: a bare itemize prints no bullet in this framework; a list here
+% passes label={\cgItemLabel} (the theme's teal square), defined in
+% text_methods.tex.
+% =============================================================================
+\input{content/cg/text_header}
+\input{content/cg/text_context}
+\input{content/cg/text_methods}
+\input{content/cg/text_results}
+\input{content/cg/text_conclusions}
+\input{content/cg/text_footer}
+\input{content/cg/text_captions}

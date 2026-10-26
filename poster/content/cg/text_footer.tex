@@ -1,0 +1,72 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: bottom strip (acknowledgments, data
+% credits, references, QR label).
+% -----------------------------------------------------------------------------
+% References are numbered by first appearance on the poster:
+%   [1], [2] concept panel; [3], [4] materials (input data).
+% Checked against docs/paper/marea.bib ([1], [2], [4]). The openEO entry in
+% the old footer (content/90-footer.tex: "ISPRS Int. J. Geo-Inf. 10(3), 125")
+% is wrong: the paper is Remote Sensing 13(6), 1125,
+% doi:10.3390/rs13061125. Corrected here; worth a last look before printing.
+% The strip is set at 20 pt (\cgFoot), titles 22 pt.
+% =============================================================================
+\ifdefined\cgFooterTextLoaded\endinput\fi
+\def\cgFooterTextLoaded{}
+
+% TODO(authors): funding, projects, field-survey team and thanks.
+\newcommand{\cgAckTitle}{Acknowledgments}
+\newcommand{\cgAckBody}{[To be supplied by the authors.]}
+
+% Data credits. Only what the poster uses.
+% Copernicus years: the method and every figure of it use 2023-2025 (the pixel
+% figure) or 2025 (image pair); only the Villaviciosa flats of the site map
+% come from the 2016-2025 product. Said so (2026-10-19), so the credit does
+% not show a second archive period for the method.
+\newcommand{\cgCreditsTitle}{Data}
+\newcommand{\cgCreditsBody}{Contains modified Copernicus Sentinel data
+  (2023--2025; Villaviciosa site map 2016--2025). Tide gauges: IOC Sea Level
+  Station Monitoring Facility,
+  Rijkswaterstaat, WSV, Puertos del Estado. Bathymetry: Rijkswaterstaat
+  (Vaklodingen). LiDAR: PNOA-IGN. Tide model: EOT20.}
+% (Natural Earth, the site map's public-domain basemap, is credited in the
+% map's caption.)
+% Longer form, if the space allows.
+\newcommand{\cgCreditsBodyFull}{Contains modified Copernicus Sentinel data
+  (2016--2025), processed with openEO on the Copernicus Data Space Ecosystem.
+  Tide gauges: IOC Sea Level Station Monitoring Facility; Rijkswaterstaat;
+  WSV (PEGELONLINE); Puertos del Estado (REDMAR). Bathymetry: Rijkswaterstaat
+  (Vaklodingen). LiDAR: PNOA, Instituto Geográfico Nacional (IGN). Tide
+  model: EOT20 (DGFI-TUM). Basemap: Natural Earth.}
+
+\newcommand{\cgRefsTitle}{References}
+% Compact form (default): first author, journal, volume and pages.
+\newcommand{\cgRefsBody}{%
+  [1]~Bishop-Taylor et al.\ (2019) \emph{Estuar.\ Coast.\ Shelf Sci.} 223,
+  115--128.\par
+  [2]~Granadeiro et al.\ (2021) \emph{Remote Sens.} 13(2), 320.\par
+  [3]~Schramm et al.\ (2021) \emph{Remote Sens.} 13(6), 1125.\par
+  [4]~Hart-Davis et al.\ (2021) \emph{Earth Syst.\ Sci.\ Data} 13,
+  3869--3884.}
+% Full form, with titles, if the space allows.
+\newcommand{\cgRefsBodyFull}{%
+  [1]~Bishop-Taylor, R.\ et al.\ (2019). Between the tides: modelling the
+  elevation of Australia's exposed intertidal zone at continental scale.
+  \emph{Estuar.\ Coast.\ Shelf Sci.} 223, 115--128.\par
+  [2]~Granadeiro, J.\,P.\ et al.\ (2021). Using Sentinel-2 images to estimate
+  topography, tidal-stage lags and exposure periods over large intertidal
+  areas. \emph{Remote Sens.} 13(2), 320.\par
+  [3]~Schramm, M.\ et al.\ (2021). The openEO API -- harmonising the use of
+  Earth observation cloud services using virtual data cube functionalities.
+  \emph{Remote Sens.} 13(6), 1125.\par
+  [4]~Hart-Davis, M.\,G.\ et al.\ (2021). EOT20: a global ocean tide model
+  from multi-mission satellite altimetry. \emph{Earth Syst.\ Sci.\ Data} 13,
+  3869--3884.}
+
+% QR of the bottom strip: the code repository until the web viewer exists.
+% Give \qrcode the literal URL, not a macro:
+%   \qrcode[height=..]{https://github.com/coastal-AI/Intertidal_analysis}
+% The address prints beside the QR in the text face, broken after the owner.
+% TODO(authors): confirm the repository is public before printing, or swap
+% in the web-viewer URL (and its label) once the viewer exists.
+\newcommand{\cgRepoQRLabel}{Code}
+\newcommand{\cgRepoText}{github.com/coastal-AI/\\Intertidal\_analysis}

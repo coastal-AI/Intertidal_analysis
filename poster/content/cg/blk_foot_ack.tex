@@ -1,0 +1,15 @@
+% Bottom strip, column A: acknowledgments and funders' logos. 20 pt text under
+% a 22 pt title, the same \parskip as the other strip columns, so the first
+% lines of all four columns sit on one baseline. The column holds one line of
+% text above the logos (52 mm in all): a longer acknowledgment needs smaller
+% logos or the logos in a row of their own.
+% TODO(authors): funding text; funders' logos as figures/cg/logo_funder1..3.
+\typeout{CGPLACEHOLDER: acknowledgments text}% remove with the text
+\setlength{\parskip}{1.2mm}%
+\cgFootTitle{\cguse{\cgAckTitle}{Acknowledgments}}
+{\cgFoot
+ \cguse{\cgAckBody}{[To be supplied by the authors.]}\par}
+\vspace{3mm}
+\noindent\cglogo{funder1}{50mm}{22mm}{funder logo}\hfill
+\cglogo{funder2}{50mm}{22mm}{funder logo}\hfill
+\cglogo{funder3}{50mm}{22mm}{funder logo}\par

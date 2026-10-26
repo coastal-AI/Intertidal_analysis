@@ -1,0 +1,14 @@
+% Context row, centre: the same flats at low and at high tide. Two slots of
+% \figCtxW x \figCtxH (211 x 136 mm, the delivered size: placed at 1:1) with
+% one shared one-line caption under the pair. Script:
+% tools/cg/fig_ctx_tide_pair.py (scene date and time printed on each panel).
+\begin{minipage}[t]{\figCtxW}\vspace{0pt}
+  \cgfig{ctx_lowtide}{\figCtxW}{\figCtxH}{R\'{\i}a de Villaviciosa at
+    LOW tide, flats emerged (one Sentinel-2 scene)}
+\end{minipage}\hfill
+\begin{minipage}[t]{\figCtxW}\vspace{0pt}
+  \cgfig{ctx_hightide}{\figCtxW}{\figCtxH}{the same view at HIGH tide,
+    flats flooded (one Sentinel-2 scene)}
+\end{minipage}\par
+\cgcap{\cguse{\cgCapTidePair}{R\'{\i}a de Villaviciosa from Sentinel-2 at
+  low and at high tide. Contains modified Copernicus Sentinel data (2025).}}

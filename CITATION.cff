@@ -1,0 +1,52 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it, and cite the poster below until the paper is published."
+title: "MAREA (pyintertidal): intertidal elevation and emerged time from Sentinel-2 openEO data cubes"
+type: software
+authors:
+  - given-names: Jorge
+    family-names: "Alías Álvarez"
+    email: jorge.alias.alvarez@gmail.com
+    affiliation: "University of Oviedo, Spain"
+  - given-names: Fernando
+    family-names: "García-González"
+    affiliation: "Instituto Español de Oceanografía (IEO-CSIC), Spain"
+  - given-names: Pablo
+    family-names: "González"
+    affiliation: "University of Oviedo, Spain"
+repository-code: "https://github.com/coastal-AI/Intertidal_analysis"
+keywords:
+  - intertidal topography
+  - emerged time
+  - Sentinel-2
+  - openEO
+  - tidal delay
+  - estuaries
+  - remote sensing
+  - Zostera noltei
+abstract: >-
+  MAREA maps intertidal elevation, its uncertainty and emerged time at 10 m
+  from the Sentinel-2 archive. It reads from the images one delay of the tide
+  for each 3-km section along the channel (zero at the mouth, never
+  decreasing inland), shifts the tide at the mouth by that delay, and then
+  fits the elevation of every pixel. The validation is in progress; the
+  repository reports no validation result.
+preferred-citation:
+  type: conference-paper
+  title: "MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes"
+  authors:
+    - given-names: Jorge
+      family-names: "Alías Álvarez"
+    - given-names: Fernando
+      family-names: "García-González"
+    - given-names: Pablo
+      family-names: "González"
+  year: 2026
+  month: 11
+  conference:
+    name: "CARTOGRASS 2026, Simposio Ibérico de Cartografía y Seguimiento de Praderas Marinas"
+    city: Cartagena
+    country: ES
+    date-start: "2026-11-24"
+    date-end: "2026-11-26"
+  notes: "Poster"
+  url: "https://github.com/coastal-AI/Intertidal_analysis"

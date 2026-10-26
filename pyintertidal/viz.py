@@ -722,6 +722,8 @@ def plot_tide_record(times, heights, sampled_times=None, sampled_heights=None,
     q25, q50, q75 = np.percentile(h, [25, 50, 75])
 
     def _frame(ax, tt, hh, title, colour):
+        """One tide panel: the points (tt, hh), the median and quartile
+        lines of the full series, a date axis and the legend."""
         ax.scatter(tt, hh, s=7, alpha=0.45, color=colour, edgecolors="none")
         for value, style, label in ((q50, "--", "median"),
                                     (q25, ":", "P25 / P75"), (q75, ":", None)):
@@ -897,6 +899,7 @@ def scene_canvas(cube, tide_heights=None, prefer_tide="low", n_scan=None,
         ds.close()
 
     def _st(band):
+        """Stretch a band to [0, 1] between its 2nd and 98th percentiles."""
         lo, hi = np.nanpercentile(band, (2, 98))
         return np.clip((band - lo) / max(hi - lo, 1e-6), 0, 1)
 

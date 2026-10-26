@@ -1,0 +1,26 @@
+\begin{pblock}{Why openEO}
+The archive is the bottleneck: a decade of Sentinel-2 over one estuary is
+thousands of scenes, of which most are useless. Two common answers both fail
+at scale — downloading whole scenes wastes almost everything fetched, and
+closed cloud platforms make the processing itself unciteable.
+
+We use \term{openEO} on the Copernicus Data Space. One batch job requests
+only the bands and the polygon needed, and returns a single netCDF cube.
+Everything after that is local:
+
+\begin{itemize}
+  \item \textbf{Analysis-ready L2A}, subset server-side in space, time and
+        band — no local mirror of the archive.
+  \item \textbf{Download once, stream forever.} Re-running an analysis never
+        re-downloads; memory is bounded by the time-block size, not by the
+        area or the number of years.
+  \item \textbf{The cube is the unit of reproducibility}, and the process
+        graph is a portable, standard document rather than a vendor's
+        notebook.
+\end{itemize}
+
+\vspace{4mm}
+\pfig[\linewidth]{pipeline}
+\figcap{The pipeline. One cloud job, then everything local — which is what
+makes it affordable to run many contiguous cells in parallel on one machine.}
+\end{pblock}

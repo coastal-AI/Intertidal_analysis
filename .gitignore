@@ -68,6 +68,8 @@ community-notebook-competition/
 ria_de_foz_water_occurrence*
 intertidal_mask*
 reference*
+# validation v2 code (the L20 reference adapter), not a reference data file
+!experiments/benchmark/lags/references.py
 mareografo_santander*
 ARQUITECTURE.md*
 README_DATASET_GENERATOR.md
@@ -110,3 +112,51 @@ bench/
 final_notebook.ipynb.bak*
 ndwi_cube_*.nc
 bathymetry_hsr*/
+
+# datos pesados v4: fuera del repo; su procedencia queda en sealed/registry.jsonl
+data_v4/
+*.nc
+
+# credentials and per-user config kept inside the project on the server (never commit)
+.config/
+.copernicusmarine-credentials
+**/.copernicusmarine-credentials
+
+# =====================================================================
+# Public snapshot (CARTOGRASS 2026): generated outputs, local drafts and
+# development material stay on the authors' disks and in the history of
+# the working branch. Generated outputs are rebuilt by the scripts
+# (docs/products.md). Files already tracked stay tracked; publishing a new
+# output takes an explicit `git add -f`.
+# =====================================================================
+/docs/paper/
+/poster/content/cg/_*/
+/poster/figures/cg/concepts/
+/poster/tools/cg/concepts/
+/poster/CARTOGRASS2026_poster_*.pdf
+/poster/MAREA_*.pdf
+/poster/marea_poster_draft.html
+/poster/poster_onepixel.tex
+/poster/figures/*.png
+/modelo_generativo/
+/_*/
+/_*.png
+/checkpoints/
+/deliverables/
+/experiments/prototypes/
+/gan_archive_villaviciosa/
+/modelo_generativo_test/
+/scenes_veg/
+/bathy_candidatos/
+/bathy_tagus/
+/dea_ref/
+/runs/
+/results/*
+/products_*/
+/*.npz
+/*.ipynb
+/*.png
+/*.pdf
+/*.tif
+/*.md
+!/README.md

@@ -1,0 +1,54 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: header band (title, kicker, authors).
+% -----------------------------------------------------------------------------
+% The text_*.tex files only DEFINE macros: \input-ing one typesets nothing.
+% Load them all once with \input{content/cg/text_all} (after preamble/theme),
+% then place the macros, e.g. {\fontsize{64}{72}\selectfont\bfseries\cgTitle}.
+% Spelling: US, as in the submitted abstract ("centered", "decimeters").
+% =============================================================================
+\ifdefined\cgHeaderTextLoaded\endinput\fi
+\def\cgHeaderTextLoaded{}
+
+% BINDING: the title exactly as submitted to CARTOGRASS 2026. Do not edit the
+% words. \cgTitleBreak is where the header breaks the title into two lines
+% (after "intertidal": 409 + 491 mm at 64 pt in the 507 mm measure); it is a
+% plain space everywhere else (e.g. the PDF metadata).
+\def\cgTitleBreak{ }
+\newcommand{\cgTitle}{MAREA: a method for mapping intertidal\cgTitleBreak
+  topography using Sentinel-2 openEO data cubes}
+
+% Kicker under the title. It describes what the method does, not how well:
+% whether the archive's delay matches the gauges and whether the correction
+% improves the maps are the validation's to say (Results, Conclusions).
+% Round 3 (2026-10-19): "corrects the maps for it", not "builds it into the
+% map", which left a non-specialist asking what "builds into" means.
+% Round 4: "from satellite images", not "from the archive": the first mention
+% of an archive on the sheet, next to "tide", read as tide records, and the
+% point is that the delay comes from the images, with no gauge inside the
+% estuary. Later mentions ("the Sentinel-2 archive") stay.
+\newcommand{\cgKicker}{The tide arrives late: MAREA reads the delay from
+  satellite images and corrects the maps for it.}
+
+% TODO(authors): confirm names, accents, order and affiliations. The brief
+% gives the first author as "Jorge Alías Álvarez". The submitted abstract has
+% no author lines; docs/paper/validation_summary.tex lists "AIC, Universidad
+% de Oviedo" for J. Alías and P. González without expanding AIC, so the sheet
+% prints "University of Oviedo" until the authors spell out the department or
+% group they want named.
+\newcommand{\cgAuthors}{Jorge Alías Álvarez\textsuperscript{1},
+  Fernando García-González\textsuperscript{2},
+  Pablo González\textsuperscript{1}}
+\newcommand{\cgAffilA}{\textsuperscript{1}University of Oviedo, Spain}
+\newcommand{\cgAffilB}{\textsuperscript{2}Instituto Español de Oceanografía
+  (IEO-CSIC), Spain}
+\newcommand{\cgAffils}{\cgAffilA\quad\cgAffilB}
+
+% In the text face (Fira Sans): a monospaced address read as code.
+\newcommand{\cgContact}{jorge.alias.alvarez@gmail.com}
+
+% Under the conference logo, in two lines (the 125 mm column broke the one-line
+% form after "24-26"). The long form keeps the symposium's own name.
+\newcommand{\cgConference}{CARTOGRASS 2026\\Cartagena, 24--26 November 2026}
+\newcommand{\cgConferenceLong}{CARTOGRASS 2026 · Simposio Ibérico de
+  Cartografía y Seguimiento de Praderas Marinas · Cartagena,
+  24--26 November 2026}

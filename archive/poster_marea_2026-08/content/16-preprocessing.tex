@@ -1,0 +1,17 @@
+\begin{pblock}{Before any tide: masks, clouds, detector}
+\defn{The intertidal mask, from the data}{Every pixel votes across the
+archive: permanent water, permanent land, or \term{transition}. The
+transition class, filtered by its water frequency against the tidal
+window, is the intertidal — \emphnum{31{,}315} pixels in Villaviciosa,
+no chart or DEM consulted.}
+\defn{Clouds measured on the flat only}{A cloud three kilometres inland
+does not obscure the flat, so cloudiness is scored \emph{inside the
+dilated transition zone alone}, per pixel. Only 141 of 1379 scenes are
+fully clear — but \emphnum{415} have half the flat visible, and every
+clear pixel in them enters the fit.}
+\defn{The water detector, chosen by experiment}{Four indices ran over
+byte-identical dates and masks, ranked by correlation of water frequency
+with LiDAR elevation (a lower pixel must flood more often). \term{NDWI}
+wins ($\rho=-0.624$): both bands are native 10\,m, so no resampling
+smears the waterline that carries the signal.}
+\end{pblock}

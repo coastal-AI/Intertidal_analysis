@@ -1,6 +1,8 @@
 """
-boundary_correction.py — Fase M3: el contorno, corregible e intercambiable
-==========================================================================
+boundary_correction.py — Phase M3: the boundary, correctable and interchangeable
+================================================================================
+
+(Original Spanish title: "Fase M3: el contorno, corregible e intercambiable".)
 
 The transfer operator of phase M4 is only as good as the level it is anchored
 to. Phase M3 makes that anchor honest in three moves, none of which touches a
@@ -98,10 +100,18 @@ class ClimatologyBoundary(BoundaryProvider):
 
     @classmethod
     def from_series(cls, times, levels, constituents):
+        """Fit the climatology to a boundary series.
+
+        The harmonics of ``constituents`` and the mean offset come from
+        :func:`decompose`; the standard deviation of what they leave
+        unexplained is kept as ``resid_sigma``.
+        """
         harm, offset, resid = decompose(times, levels, constituents)
         return cls(harm, offset, float(np.nanstd(resid)))
 
     def levels(self, times):
+        """Water level (m) at ``times``: the offset plus the fitted
+        harmonics, with no non-tidal (weather) part."""
         t_h = hours_since_epoch(times)
         out = np.full_like(t_h, self.offset, dtype=float)
         for k, (amp, ph, _) in self.harm.items():
@@ -147,6 +157,9 @@ def fit_correction_from_mouth(wet_mouth, clear_mouth, times, levels,
     z_grid = np.linspace(h_all.min() - 0.3, h_all.max() + 0.3, z_points)
 
     def nll_of(gamma, dt, mask):
+        """Mean Bernoulli NLL of the mouth pixels on the scenes ``mask``,
+        under the series with gain ``gamma`` and lag ``dt`` (min) applied to
+        ``constituent`` only (N2 and O1 enter the decomposition unchanged)."""
         h = corrected_series(times, levels, {constituent: gamma},
                              {constituent: dt}, [constituent] +
                              [k for k in ("N2", "O1") if k != constituent])

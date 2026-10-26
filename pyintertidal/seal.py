@@ -20,8 +20,8 @@ Mechanics, deliberately boring:
 * :func:`verify_seal` recomputes the hash and compares. Any mismatch is a
   loud failure, not a warning.
 * :func:`verify_registry` re-verifies EVERY entry, so tampering with either a
-  sealed file or the registry itself is caught by the test suite
-  (``tests/test_seals.py`` runs it).
+  sealed file or the registry itself is caught whenever it is run (no test
+  in ``tests/`` calls it yet).
 
 This module has no dependencies beyond the standard library on purpose: the
 integrity layer must not break when the science stack does.
@@ -40,6 +40,7 @@ REGISTRY = os.path.join(_ROOT, "sealed", "registry.jsonl")
 
 
 def _sha256(path):
+    """SHA-256 of a file's bytes, read in 1 MiB chunks."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -48,10 +49,14 @@ def _sha256(path):
 
 
 def _rel(path):
+    """Path relative to the repository root with forward slashes: the key
+    under which a file is recorded in the registry."""
     return os.path.relpath(os.path.abspath(path), _ROOT).replace("\\", "/")
 
 
 def _load_registry():
+    """Every entry of ``sealed/registry.jsonl``, in order (an empty list
+    while the registry does not exist yet)."""
     if not os.path.exists(REGISTRY):
         return []
     out = []
@@ -113,5 +118,7 @@ def verify_registry():
 
 
 def is_sealed(path):
+    """True if ``path`` has an entry in the registry. The hash is not
+    checked here; :func:`verify_seal` does that."""
     rel = _rel(path)
     return any(e["file"] == rel for e in _load_registry())

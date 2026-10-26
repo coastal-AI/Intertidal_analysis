@@ -1,0 +1,4 @@
+# Local caches of the CARTOGRASS 2026 figure scripts (basemap tiles, tide levels).
+# Rebuilt on demand by the scripts in poster/tools/cg/; never committed.
+*
+!.gitignore

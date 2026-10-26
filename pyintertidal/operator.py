@@ -1,6 +1,8 @@
 """
-operator.py — Fase M4: el mareógrafo distribuido (el operador T)
-================================================================
+operator.py — Phase M4: the distributed tide gauge (the operator T)
+===================================================================
+
+(Original Spanish title: "Fase M4: el mareógrafo distribuido (el operador T)".)
 
 The deliverable of the whole M-chain, and deliberately NOT a black box: it is
 the explicit composition of three measured pieces, each with its own gate
@@ -65,9 +67,15 @@ class InteriorTide:
     # last band centre there is no measurement, so the last measured value
     # holds rather than an extrapolation inventing physics
     def alpha_at(self, s_km):
+        """Gain alpha at along-channel distance ``s_km`` (km from the mouth)."""
         return np.interp(np.asarray(s_km, float), self.centers, self.alpha)
 
     def tau_at(self, s_km, limb="flood"):
+        """Lag tau (minutes) at ``s_km`` on the ``limb`` ("flood" or "ebb").
+
+        The flood profile serves both limbs when the operator carries no
+        separate ebb profile.
+        """
         prof = (self.tau if (limb == "flood" or self.tau_ebb is None)
                 else self.tau_ebb)
         return np.interp(np.asarray(s_km, float), self.centers, prof)

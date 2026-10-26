@@ -1,0 +1,133 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: materials and methods.
+% -----------------------------------------------------------------------------
+% Order in the Materials-and-methods row (2026-10-19): left half, the study
+% sites (one strip map), what goes into MAREA and the independent checks,
+% then one real pixel ("A pixel is a tide gauge"); right half, the method as
+% six cards that follow one imaginary pixel (figures/cg/method_flow,
+% tools/cg/fig_method_flow.py). Reference data are described here; their
+% results go in text_results.tex (placeholders).
+% Audience pass (2026-10-19, CARTOGRASS: seagrass ecologists, cartographers,
+% managers): plain words, one word for one thing. "Delay", not "lag", in every
+% visible text; "section", not "band", for the 3-km delay units (nobody reads
+% a spectral band); no CDSE, SCL classes or NDWI without its meaning (the flow
+% chart says "water index from green and near-infrared light"); "never used to
+% make the maps", not "never used in the fit".
+% Round 2 (2026-10-19, review of the method panels): the data note says the
+% practical gain for managers (no field data); the checks name "each site"
+% (the Wadden site is a tidal basin, not an estuary); the pixel panel's note
+% points at step 4 of the flow chart; one look rule for the whole sheet.
+% Round 3 (2026-10-19): the inputs carry the chart's INPUT tags, the tide's
+% source is named per site ("at four sites"), "no field surveys"; the
+% fallback steps follow the chart's new card wordings.
+% Both lists are body text (\normalsize, 27.9 pt), set as run-in paragraphs.
+% =============================================================================
+\ifdefined\cgMethodsTextLoaded\endinput\fi
+\def\cgMethodsTextLoaded{}
+
+% A bare itemize prints NO bullet in this framework (beamer's item template is
+% lost once enumitem owns itemize), so a list passes the theme's teal square.
+\providecommand{\cgItemLabel}{{\color{PTeal}\usebeamertemplate{itemize item}}}
+
+\newcommand{\cgMethodsHeading}{Materials and methods}
+
+% --- What goes in ------------------------------------------------- 30 words
+% Facts behind the words (unchanged from 2026-10-16): Sentinel-2 L2A, 10 m,
+% 2023-2025 (Sentinel-2A, 2B, 2C), processed with openEO [3] on the Copernicus
+% Data Space Ecosystem ("the Copernicus cloud"); a look is a clear pixel by
+% the Sentinel-2 scene classification (classes 4-7 kept) of a scene with
+% little cloud (at most 5 % cloudy over the frame or 10 % over the transition
+% zone). Tide at the mouth: EOT20 [4], blended with the outer IOC gauges where
+% they exist (Ferrol fer1; Westerschelde vlis + brsk; Wadden ters; Ems bork;
+% Villaviciosa EOT20 alone), hence "where they exist".
+% Its note says what the brief says of the method, in the words that matter
+% to monitoring and management: MAREA needs no field survey. Nothing is
+% trained on labelled data; every delay and elevation comes from each site's
+% own images and tide (the checks below never enter: their note says so).
+% Round 3 (2026-10-19): "no field surveys", not "no field data": the tide
+% gauges at the mouth are in-situ data, and they are an input.
+% Round 4 (2026-10-19): "tide gauges at the mouth", not "outside the
+% estuary": Ferrol 1 stands in the outer ria, Vlissingen + Breskens and
+% Borkum Fischerbalje at the estuary mouths; only Terschelling Noordzee is
+% truly outside. "At the mouth" is also INPUT 2's own label.
+% The two inputs carry the flow chart's navy tabs (\cgInputTag, cg_macros.tex:
+% the chart's cards 1 and 2 are "INPUT 1 · IMAGES" and "INPUT 2 · TIDE AT THE
+% MOUTH"), so the chart's tide input finds its source here. Gauges: the
+% production boundary blends EOT20 with outer gauges at four sites (Ferrol,
+% Westerschelde, Wadden, Ems); at Villaviciosa it is EOT20 alone
+% (experiments/benchmark/config.py BOUNDARY), hence "at four sites".
+\newcommand{\cgDataTitle}{Input data}
+\newcommand{\cgDataNote}{(all MAREA needs: no field surveys)}
+\newcommand{\cgDataBody}{\cgInputTag{1}\ Sentinel-2 images, 10\,m, 2023--2025,
+  as openEO data cubes in the Copernicus cloud~[3].\quad \cgInputTag{2}\ Tide at
+  the mouth: global tide model EOT20~[4] and, at four sites, tide gauges at
+  the mouth.}
+
+% --- Independent checks (materials) ------------------------------- 30 words
+% Never used to make the maps (hence "independent"); the outer gauges that
+% feed the tide at the mouth are inputs and are named above. The numbered
+% discs (\cgSiteNum, cg_macros.tex) are the study-site map's. No point count
+% for the RTK survey here: it holds 361 points, 270 are development points and
+% 194 of those fall on mapped pixels (the number scored, in the pilot box).
+% Glosses for the audience: RTK-GNSS = a precise GPS survey; PNOA = the
+% Spanish national airborne LiDAR; Vaklodingen = Rijkswaterstaat's depth
+% surveys of the Dutch coast.
+% Round 4 (2026-10-19): the gauges named here are the 13 headline judges of
+% the frozen validation (experiments/benchmark/judges.HEADLINE;
+% docs/validation_v2_spec.md: Borssele and Eemshaven haven are excluded for
+% coverage, fer4 for standing less than 3 km from the boundary gauge Ferrol 1),
+% the only triangles the site strip draws. Ferrol has one, Ferrol 2 in the
+% inner port: "a tide gauge in the inner ria".
+\newcommand{\cgSitesTitle}{Study sites and data}
+\newcommand{\cgRefTitle}{Independent checks}
+\newcommand{\cgRefNote}{(never used to make the maps)}
+\newcommand{\cgSitesBody}{%
+  \cgSiteNum{1}\,precise GPS survey (RTK-GNSS) and PNOA airborne LiDAR\quad
+  \cgSiteNum{2}\,a tide gauge in the inner ria\quad
+  \cgSiteNum{3}\,\cgSiteNum{4}\,\cgSiteNum{5}\,Vaklodingen depth surveys and
+  tide gauges inside each site}
+
+% --- How MAREA works (the flow chart) -------------------------------------
+% Title and note of the right-hand panel. The note says that the pixel and
+% its looks are simulated (fig_method_flow.py: planted delay 90 min, recovered
+% 90 min; the minutes shown are examples, not results).
+\newcommand{\cgStepsTitle}{How MAREA works: follow one pixel}
+\newcommand{\cgStepsNote}{Schematic: one imaginary pixel}
+% Fallback only: set in the figure's place while figures/cg/method_flow is
+% missing (blk_mm_method.tex). Same six steps as the figure; step 3 also keeps
+% the mouth and monotone rule (m2a_rasch: tau = 0 at the mouth, monotone=True),
+% which the figure no longer draws since 2026-10-20.
+\newcommand{\cgStepsBody}{%
+  \step{1}{\term{Seen many times.} Each cloud-free Sentinel-2 view of the
+    pixel says wet or dry (a water index from green and near-infrared light).}
+  \step{2}{\term{Its tide arrives late.} The tide at the mouth (global tide
+    model and gauges) reaches its 3-km section some minutes later: the pixel
+    is wet when that water stands above its ground. MAREA shifts that tide
+    in time, not in height.}
+  \step{3}{\term{Its section's delay.} One delay for the whole section: the
+    one that best splits the wet and dry looks of its pixels, judged
+    together; zero at the mouth, it can only grow inland.}
+  \step{4}{\term{Its elevation.} The midpoint of its flooding curve on the
+    corrected tide; the width of the curve is the uncertainty. A pixel without
+    both wet and dry looks is left empty.}
+  \step{5}{\term{Its emerged time.} The share of time the corrected tide stays
+    below its ground, at all times of the tide record, not only at image
+    times.}
+  \step{6}{\term{All pixels: the maps.} Elevation with its uncertainty, and
+    emerged time: the base layer for the potential habitat of
+    \emph{Zostera noltei}.}}
+
+% --- A pixel is a tide gauge -----------------------------------------------
+% One real 10 m pixel near the mouth of the Ria de Villaviciosa
+% (tools/cg/fig_pixel_gauge.py): its 95 looks in MAREA's own 2023-2025 record
+% (97 scenes kept by the record's scene rule, the pixel's own cloud class
+% clear: the flow chart's "1 look = 1 cloud-free view"); 2.9 km from the mouth
+% along the water its delay is negligible, so its water is the tide at the
+% mouth (the figure says "3 km from the mouth: delay tau ~ 0"; its tide axis
+% says "mouth tide", the flow chart's h). The note points at the flow chart's
+% step 4, which this panel shows on real data. Round 3: "the method's step",
+% because the left half is read first, before the chart that numbers the
+% steps, and a bare teal 4 sat a few cm from the sand site disc 4.
+\newcommand{\cgPixTitle}{A pixel is a tide gauge}
+\newcommand{\cgPixNote}{the method's step \cgStepNum{4} on one real pixel, Ría
+  de Villaviciosa, 2023--2025}

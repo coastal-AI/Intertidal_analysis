@@ -1,0 +1,13 @@
+% Header, left: the conference mark, and under it the conference in two lines
+% (\cgConference breaks after the name).
+% TODO(logo): save the official CARTOGRASS 2026 logo as
+% figures/cg/logo_cartograss2026.png (or .pdf); it then replaces the frame.
+% Round 4 (2026-10-19): 68 mm, not 58, so the block is about 95 mm tall like
+% the title block (95.1 mm) and the logos block, and the three blocks,
+% each centred in the 118-mm band, share a top near 11.5 mm and a bottom near
+% 106.5 mm. Check again with the real logo: keepaspectratio may make it
+% shorter than its box.
+\cglogo[PMist][PMist]{cartograss2026}{\linewidth}{68mm}{CARTOGRASS 2026\ logo}\par
+\vspace{3mm}
+{\centering\color{PMist}\fontsize{21}{25.5}\selectfont
+ \cguse{\cgConference}{CARTOGRASS 2026\\Cartagena, 24--26 November 2026}\par}

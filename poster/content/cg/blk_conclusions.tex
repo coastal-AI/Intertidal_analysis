@@ -1,0 +1,26 @@
+% Conclusions banner (deep-blue fill; inner area 779 x 28 mm). RESERVED: the
+% three dashed slots say what each take-home message will be about, each
+% marked [pending] (content/cg/text_conclusions.tex), until the validation
+% says what they are. Set in body type (\normalsize, 27.9 pt): the final
+% messages go in bold at that size, 75 characters or fewer each (two lines of
+% a 198 mm slot). Plain dashed frames, not \cgreserved: a "Reserved:" prefix
+% in front of "[pending]" said the same thing twice.
+\typeout{CGPLACEHOLDER: conclusions (three [pending] slots)}%
+\renewcommand{\cgframefont}{\normalsize}%
+\begin{minipage}[c]{150mm}
+  {\color{white}\cgSectionFont \cguse{\cgConclTitle}{Conclusions}\par}
+  \vspace{1mm}
+  {\color{PSand}\bfseries\cgSmall \cguse{\cgConclTag}{Pending validation}\par}
+\end{minipage}\hfill
+\begin{minipage}[c]{198mm}
+  \cgframe[PMist][PMist]{\linewidth}{27mm}{\cguse{\cgConclA}{[pending] first
+    take-home message}}
+\end{minipage}\hfill
+\begin{minipage}[c]{198mm}
+  \cgframe[PMist][PMist]{\linewidth}{27mm}{\cguse{\cgConclB}{[pending] second
+    take-home message}}
+\end{minipage}\hfill
+\begin{minipage}[c]{198mm}
+  \cgframe[PMist][PMist]{\linewidth}{27mm}{\cguse{\cgConclC}{[pending] third
+    take-home message}}
+\end{minipage}

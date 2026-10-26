@@ -1,0 +1,25 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: CONCLUSIONS banner, reserved.
+% -----------------------------------------------------------------------------
+% Three slots. Each says WHAT its take-home message will be about, not what it
+% is hoped to say (science review): the sentences are written only from the
+% validation v2 results. Final messages: body size, bold, 75 characters or
+% fewer each (two lines of the 198 mm slot).
+% Audience pass (2026-10-19): "delay", not "lag".
+% =============================================================================
+\ifdefined\cgConclusionsTextLoaded\endinput\fi
+\def\cgConclusionsTextLoaded{}
+
+% Shared with text_results.tex.
+\providecommand{\cgPendingMark}{{\color{PSand}\bfseries[pending]}}
+
+\newcommand{\cgConclTitle}{Conclusions}
+% Optional subtitle (+2 words); every slot already says [pending].
+\newcommand{\cgConclTag}{Pending validation}
+
+\newcommand{\cgConclA}{\cgPendingMark\ Delay from images vs
+  \mbox{tide gauges}, four sites}
+\newcommand{\cgConclB}{\cgPendingMark\ What the delay correction changes in
+  elevation, site by site}
+\newcommand{\cgConclC}{\cgPendingMark\ What the emerged-time map shows for
+  \emph{Zostera noltei}}

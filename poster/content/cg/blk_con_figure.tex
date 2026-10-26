@@ -1,0 +1,13 @@
+% Concept row, column B: the figure panel. Slot \figConW x \figConH
+% (211 x 132 mm): the size b1_tide_arrives_late is exported at, so it is
+% placed at 1:1 and its 20-22 pt type stays 20-22 pt. Which figure goes here
+% is set by \cgConceptFigure / \cgConceptCaption in cartograss2026.tex. b1
+% prints its own day, delays and data line (IOC, Rijkswaterstaat, WSV), so the
+% caption does not repeat them.
+\expandafter\cgfig\expandafter{\cgConceptFigure}{\figConW}{\figConH}{the
+  concept figure: the tide arrives late (b1)}
+% The caption starts 21 mm in, under the figure's own text lines (b1 sets
+% them at x = 21 mm, its L_ - 4 mm), so the lines read as one block.
+\begingroup\leftskip=21mm\relax
+\cgcap{\cgConceptCaption}
+\endgroup

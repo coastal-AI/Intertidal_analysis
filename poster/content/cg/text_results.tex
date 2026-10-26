@@ -1,0 +1,123 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: RESULTS area, reserved (placeholders).
+% -----------------------------------------------------------------------------
+% Five reserved panels. Each has a title (meant to stay) and one line that
+% says what will go there; on the sheet the line sits in a pale dashed block
+% that already reads "Reserved:". After the validation each line is replaced
+% by the figure, its caption and a one-line takeaway. No result is stated
+% here, and no title presumes one (panel E is "Limits", not "Where it does
+% not help").
+% "Four sites": delay = Ferrol, Westerschelde, Wadden, Ems (in-estuary
+% gauges); elevation = Villaviciosa (RTK, LiDAR), Westerschelde, Wadden, Ems
+% (Vaklodingen).
+% Audience pass (2026-10-19): "delay", not "lag" (the flow chart's word);
+% "offset, typical error and slope", not "bias, centered RMSE": the panel
+% will print the statistics' names next to their numbers.
+% =============================================================================
+\ifdefined\cgResultsTextLoaded\endinput\fi
+\def\cgResultsTextLoaded{}
+
+% Shared with text_conclusions.tex (used there, not here).
+\providecommand{\cgPendingMark}{{\color{PSand}\bfseries[pending]}}
+
+\newcommand{\cgResultsHeading}{Results}
+% Subtitle beside the heading (+2 words).
+\newcommand{\cgResultsTag}{Pending validation}
+
+% Round 3 (2026-10-19): "four sites", not "each site": Villaviciosa has no
+% gauge inside (experiments/benchmark/config.py JUDGES["villaviciosa"] = ()).
+% "Whole tide curve, not high water alone": MAREA's delay is one shift of the
+% whole tide curve, while b1 (concept row) prints the delays of one high water
+% (+58 / +86 min); the whole-year shifts in b1's own record
+% (build/cg/b1_tide_arrives_late.json) are 54 and 70 min, so without the
+% words Emden would look like a 16-minute error next to b1.
+% Round 4 (2026-10-19): fer4 is excluded by the frozen boundary-member rule
+% (0.9 km from Ferrol 1, the boundary gauge; docs/validation_v2_spec.md: a
+% judge must stand more than 3 km from every boundary gauge), so it is not a
+% check of anything and the site strip no longer draws it; Ferrol's one
+% headline judge is fer2 (judges.HEADLINE["ferrol"]).
+% Round 4: "behind the mouth tide (tide model and mouth gauges)". MAREA's
+% mouth tide is not a gauge: for the Ems it is EOT20 at the site's centre
+% averaged with Borkum (pyintertidal.boundary.make_boundary consensus), which
+% runs about 7-14 min ahead of Borkum (Delfzijl 61-68 min behind it in the
+% v2 light check, 54 min behind Borkum over 2025 in b1's record). So Results
+% A will differ from b1's +58 / +86 min for a second reason besides "whole
+% tide curve, not high water alone"; b1's key says "Borkum (mouth gauge)".
+% TODO(authors), when the panel is filled: the check data never enter the
+% fit, but the Harlingen comparison set a fit parameter (TAU_BOUNDS was
+% widened to 180 min after it: judges.DEVELOPMENT_JUDGES), and Terneuzen,
+% Delfzijl and fer2 are development candidates (judges.DEVELOPMENT_
+% CANDIDATES). Mark the development judges on the figure, or print the
+% development-free set of the v2 sensitivities beside the headline set, so
+% the panel does not present every judge as equally independent.
+\newcommand{\cgResATitle}{Delay vs tide gauges}
+\newcommand{\cgResABody}{Delay per section behind the mouth tide (tide model
+  and mouth gauges) vs the tide gauges inside four sites (whole tide curve,
+  not high water alone).}
+
+% Round 3: "scale (regression slope)", not "slope": next to elevation maps an
+% ecologist reads "slope" as the slope of the ground. Keep the gloss when the
+% numbers arrive.
+\newcommand{\cgResBTitle}{Elevation vs independent surveys}
+\newcommand{\cgResBBody}{Offset, typical error and scale (regression slope)
+  per site, with and without the delay.}
+
+\newcommand{\cgResCTitle}{Ems-Dollard maps}
+\newcommand{\cgResCBody}{Elevation with and without the delay correction, and
+  the difference.}
+
+\newcommand{\cgResDTitle}{Emerged time, Villaviciosa}
+\newcommand{\cgResDBody}{Emerged-time map: base layer for the potential
+  habitat of \emph{Zostera noltei}.}
+
+\newcommand{\cgResETitle}{Limits}
+% Round 2 (2026-10-19): one planned topic named, with no number: wet/dry images
+% time the tide but cannot measure its height, so where the tide also grows
+% taller inland (b1: Ems range 2.6 m at Borkum, 3.5 m at Emden) a delay alone
+% does not follow it (z stays on the mouth tide's scale; the flow chart's
+% card 2 states the assumption).
+% Round 3 (2026-10-19): two predictable physical limits, still with no number.
+% (a) The tide also changes SHAPE inland: b1's own record gives Emden high
+% water +86 min, low water +69 min and a whole-curve shift of +70 min, which
+% one delay cannot follow either. (b) Sentinel-2 passes at the same hour, so
+% it sees only part of the tide: at Villaviciosa (passes 11:06-11:25 UTC) the
+% 465 passes of 2023-2025 span EOT20 levels -2.17 to +1.37 m, the 97-scene
+% record -2.17 to +1.15 m with only 2 looks above +0.9 m, while spring high
+% waters reach about +2 m (tools/cg/cache/villaviciosa_eot20_overpass_
+% 2023-2025.csv); with the quality rule (at least 3 looks with the water above
+% the ground and 3 below it: pyintertidal.marea.QUALITY_MIN_BRACKET) the
+% highest flats, where the upper limit of Zostera noltei lies, stay empty.
+% Round 4 (2026-10-19), three changes.
+% (1) No lead sentence. "Sites and sections with no gain or a loss, and why:"
+% presumed a result before the validation; the proposed "Where the delay
+% correction helps least, and why:" would not fit the third topic (flats left
+% empty are a limit of the whole method, not of the delay correction), and
+% the panel's title already says "Limits". The space goes to (2) and (3).
+% (2) Drainage: water left on the flats by the falling tide (puddles, a
+% water film, wet mud) keeps pixels looking wet late on the ebb but not late
+% on the flood, which pushes one fitted delay up even where the tide has no
+% delay. Measured in the project's prototype: "fall +41 min where rise ~0"
+% (docs/prior_art_granadeiro.md; the simulator models ponding). Results A
+% compares the delay with the gauges, exactly where this would show.
+% (3) A taller tide alone, now printed. It is MAREA's own affine theorem
+% (docs/METHOD.md, "What is provably not estimable", enforced as a
+% specification and tested in m2_gate_sim): the wet/dry looks cannot tell
+% (alpha, z, sigma) from (c alpha, c z, c sigma). If the inner tide is a
+% scaled copy of the shifted mouth tide, eta = alpha h(t - tau) + c (alpha > 0,
+% the same for every look), wet <=> h(t - tau) > (z_true - c) / alpha, so
+% MAREA's z is (z_true - c) / alpha (elevations compressed toward the mouth's
+% scale, about x0.74 at Emden: range 2.6 / 3.5 m; Results B's "scale" will
+% show it), while E(z) = P(h(t - tau) < z) = P(eta < z_true) is exactly the
+% true emerged time. Conditions, which the text keeps: "alone" (it fails where
+% the tide changes shape, or alpha differs between springs and neaps or within
+% a section: the first topic), and emerged time computed from the SAME mouth
+% series h as the elevation fit (the method's definition: "the corrected tide
+% record"; at Villaviciosa, Results D, h is EOT20 alone for both; at the four
+% gauge sites it is the EOT20 + gauge blend, not EOT20 alone).
+% TODO(authors): confirm (3) before the print run; drop the parenthesis if
+% the production emerged-time maps use another tide series than the fit.
+\newcommand{\cgResEBody}{A tide that changes shape inland (Ems), which one
+  delay cannot follow (a taller tide alone rescales elevation, not emerged
+  time); water left on the flats by the ebb, which can pass for a late tide;
+  the highest and lowest flats, seldom seen flooded or dry by a satellite
+  passing at the same hour: left empty.}

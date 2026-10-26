@@ -1,0 +1,18 @@
+% booktabs freezes its rule widths in `em' AT PACKAGE-LOAD TIME, when the
+% current font is still 10 pt — so \heavyrulewidth ends up 0.8 pt, a hairline
+% beside 31 pt type. Same story for the plain absolute lengths below, none of
+% which follow beamerposter's font scaling. Set them for A0 explicitly.
+\setlength{\heavyrulewidth}{1.8pt}
+\setlength{\lightrulewidth}{1.0pt}
+\setlength{\cmidrulewidth}{0.8pt}
+\setlength{\aboverulesep}{5pt}
+\setlength{\belowrulesep}{5pt}
+\setlength{\arrayrulewidth}{1.0pt}
+\setlength{\tabcolsep}{0.9em}
+\renewcommand{\arraystretch}{1.22}
+\setlength{\fboxrule}{1.5pt}
+\setlength{\fboxsep}{4mm}
+
+
+% TikZ's default 0.4 pt line is invisible at this size.
+\tikzset{every picture/.style={line width=0.9pt}}

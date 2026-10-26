@@ -1,0 +1,164 @@
+% =============================================================================
+% CARTOGRASS 2026 poster -- TEXTS: context row and concept row.
+% -----------------------------------------------------------------------------
+% Row 2: two motivation panels flanking two large images (Why / Two gaps).
+% Row 3: concept panel, OBJECTIVE box (one question, large type) and the small
+%        pilot-result box with a QR.
+% Use: \begin{pblock}{\cgWhyTitle}\cgWhyBody\end{pblock}, and so on.
+% Word counts: words with a letter as pdftotext reads them, titles excluded.
+% Budget for the whole sheet (design review, 2026-10-16): about 550 words in
+% all, captions, footer and the text inside figures included; each motivation
+% panel about 30 words.
+% Audience pass (2026-10-19): plain words for seagrass ecologists, cartographers
+% and managers; the words of the method flow chart ("delay", "out of the
+% water", "share of time"); no statistics or computing terms left unexplained.
+% Citation numbers follow first appearance on the poster; see text_footer.tex.
+% =============================================================================
+\ifdefined\cgContextTextLoaded\endinput\fi
+\def\cgContextTextLoaded{}
+
+% --- Motivation panel 1 ------------------------------------------- 31 words
+% Definition as in the submitted abstract ("spends exposed"), in the flow
+% chart's words (card 5: "share of time ... out of the water"); the last
+% sentence is the bridge to "Two gaps" on the other side of the images.
+% Round 3 (2026-10-19): "(emersion time)", the seagrass ecologists' own term
+% (also "exposure time"), so "emerged time" does not read as a new quantity.
+% TODO(authors): the claim "a main driver" carries no reference; a supporting
+% one (chosen by the ecologist co-author) needs about 8 mm the references
+% block does not have (48 of 52 mm used): add it if another is shortened.
+\newcommand{\cgWhyTitle}{Why emerged time?}
+\newcommand{\cgWhyBody}{%
+  A main driver of where \emph{Zostera noltei} grows is \term{emerged time}
+  (emersion time): the share of time the ground spends out of the water, set
+  by its elevation and the local tide.}
+% The photo slot under it (\cgphoto in blk_ctx_left.tex): the label says
+% which photo is wanted until figures/cg/photo_zostera.(jpg|png) exists.
+\newcommand{\cgWhyPhoto}{\emph{Zostera noltei} exposed at low tide,
+  Ría de Villaviciosa (authors' own)}
+
+% --- Motivation panel 2 ------------------------------------------- 29 words
+% "About 2 hours": the largest delays measured inside the sites, behind the
+% tide at the mouth. Recomputed for 2025 against Borkum (science review,
+% 2026-10-16): Nieuwe Statenzijl (Dollard) best-aligning shift +96 min, its
+% low waters +124 to +133 min; Pogum high waters +96 to +102 min; Harlingen
+% (Wadden Sea) best constant lag +93 min (+88 min in the brief's gauge
+% table). "Up to 1.5 hours" understated the maximum. The concept figure (b1)
+% shows the Ems at +58 / +86 min for one high water, consistent with "up to".
+% "Elevation map", not "bathymetry" (2026-10-19): the flats are land at low
+% tide, and the poster's title says topography.
+% Round 2 (2026-10-19): global models such as EOT20 are fitted to satellite
+% altimetry, so "calibrated at the coast" was wrong; what fails inside is
+% resolution (they give the tide at the open coast). "1.5-2 hours": the
+% whole-curve delays MAREA corrects reach about 1.5 h at the gauges
+% (Nieuwe Statenzijl +96 min, Harlingen +93 min); 2 h is reached only by the
+% Dollard's low waters (+124 to +133 min).
+\newcommand{\cgGapsTitle}{Two gaps}
+% Its punch line (\cgquote), the abstract's "To close both gaps, we present
+% MAREA" as intent, not result: "addresses", not "closes".
+\newcommand{\cgGapsQuote}{MAREA addresses both with the Sentinel-2
+  archive.}
+% Round 3 (2026-10-19): "tidal flats", not "wetlands", which brought in
+% marshes (Zostera noltei lives on the flats), and "up-to-date", not
+% "detailed": PNOA LiDAR covers all of Spain and the Vaklodingen the whole
+% Dutch coast (both are checks at four of the five sites), but lidar is flown
+% at whatever tide stage and depth surveys come every few years, so what is
+% missing is a current map of the flats. "Tidal", not "intertidal": the
+% longer word left "map." alone on a third line.
+% Round 4 (2026-10-19): (a) "estuaries and tidal basins", not "rias and
+% estuaries": the 1.5-2 h hold for the Dollard and the Wadden basin
+% (Harlingen +93 min), while the poster's own rias show little delay
+% (Villaviciosa 0-21 min, Ferrol short). (b) The consequence is said, the
+% mechanism only (no size of any gain, which stays with Results): a map made
+% with the global models' coastal tide misjudges when the flats flood ("made
+% with them": the models; "with the coastal tide" took a sixth line, 1.6 mm
+% past the panel); the concept panel's pull quote ("If the tide arrives late,
+% the pixel floods late") picks it up.
+\newcommand{\cgGapsBody}{%
+  \term{Unknown elevation.} Most tidal flats lack an up-to-date elevation
+  map.\par
+  \term{A late tide.} Global tide models give the tide at the open coast;
+  inside estuaries and tidal basins it arrives up to \emphnum{1.5--2~hours}
+  later, so maps made with them misjudge when flats flood.}
+
+% --- Concept panel ------------------------------------------------ 29 words
+% [1, 2] = Bishop-Taylor et al. 2019; Granadeiro et al. 2021: the wet/dry
+% versus tide principle. Never claim a first: [2] already estimates lags.
+% "Many times": MAREA's 2023-2025 records hold 54-106 scenes per site and the
+% pixel figure 95 looks (Villaviciosa, 97 scenes); "hundreds" holds only for
+% 2016-2025.
+% "A yes-or-no tide gauge" (2026-10-19), not "one-bit": no computing terms.
+% Never claim a first (round 4): the pull quote below credits [2] for the
+% delay itself.
+% The title breaks by hand after "satellite" (36 pt, 165 mm measure).
+\newcommand{\cgSeeTitle}{What does a satellite\\see of the tide?}
+% Round 3: "Mostly wet or dry", not "Only": the elevation step fits a curve
+% to the continuous water index (pyintertidal.marea.invert_series; the flow
+% chart's card 4 and "A pixel is a tide gauge"); only the delay fit uses the
+% looks as wet or dry.
+\newcommand{\cgSeeBody}{%
+  Mostly wet or dry: a pixel is wet when the water stands above its
+  ground~[1,\,2]. Seen many times, at different tide stages, each pixel
+  becomes a \term{yes-or-no tide gauge}.}
+% Its punch line, set large under it (\cgquote): the bridge to the figure.
+% Round 4 (2026-10-19): credited to [2]. Granadeiro et al. 2021 is titled
+% "Using Sentinel-2 images to estimate topography, tidal-stage lags and
+% exposure periods": the same three outputs as MAREA, and the project's own
+% docs/prior_art_granadeiro.md says [2] showed that the Sentinel-2 archive
+% holds the delays. [2] fits one delay field in lon/lat from flood and ebb
+% scenes on a sample of mid-elevation pixels; MAREA fits one delay per 3-km
+% section along the channel from every wet or dry look (the OBJECTIVE names
+% that difference: "section by section along the channel").
+\newcommand{\cgSeeQuote}{If the tide arrives late, the pixel floods
+  late~[2].}
+
+% --- Objective: one question in large type ------------------------ 25 words
+\newcommand{\cgObjectiveLabel}{Objective}
+% Round 4 (2026-10-19): "section by section along the channel" names what
+% MAREA adds to [2] (one delay per 3-km section, zero at the mouth, never
+% decreasing inland), and drops "inside rias and estuaries" (the rias show
+% little delay; the Wadden site is a tidal basin): "along the channel" says
+% where the delay is measured.
+\newcommand{\cgObjective}{Can the Sentinel-2 archive measure, section by
+  section along the channel, how late the tide arrives and, with that delay
+  corrected, map intertidal elevation and emerged time?}
+% Why a few decimeters matter (2026-10-19), set under the question in smaller
+% type (blk_con_objective.tex): the number of \cgCapHours (b2, Gijon tide
+% gauge, 2024: -0.15 to +0.15 m around mean sea level = +1.02 h in the air per
+% tide). Tide-gauge data, not a MAREA result. ------------------- 28 words
+% Round 4 (2026-10-19): "a flat 30 cm higher spends", the ecologist's
+% picture (a flat higher up the shore) in the words of the sheet's own
+% definition ("the share of time the ground spends out of the water").
+\newcommand{\cgObjectiveWhy}{\textbf{Why decimeters matter:} around mean
+  sea level, a flat 30\,cm higher spends about 1\,hour more out of the
+  water per tide (Gijón tide gauge, 2024).}
+
+% --- Pilot result (previous work), small box with a QR ------------ 25 words
+% 194 points and 0.19 m are from the submitted abstract (which also says "5%
+% of the spring range": see round 4 below). 194 is the number of RTK points SCORED (on mapped pixels), not the
+% size of the survey (361 points; 270 development points), so the count is
+% given here and not in the materials list.
+% "Typical elevation error 0.19 m (offset removed)" (2026-10-19): the spread
+% of the differences once their offset is removed (centered RMSE; the
+% validation centres on the median), in Results B's words ("typical error");
+% "precise GPS points" is the materials list's gloss of RTK-GNSS, so the
+% first number on the sheet needs no term explained later. The box holds
+% five lines (151 mm at 27.9 pt): one more overflows it.
+% The delay barely matters at Villaviciosa (0-21 min; centered RMSE 0.191 m
+% without it, 0.193 m with it, per the science review of 2026-10-16): the box
+% says so.
+% TODO(authors): when Results B is filled from validation v2, print one
+% elevation number on the whole sheet, or keep this box as the pilot.
+% TODO: decide the QR target (validation summary? abstract page?).
+% Round 4 (2026-10-19): "6% of the mean spring range" (5.6 % rounded; the
+% box holds five lines, so no "about"), not the abstract's "5% of the spring
+% tidal range". The cached EOT20 series at
+% Villaviciosa (tools/cg/cache/villaviciosa_eot20_hourly_2023.csv, harmonic
+% fit) gives M2 = 1.25 m and S2 = 0.45 m, so the mean spring range
+% 2 (M2 + S2) is 3.41 m and 0.19 m is 5.6 % of it; 5 % holds only against a
+% larger range (the 90th percentile of the daily ranges, 3.74 m, gives 5.1 %).
+\newcommand{\cgProofTitle}{Pilot result}
+\newcommand{\cgProofBody}{%
+  Ría de Villaviciosa, 194 precise GPS points: typical elevation error
+  \emphnum{0.19\,m} (offset removed), 6\% of the mean spring range. Little
+  delay there: a test of the elevation step.}
+\newcommand{\cgProofQRLabel}{Validation details}

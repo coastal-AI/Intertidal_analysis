@@ -49,6 +49,7 @@ import numpy as np
 
 
 def _clean(values):
+    """The finite values of ``values`` as a flat float array."""
     values = np.asarray(values, dtype=float).ravel()
     return values[np.isfinite(values)]
 

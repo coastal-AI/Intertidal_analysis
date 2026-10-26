@@ -1,0 +1,14 @@
+{
+ "n_scenes": 465,
+ "s_max_km": 9.270630585851555,
+ "n_isolated": 754,
+ "corr_s_canal": 0.7884442038511607,
+ "frac_bandas_monotonas": 1.0,
+ "efold_mediano_km": 1.1828966622861963,
+ "inputs_sha": {
+  "canal": "f7f9fb8415b561ab409272a09a985e09e06b58d3566696918f070d8925bb870d",
+  "store": "b23fde89b68d44e643d18a68b99e36d3d136e102d4ed485c064ac46f63277cb2",
+  "mareas": "e783c0a5c693764c231c6c549e14ccc92cd834ff3773f6557237ae336b74c28e"
+ },
+ "seed": 20260818
+}

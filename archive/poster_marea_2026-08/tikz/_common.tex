@@ -1,0 +1,26 @@
+% Shared node styles and text macros. Drawn at FINAL printed size — the
+% picture's natural width is the 241 mm column — so the diagram is included
+% with no `width' key and its type matches the poster body exactly. Scaling it
+% on inclusion would scale the labels too and they would stop matching.
+\tikzset{
+  every picture/.style={line width=0.9pt},
+  box/.style={draw=PSlate, fill=white, line width=0.9pt,
+              rounded corners=1.5pt, align=center,
+              inner sep=3mm, text=PInk},
+  cloudbox/.style={box, draw=PDeep, fill=PDeep, text=white},
+  keybox/.style={box, draw=PTeal, line width=1.8pt},
+  outbox/.style={box, draw=PSand, fill=PMist},
+  flow/.style={-{Stealth[length=4mm,width=3mm]}, draw=PSlate, line width=1.1pt},
+  loop/.style={-{Stealth[length=4mm,width=3mm]}, draw=PTeal, line width=1.1pt,
+               dash pattern=on 3.5mm off 2.5mm},
+}
+
+% Text macros, not tikz styles: these are used INSIDE tabulars in node bodies,
+% where a `font=' key does not reach.
+% 19 pt titles, not 25: box widths are set by the longest label, and at 25 pt
+% "Reference map" needs more than the 5.65 cm a four-across row allows in a
+% 24.1 cm column. Text spilling past a box edge reads as broken however good
+% the content is.
+\newcommand{\ttl}{\fontsize{19}{23}\selectfont\bfseries}
+\newcommand{\sub}{\fontsize{15}{18}\selectfont\color{PSlate}}
+\newcommand{\subw}{\fontsize{15}{18}\selectfont\color{PMist}}

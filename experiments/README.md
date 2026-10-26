@@ -1,148 +1,123 @@
-# experiments/ — the gated record of the investigation
+# experiments/: the scripts of the MAREA project
 
-Every claim in the paper traces back to a script in this folder. The rules
-are the same for all of them:
+Every script answers one question, stated at the top of its docstring, and
+says there what it reads, what it writes and how to run it. Run them from the
+repository root as modules:
 
-- each script answers **one question**, stated in its docstring, and writes
-  its verdict to `results/<name>/result.json` with the SHA-256 of every
-  input it read;
-- adoption criteria are **pre-registered** (in the docstring or in
-  `configs/*.yaml`) before the script runs, and a positive result must beat
-  a **matched null** — the same pixels, clouds and sampling re-simulated
-  without the effect — not just look good;
-- **negative results are kept**, with their controls, exactly like the
-  positive ones. Several of the most useful numbers in the project came
-  from experiments that failed.
-
-These scripts are the *disciplined* era only. The full breadth of the
-investigation — including the months before this folder existed and the
-lines that died on the way — is indexed in `docs/INVESTIGATION_MAP.md`,
-every line with its outcome and the pointer to its record.
-
-Run any of them from the repo root as `python -m experiments.<name>`.
-The chronological narrative lives in `docs/PHASE_LOG.md`; the notebooks in
-`research/` present the highlights. This file is the map.
-
-## Anatomy of one experiment
-
-Every script in this folder walks the same path — this is the machine that
-kept the project honest:
-
-```mermaid
-flowchart LR
-    Q["question +<br>adoption criterion<br>(pre-registered BEFORE running)"] --> R["run on sealed inputs<br>(SHA-256 of everything read)"]
-    R --> N["matched null:<br>same pixels, clouds and times,<br>with the effect removed"]
-    N --> V{"does the real measurement<br>leave the null band?"}
-    V -->|yes| A["ADOPTED —<br>used downstream"]
-    V -->|no| K["NEGATIVE —<br>kept, with its control"]
-    A --> L["results/&lt;name&gt;/result.json<br>+ entry in docs/PHASE_LOG.md"]
-    K --> L
+```bash
+python -X utf8 -m experiments.<name> [arguments]
 ```
 
-Two consequences worth stating. First, a criterion chosen *before* the
-run cannot be bent to fit the outcome — several experiments here failed
-their own pre-registered gate and are reported as failures. Second, the
-null band is measured with the estimator itself on a world where the
-effect is absent by construction, so "the estimator returns a number" is
-never mistaken for "the effect exists".
+They import the library (`pyintertidal/`); the library never imports them.
+What each output file contains is described in
+[`../docs/products.md`](../docs/products.md).
 
-## The estimators, precisely
+To map a site you need no script here: `pyintertidal.marea.reconstruct`
+makes the MAREA product from a downloaded cube (see the
+[repository README](../README.md#minimal-examples), example 3). The scripts
+below validate the method and compare it with others.
 
-The formulas the scripts implement (full derivations in the root README and
-in each docstring):
+The folder holds three groups: validation v2 (in progress), the method
+comparison on the existing 10 m inputs, and the development record that led
+to the method.
 
-- **Per-pixel fit** (`elevation._fit_block`): least squares of
-  $\mathrm{NDWI}=a+b\,\Phi((h-z)/\sigma)$ over a $z$ grid and a fixed
-  $\sigma$ grid, closed-form in $(a,b)$ per grid node.
-- **M2a** (adopted): per band of along-channel distance, maximise the
-  profiled Bernoulli likelihood
-  $\ell(\tau)=\sum_p\max_{z,\sigma}\sum_t[y\log P+(1-y)\log(1-P)]$ with
-  $P=\Phi((h(t-\tau)-z)/\sigma)$, weighting each pixel's mean NLL by its
-  observation count; $\tau$ refined by parabolic interpolation on the
-  2-minute clock bank.
-- **M2d** (literature baseline, after Granadeiro 2021): fit the wet/dry
-  curve separately on rising and falling scenes; the lag is the shift that
-  makes the two fitted elevations agree.
-- **p9** — linear law $\tau(s)=\gamma\,(s-s_0)$ scored by the same
-  likelihood over a $\gamma$ grid; **p9b** — per band,
-  $\tau_k=\arg\max_\tau \mathrm{Spearman}\!\big(f_k, h(t-\tau)\big)$ on the
-  band's wet fraction $f_k$, then a weighted OLS slope over $s$;
-  **p9c** — $\tau_k=(h_{\uparrow}-h_{\downarrow})/(2v)$ where
-  $h_{\uparrow},h_{\downarrow}$ are the median mouth levels of half-flooded
-  rising/falling scenes and $v$ the median $|dh/dt|$ (the lag displaces the
-  two curves by $\pm v\tau$).
-- **Bracket** (`p8`, retired):
-  $z=\tfrac12(\max h_{\mathrm{dry}} + \min h_{\mathrm{wet}})$
-  per pixel — no fit, no cost function.
-- **σ decomposition** (`b2`):
-  $\sigma_{\mathrm{topo}}=\sqrt{\max(\sigma^2-s_{\mathrm{level}}^2,\ \mathrm{floor}^2)}$
-  — the fitted width deconvolved of the measured scene-level water error.
-- **CRLB bar** (`p13`, refuted):
-  $\sigma_z = s_e\,\sigma\,\big/\big(b\sqrt{\sum_t\varphi_t^2}\big)$ with
-  $\varphi_t$ the Gaussian density at each observation's margin — the
-  effective count of waterline crossings.
-- **Scoring triad** everywhere: centred RMSE (datum-free), slope of
-  estimate on truth, Pearson $r$. Never RMSE alone.
+## 1. Validation v2 (in progress)
 
-## m-series — the MAREA core, gate by gate
+The factorial validation of MAREA against state-of-the-art lag and elevation
+methods, under identical inputs: [`../docs/validation_v2_spec.md`](../docs/validation_v2_spec.md).
 
-The estimator that measures the interior tide from the archive itself.
-Order matters: each gate had to pass before the next was attempted.
-
-| script | question | verdict |
-|---|---|---|
-| `m0_baseline.py` | does the pipeline still measure the per-block structure everything targets? | yes; pooled dev slope reproduced within CI |
-| `m1_geometry.py` | estuary geometry from the archive: distance-from-mouth, thalweg, width(s,h) | monotone thalweg, widths non-decreasing with level |
-| `m2_alias.py` | which tidal constituents can a sun-synchronous archive even estimate? | S2 frozen, K1/P1 aliased annual; M2, N2, O1, Q1, M4, M6 estimable |
-| `m2_gate_sim.py` | plant a known lag profile and gain — are they recovered? | phase yes (M2a beats the literature baseline); gain provably not (affine invariance, NLL flat) |
-| `m2_real.py` | is there interior-tide signal in the real archive, against a matched null? | only the head band leaves the null; mid-estuary stays inside |
-| `m3_gate_sim.py` | a planted *boundary* phase error must not masquerade as estuarine transfer | recovered at the mouth, leak removed once corrected |
-| `m4_gate_sim.py` | does the correction operator recover planted damage, and is it a fixed point? | both, within tolerance |
-
-## b-series — product layers on top of the core
-
-| script | question | verdict |
-|---|---|---|
-| `b1_bathymetry.py` | the elevation product inverted with the distributed tide gauge | product + declared dev-RTK diagnostic (point-vs-pixel decomposition) |
-| `b2_sigma.py` | how much of the fitted transition width is topography vs level error? | decomposition into σ_topo and the scene-level term |
-| `b5_gate_sim.py`, `b5_v3_verdict.py` | separate flood/ebb clocks — adoptable? | **no**, three times: likelihood runaway (v1), no-margin OOS adoption (v2), insufficient power under the null-thresholded rule (v3). Kept as a demonstrated limit |
-| `b6_hydraulic_dem.py` | spill elevation, ponding depth, censored-pixel flag, with two judges | flag informative; completeness honestly bounded (censoring hides itself) |
-| `b7_incertidumbre.py` | per-pixel σ_z tabulated from planted recoveries in the calibrated twin | conservative coverage against dev RTK — the production error bar |
-
-## p-series — external validation and exploration
-
-| script | question | verdict |
-|---|---|---|
-| `p0_download_*.py` | cube downloads (enlarged Villaviciosa, Aveiro) | — |
-| `p1_swot_coverage.py` | does SWOT fly over Villaviciosa usefully? | sparse; not a dependency |
-| `p4_site.py`, `p4_scheldt.py` | blind phase profiles at external estuaries | Scheldt gradient matches the gauges; Sheerness/St-Malo kept **exploratory** (no gauge pair) |
-| `p5_rmse_aoi.py` | elevations vs EMODnet truth, with/without the correction | Tagus and Aveiro improve where the lag is; Vadehavet correctly declines |
-| `p6_terneuzen_comparison.py` | every level candidate against a held-out gauge | zero-instrument correction beats models and ensemble |
-| `p7_gauge_table.py` | the gauge-pair world tour: where is a transfer operator worth having? | character of the estuary decides, not distance; controls at zero; the honest scoreboard carries a harmonics-only middle term |
-| `p8_bracket_regions.py` | does the retired bracketing method generalise beyond Villaviciosa? | no; compressed slopes elsewhere |
-| `p9_parametric_lag.py`, `p9b_rank_slope.py`, `p9c_two_curves.py` | γ (lag per km) by three independent routes | all agree on sign, none leaves its null on Villaviciosa |
-| `p10_linear_vs_free_aoi.py` | linear τ(s) vs free clocks at the surveyed sites | linear ties on smooth profiles, damages the convex Tagus; free clocks stay. Grid-cap lesson recorded |
-| `p11_ndwi_depth_curve.py` | is continuous NDWI a depth gauge? | four-regime master curve; only the mixing regime inverts per pixel |
-| `p11b_blind_band.py` | invert depth in the never-exposed band | **no skill** vs the trivial baseline (v1 hallucinated; v2 honest and still flat) |
-| `p12_extended_pixel_model.py` | a six-parameter pixel (drainage + attenuation) | wins the OOS fit, collapses the elevation slope → **not adopted**; L/k maps kept as exploratory products |
-| `p13_sigma_uncertainty.py` | the Cramér–Rao per-pixel bar, validated | **refuted** (9 % coverage at 68 % nominal) — and thereby measured the 5 cm statistical floor: the level, not the fit, is the bottleneck |
-
-## Campaign
-
-| script | role |
+| file | role |
 |---|---|
-| `make_cells_v2.py` | terrain-following cells for the north coast (OSM coastline + tidal polygons); v1's rectangles cut rias in half |
-| `campaign_north_v1.py` | first campaign runner — superseded, kept for the record |
-| `campaign_north_v2.py` | the production runner: submit, harvest, process, purge; fully resumable |
+| [`validation_v2.py`](validation_v2.py) | the only entry point (command line): `fetch`, `inputs`, `check-env`, `prepare`, `truth`, `pilot`, `plan`, `status`, `gate`, `control`, `lock`, `run`, `score`, `timing`, `diag time`, `extract` (and `report`, a placeholder until milestone V6); its docstring lists every command and option |
+| [`benchmark/`](benchmark/README.md) | the harness behind those commands: the observation, water levels, input packages, truths, settings, designs, lag methods, run queue, scoring, inference, lock |
+| `zarr_cubes.py` | the format of the validation cubes (one Zarr store per site and year), their reader and checks |
+| `download_cube_zarr.py` | downloads those stores from the Copernicus Data Space Ecosystem with openEO (nine bands, plus the sun and view angles) |
+| `download_cube.py` | downloads the netCDF cubes of the Westerschelde, Wadden Sea and Ems-Dollard sites on the 10 m validation grid |
+| `validation_grid.py` | the grid switch of the validation runs (10 m or 20 m) and the spatial thinning used by the scoring |
+| `v13_benchmark.py` | the command line of the earlier benchmark design (`docs/v13_benchmark_spec.md`), kept because validation v2 reuses its commands |
 
-## One-shot
+A typical start, on any machine:
 
-`v3_open_reserved.py` opens the reserved RTK set. **Only the human runs
-it, once**; every opening is logged to `results/v3_aperturas.jsonl`.
+```bash
+python -X utf8 -m experiments.validation_v2 check-env      # lists every input and how to obtain it
+python -X utf8 -m experiments.validation_v2 status
+```
 
-## prototypes/
+The spec orders the stages (the lag benchmark is scored before any
+elevation score); `lock` refuses a working tree with uncommitted code; the
+authors run the server stages (spec §13).
 
-The verbatim exploratory record that preceded all of the above — scratch
-scripts kept exactly as they were written, not expected to run. See its own
-README for the family map. When a docstring above says an idea "died", the
-corpse is usually in there.
+## 2. Method comparison on the existing 10 m inputs
+
+Questions put by the authors on 2026-10-20 and 2026-10-26, to be answered
+from the 10 m inputs and products of MAREA and its competitors already made
+for each study site (not in the repository; see
+[`../docs/products.md`](../docs/products.md), sections 3, 4 and 8). Outputs
+go to `results/<folder>/` (not versioned while the work is in progress).
+
+| script | question | output folder |
+|---|---|---|
+| `v14_scene_count_curves.py` | How does MAREA's elevation error change with the number of scenes, and is it their number or their screening that matters? | `results/scene_count_curves/` |
+| `v15_nidem_scene_curves.py` | The same curve for NIDEM, on exactly MAREA's scene subsets | `results/scene_count_curves/` |
+| `v16_window_curves.py` | MAREA's error against the length of the time window | `results/window_curves/` |
+| `v17_truth_diagnostics.py` | Truth-side diagnostics of the 10 m production MAREA and NIDEM products: bias and error by 3-km section and by elevation third, and whether each method's own uncertainty is calibrated | `results/truth_diagnostics/` |
+| `v18_compute_cost.py` | What MAREA and NIDEM cost to run on equal inputs (wall time, CPU time, memory), and what each needs as input | `results/compute_cost/` |
+| `v19_fixed_config_tables.py` + [`fixedcfg/`](fixedcfg/README.md) | Every elevation method under one fixed external configuration, per site and number of screened images | `results/fixedcfg/` |
+
+Modules these scripts reuse:
+
+| file | role |
+|---|---|
+| `v7_waterline_contour.py` | runs NIDEM (`pyintertidal.waterline_contour`) at every site, as published and on MAREA's record; writes `products_*/nidem*/` |
+| `v8_granadeiro2021.py` | runs the re-implementation of Granadeiro et al. (2021) (`pyintertidal.granadeiro2021`, R side in `pyintertidal/r/`) |
+| `v9_method_comparison.py` | the elevation comparison of every method on the same pixels, against the same truth, with the same metrics |
+| `v10_validation_report.py` | the tables of the earlier validation report, from one run's results |
+| `v0_vaklodingen_fetch.py`, `v1_vaklodingen_validate.py` | fetch the Rijkswaterstaat Vaklodingen sheets and judge elevation maps against them |
+| `paired_bootstrap.py` | paired cluster bootstrap of the elevation metrics |
+
+Not yet committed on 26 October 2026: `v16_window_curves.py`,
+`light_to_extraction.py` (the pre-2023 scenes of the Dutch sites from the
+light CDSE Zarr stores, as v19's extra extraction) and `download_cube_stac.py`
+(the same scenes from free public archives, an alternative route).
+
+Each of these scripts records, next to its outputs, the git commit and the
+sha256 of its own source and of the inputs it read; v15 and v19 also check
+the sha256 of v14 before reusing it.
+
+## 3. The reserved RTK points
+
+`v3_open_reserved.py` opens the reserved part of the RTK survey. Only the
+authors run it, and every opening is logged to `results/v3_aperturas.jsonl`:
+one run so far, on 2026-08-21, which scored four development maps made
+before the current MAREA products (`docs/PHASE_LOG.md`). The log records
+that this run consumed the reserved set, so the reserved points are no longer
+an untouched blind test. Validation v2 uses the development points only.
+`tests/test_r1_guard.py` fails if any other
+file of `pyintertidal/` or `experiments/` asks for those points. Do not move
+or rename this file: the guard names it by its path.
+
+## 4. The development record (August to October 2026)
+
+The scripts that built and tested the method before validation v2, kept as
+the record of how each choice was made. Each one states its question and its
+pre-registered criterion in its docstring and wrote its verdict to
+`results/<name>/result.json`; the dated account is
+[`../docs/PHASE_LOG.md`](../docs/PHASE_LOG.md) and the map of every line of
+inquiry is [`../docs/INVESTIGATION_MAP.md`](../docs/INVESTIGATION_MAP.md).
+Where they overlap with validation v2, validation v2 supersedes them.
+
+| series | scripts | what they test |
+|---|---|---|
+| m (the delay estimator, gate by gate) | `m0_baseline`, `m1_geometry`, `m2_alias`, `m2_gate_sim`, `m2_real`, `m3_gate_sim`, `m4_gate_sim` | baseline structure; estuary geometry from the archive; which constituents a sun-synchronous archive can resolve; recovery of a planted delay and gain in simulation (gain is not identifiable from wet/dry data); signal in the real archive against a matched null; a planted boundary error; the distributed-tide-gauge operator |
+| b (product layers) | `b1_bathymetry`, `b2_sigma`, `b5_gate_sim`, `b5_v3_verdict`, `b6_hydraulic_dem`, `b7_incertidumbre` | the elevation product with the operator; how much of the fitted width is topography; separate flood and ebb delays; spill and ponding layers; per-pixel uncertainty from a calibrated twin |
+| p (external sites and exploration) | `p0_download_*`, `p1_swot_coverage`, `p4_site`, `p4_scheldt`, `p5_rmse_aoi`, `p6_terneuzen_comparison`, `p7_gauge_table`, `p8_bracket_regions`, `p9_parametric_lag`, `p9b_rank_slope`, `p9c_two_curves`, `p10_linear_vs_free_aoi`, `p11_ndwi_depth_curve`, `p11b_blind_band`, `p12_extended_pixel_model`, `p13_sigma_uncertainty` | downloads; SWOT coverage; delay profiles at external estuaries; elevation against EMODnet with and without the delay; levels against held-out gauges; a linear delay law by three routes; NDWI as a depth gauge; a six-parameter pixel model; the Cramér-Rao uncertainty |
+| c (comparison with Granadeiro et al. 2021) | `sota_granadeiro`, `c0_granadeiro_extract`, `c1_compare_elevation`, `c2_boundary_variants`, `c2b_bootstrap`, `c4_granadeiro_gauges`, `c5_validation_matrix` | the method implemented as published, and compared on the development data |
+| v (earlier validation) | `v2_granadeiro_map_figures`, `v4_lag_external`, `v5_rtk_onsite`, `v6_lidar_external`, `v11_local_lag`, `v12_scene_rule_choice` | the figures and tables of the first validation report; a local-lag diagnostic; the truth-free choice of the scene record |
+| w (waterline methods) | `w0_waterline_stack`, `w0b_waterline_composites`, `w1_waterline_validate` | sub-pixel waterline stacking and composites against the RTK points |
+| e, f, g (side lines) | `e0_escalda_prep`, `e1_download_gauge_sites`, `f0_icecreams_train`, `f1_icecreams_scene`, `g0_gan_dataset`, `g1_gan_train`, `g2_gan_inpaint`, `tidegan` | the Scheldt preparation and gauge-site cubes; a reproduction of the ICE CREAMS vegetation model; a generative model for cloud gaps (outputs flagged as synthetic) |
+| campaign | `make_cells_v2`, `campaign_north_v1`, `campaign_north_v2` | 130 terrain-following cells of the north coast of Spain, run without inspection |
+| figures | `paper_fig_*`, `paper_style`, `fetch_true_colour`, `onepixel_likelihood_figure`, `rebuild_reference_map`, `rebuild_site_masks` | figures of the manuscript in preparation and the rasters they need |
+
+Some of these scripts read inputs that are not in the repository (cached
+cubes, sealed stores under `data_v4/`); they are kept to be read, not
+necessarily to be re-run.

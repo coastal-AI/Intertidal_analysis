@@ -95,6 +95,8 @@ def _residual_gain(mouth, inner, constituents=None):
         th = hours_since_epoch(idx)
 
         def resid(b, h):
+            """Non-tidal residual of provider ``b``: its levels minus the
+            reconstruction from the harmonics ``h``, median-centred."""
             raw = np.asarray(b.levels(idx), dtype=float)
             rec = np.zeros(len(idx))
             for k, (a, p, _) in h.items():
@@ -349,6 +351,8 @@ def validate_against_gauge(transfer, boundary, gauge, s_km, times=None):
     identity = EstuaryTransfer(name="identidad").levels(boundary, s_km, idx)
 
     def score(v):
+        """Error of a level series ``v`` against the gauge after removing the
+        median offset (None with fewer than 30 common samples)."""
         m = np.isfinite(v) & np.isfinite(truth)
         if m.sum() < 30:
             return None

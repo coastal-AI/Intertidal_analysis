@@ -1,0 +1,64 @@
+{
+ "sitios": {
+  "tejo": {
+   "n_px_comunes": 286222,
+   "bracket": {
+    "rmse_centrado": 0.3444570543506427,
+    "pendiente": 0.41557781537690897,
+    "pearson": 0.9137422981852378
+   },
+   "uniforme": {
+    "rmse_centrado": 0.2786371111869812,
+    "pendiente": 0.6353133235482128,
+    "pearson": 0.8841816885821692
+   },
+   "operador": {
+    "rmse_centrado": 0.2468736469745636,
+    "pendiente": 0.6849690015104678,
+    "pearson": 0.9119075574434325
+   }
+  },
+  "vadehavet": {
+   "n_px_comunes": 342235,
+   "bracket": {
+    "rmse_centrado": 0.3082969713799826,
+    "pendiente": 0.40566214095423725,
+    "pearson": 0.709810855880767
+   },
+   "uniforme": {
+    "rmse_centrado": 0.27346497774124146,
+    "pendiente": 0.5359340494092985,
+    "pearson": 0.7760703515947013
+   },
+   "operador": {
+    "rmse_centrado": 0.2809443473815918,
+    "pendiente": 0.5017445684295012,
+    "pearson": 0.7647176493923775
+   }
+  },
+  "aveiro": {
+   "n_px_comunes": 333373,
+   "bracket": {
+    "rmse_centrado": 0.540794812151804,
+    "pendiente": 0.2845035633643649,
+    "pearson": 0.5764218097256191
+   },
+   "uniforme": {
+    "rmse_centrado": 0.588117241859436,
+    "pendiente": 0.45729267892121866,
+    "pearson": 0.5417476459313261
+   },
+   "operador": {
+    "rmse_centrado": 0.5788023471832275,
+    "pendiente": 0.4812005217556454,
+    "pearson": 0.5615846126543157
+   }
+  }
+ },
+ "umbral_ndwi": 0.1,
+ "inputs_sha": {
+  "tejo": "1adb757090d18956b999fa2bf281c5ccbd6b2b03cd82eed348d16cc78d8b5b43",
+  "vadehavet": "897e83149366e50c4c37d5b4de62b0d5222a7ecaa06065e42394370048367744",
+  "aveiro": "0cdc354c86ead927049e54cf2ca62c22b1b46122d4605f177ea06d129a2456ea"
+ }
+}

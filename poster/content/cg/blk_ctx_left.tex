@@ -1,0 +1,17 @@
+% Context row, left: why emerged time matters, and under it a photo of the
+% plant itself (the 5-second read of a seagrass symposium). The text is
+% measured first; the photo slot takes the rest of the height down to the
+% bottom of the image pair (\figCtxH), less a \figPhotoGap gap, so the two
+% stay level whatever the text. Drop figures/cg/photo_zostera.(jpg|png) in
+% and it replaces the reserved block, cropped to the slot (its size goes to
+% the log, CGPHOTO). TODO(authors): the photo and its credit.
+\setbox0=\vbox{%
+  \cgtitle{\cguse{\cgWhyTitle}{Why emerged time?}}
+  \cguse{\cgWhyBody}{%
+    A main driver of where \emph{Zostera noltei} grows is \term{emerged
+    time}: the fraction of the tidal cycle the ground spends exposed.}\par}
+\setlength{\cgPhotoH}{\dimexpr\figCtxH-\ht0-\dp0-\figPhotoGap\relax}
+\unvbox0
+\par\nointerlineskip\vspace{\dimexpr\figPhotoGap-\parskip\relax}
+\cgphoto{photo_zostera}{\linewidth}{\cgPhotoH}{\cguse{\cgWhyPhoto}{%
+  \emph{Zostera noltei} at low tide (authors' own)}}

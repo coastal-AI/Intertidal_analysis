@@ -1,0 +1,4 @@
+build/*
+!build/poster.pdf
+!build/poster-a3.pdf
+tikz/build/

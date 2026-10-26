@@ -25,12 +25,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
-SITES = {"escalda": ("products_escalda/comparison_eot20_g2/products.npz",
-                     "ndwi_cube_escalda_2023-2025_20m.nc"),
-         "wadden": ("products_wadden/comparison_eot20_g1/products.npz",
-                    "ndwi_cube_wadden_2023-2025_20m.nc"),
-         "ems": ("products_ems/comparison_eot20_g1/products.npz",
-                 "ndwi_cube_ems_2023-2025_20m.nc")}
+from experiments.validation_grid import dutch_cube, dutch_products  # noqa: E402
+
+SITES = {s: (f"{dutch_products(s)}/comparison_{tag}/products.npz", dutch_cube(s))
+         for s, tag in (("escalda", "eot20_g2"), ("wadden", "eot20_g1"), ("ems", "eot20_g1"))}
 TRUTH_DIR = "data_v4/truth/vaklodingen"
 YEARS = (2019, 2025)      # the German Ems sheets (WSA Emden) stop at 2020
 LABELS = {"z_plain": "plain (ocean clock)", "z_marea": "MAREA applied",

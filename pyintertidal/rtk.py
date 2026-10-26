@@ -41,6 +41,11 @@ SEED = 20260817
 
 DEFAULT_CSV = "data/villaviciosa_rtk_gnss.csv"
 DEFAULT_GRID = "products_villaviciosa/hsr_eot20_2023-2025.tif"
+#: the same survey with orthometric heights in the Spanish national datum
+#: (REDNAP, mean sea level at Alicante), from the receiver software with the
+#: IGN geoid EGM08-REDNAP (checked on the dev rows: H = h - N to < 0.5 mm)
+DEFAULT_ALICANTE_CSV = "data/villaviciosa_rtk_gnss_alicante.csv"
+ALICANTE_COLUMN = "MSL height (Alicante REDNAP)"
 
 
 def _assign_blocks(east, north):
@@ -54,13 +59,17 @@ def _assign_blocks(east, north):
 
 
 def load_rtk(csv_path=DEFAULT_CSV, grid_path=DEFAULT_GRID,
-             allow_reserved=False):
+             allow_reserved=False, alicante_csv=DEFAULT_ALICANTE_CSV):
     """Load the survey mapped onto the canonical grid, DEV ROWS ONLY.
 
     Returns a dict of aligned arrays: ``row``, ``col`` (grid indices),
     ``elev`` (ellipsoidal heights, metres), ``block`` (block id), ``split``
     ('dev'), plus ``n_reserved_hidden`` so callers can report how much data
-    exists without seeing it.
+    exists without seeing it. When ``alicante_csv`` exists, also
+    ``elev_alicante``: the same points' orthometric heights in the Spanish
+    national datum (Alicante), matched by point name; the file must be the
+    same survey (same names, positions and ellipsoidal heights), and the
+    dev/reserved split is the one above, unchanged.
 
     ``allow_reserved=True`` additionally returns the reserved rows with
     ``split='reserved'``. Only ``experiments/v3_open_reserved.py`` may pass
@@ -86,6 +95,17 @@ def load_rtk(csv_path=DEFAULT_CSV, grid_path=DEFAULT_GRID,
     lon = df["Longitude"].to_numpy(float)
     lat = df["Latitude"].to_numpy(float)
     elev = df["Ellipsoidal height"].to_numpy(float)
+    elev_alc = None
+    if alicante_csv and os.path.exists(alicante_csv):
+        a = pd.read_csv(alicante_csv).set_index("Name").reindex(df["Name"])
+        same = (a["Solution status"].eq("FIX").all()
+                and np.array_equal(a["Longitude"].to_numpy(float), lon)
+                and np.array_equal(a["Latitude"].to_numpy(float), lat)
+                and np.array_equal(a["Ellipsoidal height"].to_numpy(float), elev))
+        if not same:
+            raise ValueError(f"{alicante_csv} is not the survey in {csv_path} "
+                             "(names, positions or ellipsoidal heights differ)")
+        elev_alc = a[ALICANTE_COLUMN].to_numpy(float)
 
     with rasterio.open(grid_path) as s:
         tr, crs, shape = s.transform, s.crs, s.shape
@@ -94,15 +114,20 @@ def load_rtk(csv_path=DEFAULT_CSV, grid_path=DEFAULT_GRID,
     row = np.floor((np.asarray(y) - tr.f) / tr.e).astype(int)
     ok = (row >= 0) & (row < shape[0]) & (col >= 0) & (col < shape[1])
     row, col, elev = row[ok], col[ok], elev[ok]
+    if elev_alc is not None:
+        elev_alc = elev_alc[ok]
 
     east = tr.c + (col + 0.5) * tr.a
     north = tr.f + (row + 0.5) * tr.e
     block, is_res = _assign_blocks(east, north)
 
     def pack(mask, split):
-        return {"row": row[mask], "col": col[mask], "elev": elev[mask],
-                "block": block[mask],
-                "split": np.full(int(mask.sum()), split)}
+        out = {"row": row[mask], "col": col[mask], "elev": elev[mask],
+               "block": block[mask],
+               "split": np.full(int(mask.sum()), split)}
+        if elev_alc is not None:
+            out["elev_alicante"] = elev_alc[mask]
+        return out
 
     dev = pack(~is_res, "dev")
     dev["n_reserved_hidden"] = int(is_res.sum())

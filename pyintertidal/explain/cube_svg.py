@@ -29,6 +29,7 @@ from .svgbase import Canvas, Diagram, color_for, INK, MUTED
 
 
 def _hex_to_rgb(colour):
+    """``"#rrggbb"`` -> ``(r, g, b)`` as integers 0-255."""
     colour = colour.lstrip("#")
     return tuple(int(colour[i:i + 2], 16) for i in (0, 2, 4))
 

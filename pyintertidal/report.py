@@ -53,6 +53,8 @@ def _figure_to_base64(fig, dpi=130):
 
 
 def _table(rows, columns=None):
+    """HTML table from a list of row dicts, or from one dict shown as
+    key/value rows; ``columns`` defaults to the keys of the first row."""
     if not rows:
         return "<p class='note'>no data</p>"
     if isinstance(rows, dict):

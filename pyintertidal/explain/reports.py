@@ -45,6 +45,7 @@ _EXTRA = """
 
 
 def _stat(value, label):
+    """One headline number with its label, as an HTML stat box."""
     return (f"<div class='stat'><span class='big'>{value}</span>"
             f"<small>{label}</small></div>")
 
@@ -212,6 +213,8 @@ def intertidal_breakdown(reference_map, water_frequency, intertidal,
     px_km2 = abs(transform.a * transform.e) / 1e6 if transform is not None else None
 
     def area(px):
+        """The area of ``px`` pixels in km² as an HTML suffix, or "" when
+        the grid (and so the pixel size) is unknown."""
         return f" &nbsp;<span style='color:#6b747d'>{px * px_km2:.2f} km²</span>" \
             if px_km2 else ""
 
