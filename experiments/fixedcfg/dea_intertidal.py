@@ -355,6 +355,11 @@ def run(obs, cfg=None):
     if z.shape != (P,) or sigma.shape != (P,):
         raise DEAWorkerError(f"DEA worker returned z {z.shape}, sigma {sigma.shape} for {P} pixels")
     n_z = int(np.isfinite(z).sum())
+    # the estimator's own seconds: DEA's per-pixel steps and the edge cleaning, as the worker timed them (not
+    # the side interpreter's start-up, DEA's imports, the npz I/O or the gate); the rest is overhead
+    wsec = wmeta.get("seconds") or {}
+    t_est = sum(float(wsec.get(k) or 0.0) for k in ("pixel_steps", "clean_edge_pixels"))
+    t_total = time.time() - t_start
     meta.update({
         "n_z": n_z, "coverage": n_z / P,
         "n_candidates": wmeta["n_candidates"], "n_no_obs": wmeta["n_no_obs"],
@@ -362,8 +367,13 @@ def run(obs, cfg=None):
         "n_nonfinite_h": wmeta["n_nonfinite_h"], "n_chunks": wmeta["n_chunks"],
         "sigma_nan_where_z_nan": bool(np.array_equal(np.isnan(z), np.isnan(sigma))),
         "workdir": str(work) + ("" if opt["keep_tmp"] else " (removed)"),
+        "seconds_estimator": round(t_est, 4),
         "seconds": {"write_input": round(t_write, 2), "worker": round(t_worker, 2),
-                    "read_output": round(t_read, 2), "total": round(time.time() - t_start, 2),
+                    "read_output": round(t_read, 2), "total": round(t_total, 2),
+                    "overhead": round(max(0.0, t_total - t_est), 2),
+                    "estimator_rule": ("seconds_estimator = the worker's pixel_steps + clean_edge_pixels (DEA's "
+                                       f"own computation, in its pool of {opt['max_workers']} process(es)); "
+                                       "overhead = the rest of the call"),
                     "worker_detail": wmeta["seconds"]},
         "gate": wmeta.get("gate"),
         "dea": {k: wmeta[k] for k in ("dea_version", "elevation_py", "elevation_py_sha256", "python",

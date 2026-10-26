@@ -149,6 +149,33 @@ def test_launch_with_P_outside_repo_without_pythonpath(monkeypatch):
     assert not seen
 
 
+def test_estimator_seconds_are_the_workers_pixel_steps(monkeypatch, tmp_path):
+    """run() reports DEA's own estimator seconds (the worker's per-pixel steps
+    and edge cleaning) apart from the side interpreter's start-up, imports
+    and the npz I/O (the runner's timing reads meta['seconds_estimator'])."""
+    monkeypatch.setenv(dea.ENV_PYTHON, sys.executable)
+    obs = tiny_obs()
+    P = len(obs["keep"])
+
+    def fake_run(cmd, **kw):
+        out = cmd[cmd.index("--output") + 1]
+        meta = {"n_candidates": 3, "n_no_obs": 0, "n_edge_removed": 0, "n_sigma_zero": 0, "n_nonfinite_h": 0,
+                "n_chunks": 1, "gate": None, "max_workers": 2,
+                "seconds": {"pixel_steps": 1.25, "clean_edge_pixels": 0.25, "import": 7.0, "total": 9.0},
+                **{k: None for k in ("dea_version", "elevation_py", "elevation_py_sha256", "python", "executable",
+                                     "cwd", "sys_path", "versions", "start_method",
+                                     "xarray_use_bottleneck_default", "parameters", "used", "tide_dtype")}}
+        np.savez(out, z=np.zeros(P, np.float32), sigma=np.zeros(P, np.float32), meta=np.array(json.dumps(meta)))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(dea.subprocess, "run", fake_run)
+    res = dea.run(obs, {"dea_max_workers": 2, "dea_tmp": str(tmp_path)})
+    m = res["meta"]
+    assert m["seconds_estimator"] == 1.5 and m["seconds"]["worker_detail"]["import"] == 7.0
+    assert m["seconds"]["overhead"] >= 0 and "pixel_steps" in m["seconds"]["estimator_rule"]
+    assert m["max_workers"] == 2
+
+
 def test_input_npz_roundtrip(tmp_path):
     obs = tiny_obs(T=9, P=23, shape=(4, 6))
     Y, C, h, keep, shape, t = dea.obs_arrays(obs)
@@ -200,6 +227,31 @@ def test_register_and_card():
     assert p["elevation"]["ndwi_thresh"] == 0.1 and p["ds_to_flat"]["ndwi_thresh"] == 0.0
     assert p["pixel_rolling_median"]["window_offset"] == 5 and p["pixel_dem"]["smooth_radius"] == 20
     assert p["pixel_uncertainty"]["min_misclassified"] == 3 and p["elevation"]["min_correlation"] == 0.15
+
+
+def test_methods_registers_dea_lazily_as_E2(monkeypatch, tmp_path):
+    """experiments/fixedcfg/methods.py registers DEA through dea_intertidal.register
+    under the catalogue id E2 when the side interpreter exists, and skips it
+    cleanly (nothing registered, REGISTRY_SKIPPED says why) when it does not."""
+    from experiments.fixedcfg import methods as M
+
+    monkeypatch.setenv(dea.ENV_PYTHON, str(tmp_path / "no_venv" / "bin" / "python"))
+    reg, skipped = {}, {}
+    assert M.register_dea(reg, skipped) is None and reg == {}
+    assert "no side interpreter" in skipped["E2"] and dea.ENV_PYTHON in skipped["E2"]
+    monkeypatch.setenv(dea.ENV_PYTHON, sys.executable)
+    reg, skipped = {}, {"E2": "stale"}
+    assert M.register_dea(reg, skipped) == Path(sys.executable) and skipped == {}
+    label, fn, card = reg["E2"]
+    assert fn is dea.run and label == dea.LABEL and card["fidelity"] == "F1" and card["id"] == dea.METHOD_ID
+    assert "Bishop-Taylor" in card["reference"] and card["references"] == dea.CARD["references"]
+    assert all(k in card for k in M.base.CARD_KEYS) and "reference" not in dea.CARD     # the adapter is untouched
+    with pytest.raises(ValueError):
+        M.register_dea(reg, {})                                               # never twice
+    # the module's own registry: E2 registered or skipped, never under 'dea', never an error
+    assert ("E2" in M.METHODS) != ("E2" in M.REGISTRY_SKIPPED)
+    assert "dea" not in M.METHODS and "dea_intertidal" not in M.REGISTRY_ERRORS
+    assert list(M.METHODS)[:6] == ["E4", "E5a", "E5b", "E5c", "E7", "E12"]            # built-ins stay first
 
 
 # ─────────────────────────────────────────────────────────────────────────────

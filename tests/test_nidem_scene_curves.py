@@ -543,6 +543,415 @@ def test_plot_refuses_unlike_inputs_and_matches_partial_runs(tmp_path):
     assert D["n_draws_nidem"] == 16 and D["n_draws_marea"] == 19 and D["nsettings"]["status"] == "stopped_by_time"
 
 
+# ── the hook: NIDEM on given scene subsets (v19, v16) ───────────────────────
+
+class _Reader:
+    """An in-memory block reader (the cube of a hook test); counts its reads."""
+
+    chunk_rows = None
+
+    def __init__(self, D):
+        self.D, self.blocks, self.closed = D, [], False
+
+    def __call__(self, r0, r1):
+        self.blocks.append((r0, r1))
+        return self.D[:, r0:r1].copy()
+
+    def close(self):
+        self.closed = True
+
+
+def _hook_cube(T, H, W, seed, cloud=0.25, swap=0.12):
+    """synthetic_cube with deterministic tide levels: a cyclic ramp over 19
+    levels (7 t mod 19), so that any 19 consecutive scenes, or every second
+    scene, cover all 9 tide intervals."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:H, 0:W]
+    elev = (-1.1 + 2.2 * xx / (W - 1) + 0.25 * np.sin(yy / 5.0)).astype(np.float32)
+    h = -1.3 + 2.6 * ((7 * np.arange(T)) % 19) / 18.0
+    wet = h[:, None, None] > elev[None]
+    g = rng.integers(200, 2500, (T, H, W)).astype(np.float32)
+    n = np.where(wet, g * rng.uniform(0.3, 0.9, (T, H, W)), g * rng.uniform(1.1, 3.0, (T, H, W)))
+    n = np.round(n).astype(np.float32)
+    sw = rng.random((T, H, W)) < swap
+    b03, b08 = np.where(sw, n, g), np.where(sw, g, n)
+    scl = np.where(rng.random((T, H, W)) < cloud, 9.0, 4.0).astype(np.float32)
+    ndwi, valid = wc.scene_ndwi(b03, b08, scl, rule="item")
+    return dict(ndwi=ndwi, valid=valid, D=np.where(valid, ndwi, np.nan).astype(np.float32), h=h, elev=elev,
+                T=T, H=H, W=W)
+
+
+def _hook_site(tmp_path, T=60, H=24, W=30, seed=11, n_old=6):
+    """A synthetic site for the hook: the cube, the extraction dates, an
+    'all' pool without the first ``n_old`` scenes (like Villaviciosa's
+    2016-2022), MAREA's record (every second pool scene) and its stored
+    sensitivity product written by the LIBRARY path in v7's npz keys."""
+    from experiments import v7_waterline_contour as v7
+
+    c = _hook_cube(T=T, H=H, W=W, seed=seed)
+    keep, units_keep, truth = keep_and_units(c, seed=seed + 1, n_units=150)
+    dates = np.array([str(np.datetime64("2023-01-02") + np.timedelta64(5 * i, "D")) for i in range(T)])
+    over = {d: pd.Timestamp(d + " 11:00").to_pydatetime() for d in dates}
+    h_of = {pd.Timestamp(over[d]): c["h"][i] for i, d in enumerate(dates)}
+
+    class Boundary:
+        name = "fake"
+
+        def levels(self, t):                                   # sorted by time, as PyTMDBoundary
+            return np.array([h_of[pd.Timestamp(x)] for x in pd.DatetimeIndex(t).sort_values()])
+
+    pool = np.arange(n_old, T)
+    record = np.arange(0, len(pool), 2)
+    rec_ti = pool[record]
+    sens = tmp_path / "nidem" / v15.SENS
+    sens.mkdir(parents=True)
+    ref, (j, edges, Z, U, sizes) = wc.nidem_from_arrays(c["ndwi"][rec_ti], c["valid"][rec_ti], c["h"][rec_ti])
+    comp = wc.composites_from_arrays(c["ndwi"][rec_ti], c["valid"][rec_ti], j)
+    rc, lv = wc.contour_vertices(ref["contours"])
+
+    def at(a):
+        return np.asarray(a).ravel()[keep]
+
+    np.savez(sens / "nidem.npz", R=ref["R"], valid=ref["valid"], unfiltered=ref["unfiltered"],
+             uncertainty=ref["uncertainty"], filtered_keep=at(ref["filtered"]),
+             filtered_bounded_keep=at(ref["filtered_bounded"]), conf_keep=at(ref["conf"]),
+             conf_bounded_keep=at(ref["conf_bounded"]), R_keep=at(ref["R"]),
+             count_keep=comp["count"].reshape(9, -1)[:, keep], median_keep=comp["median"].reshape(9, -1)[:, keep],
+             Z=Z, U=U, sizes=sizes, edges=edges, interval=j, time_index=rec_ti, h=c["h"][rec_ti],
+             contour_rc=rc.astype(np.float32), contour_level=lv.astype(np.float32))
+    D = c["D"].reshape(T, -1)
+    counts = np.stack([np.isfinite(D[rec_ti[j == q]][:, keep]).sum(0) for q in range(1, 10)])
+    pre = {"n_scenes": int(len(rec_ti)), "edges_m (e_0..e_10; interval 9 = (e_8, e_10])": [float(v) for v in edges],
+           "interval_sizes |S_j|": [int(v) for v in sizes], "Z_j_m": [float(v) for v in Z],
+           v7.COV_KEY: wc.interval_coverage(counts, raise_error=False)}
+    with open(sens / "nidem_preflight.json", "w", encoding="utf-8") as f:
+        json.dump(pre, f, default=float)
+    S = dict(site="synthetic", cfg={}, keep=keep, H=H, W=W, ext_dates=dates, overpass=over,
+             pool_dates=dates[pool], pool_ti=pool, pool_h=c["h"][pool], boundary=Boundary(), boundary_name="fake",
+             record=record, sens_dir=str(sens), cube="cube.nc", cube_info={"path": "cube.nc", "bytes": 1, "mtime": "t"},
+             extract="extract.npz")
+    return c, S, dates, units_keep, truth, ref
+
+
+def _library_at_units(c, ti, keep, units_keep):
+    res, _ = wc.nidem_from_arrays(c["ndwi"][ti], c["valid"][ti], c["h"][ti])
+    return res["filtered"].ravel()[keep[units_keep]].astype(float)
+
+
+def test_hook_runs_v15s_path_on_given_subsets_in_one_cube_read(tmp_path, monkeypatch):
+    """Several subsets (by dates, with the caller's levels, by pool indices,
+    partly outside the 'all' pool, one with an empty interval) in ONE read
+    of the cube: every value is the library's NIDEM at the units, MAREA's
+    record is the stored product (the gate, bitwise), a not-computable
+    subset says so; the gate is not repeated in the same process."""
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    c, S, dates, units_keep, truth, _ = _hook_site(tmp_path)
+    keep, h = S["keep"], c["h"]
+    readers = []
+
+    def open_reader(S_, ti, lock, batch):
+        readers.append(_Reader(c["D"][ti]))
+        return readers[-1]
+
+    order = np.argsort(h)
+    empty = np.sort(np.concatenate([order[:8], order[-8:]]))                # nothing in the middle intervals
+    specs = [("n40", {"dates": dates[-40:]}), ("n20", {"dates": dates[-20:], "h": h[-20:]}),
+             ("old", {"dates": dates[:30]}), ("rec", {"pool_idx": S["record"]}), ("empty", {"dates": dates[empty]})]
+    out = v15._hook_run(S, specs, units_keep, truth, "vaklodingen", open_reader=open_reader, row_block=8)
+    assert len(readers) == 1 and len(readers[0].blocks) == 3 and readers[0].closed    # one read for all
+    ti = {"n40": np.arange(20, 60), "n20": np.arange(40, 60), "old": np.arange(30), "rec": np.arange(6, 60, 2)}
+    for key, idx in ti.items():
+        r = out[key]
+        assert r["status"] == "ok" and r["n_scenes"] == len(idx), key
+        assert np.array_equal(r["z_units"], _library_at_units(c, idx, keep, units_keep), equal_nan=True), key
+        assert np.isfinite(r["z_units"]).any() and r["seconds_estimator"] >= 0
+        assert r["score"]["n"] == int(np.isfinite(r["z_units"]).sum())
+    assert out["old"]["levels_from_boundary"] == 6 and out["n40"]["levels_from_boundary"] == 0
+    assert "stored" in out["rec"]["values"] and "computed" in out["n40"]["values"]
+    assert out["empty"]["status"] == "NOT COMPUTABLE" and "empty" in out["empty"]["reason"]
+    assert "z_units" not in out["empty"]
+    g = out["n40"]["gate"]
+    assert g["ok"] and g["bitwise"] and not g["reused"] and g["n_record"] == len(S["record"])
+    assert g["audit_differing_px"] == {"n20": 0}
+    # the same inputs again: the gate is reused, MAREA's record is not read again
+    out2 = v15._hook_run(S, specs[:1], units_keep, truth, "vaklodingen", open_reader=open_reader, row_block=8)
+    assert out2["n40"]["gate"]["reused"] and out2["n40"]["phase1_scenes"] == 40
+    assert np.array_equal(out2["n40"]["z_units"], out["n40"]["z_units"], equal_nan=True)
+
+
+def test_hook_refuses_wrong_inputs_and_fails_loudly(tmp_path, monkeypatch):
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    c, S, dates, units_keep, truth, _ = _hook_site(tmp_path)
+
+    def open_reader(S_, ti, lock, batch):
+        return _Reader(c["D"][ti])
+
+    with pytest.raises(ValueError, match="levels differ"):                  # the caller's h is not NIDEM's
+        v15._hook_run(S, [("a", {"dates": dates[-20:], "h": c["h"][-20:] + 0.01})], units_keep, truth,
+                      open_reader=open_reader, gate=False)
+    with pytest.raises(ValueError, match="not extraction"):
+        v15._hook_run(S, [("a", ["2031-01-01"])], units_keep, open_reader=open_reader, gate=False)
+    with pytest.raises(ValueError, match="rows given"):
+        v15._hook_run(S, [("a", {"dates": dates[-3:], "rows": [1, 2, 3]})], units_keep, open_reader=open_reader,
+                      gate=False)
+    # without a truth the gate compares the product, not the scores
+    out = v15._hook_run(S, [("a", dates[-30:])], units_keep, None, open_reader=open_reader, row_block=8)
+    assert out["a"]["gate"]["ok"] and out["a"]["score"] is None
+    # a stored product that is not reproduced stops the hook (soft gates: recorded)
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    p = os.path.join(S["sens_dir"], "nidem.npz")
+    st = dict(np.load(p))
+    R = st["R"].copy()
+    R.ravel()[np.flatnonzero(np.isfinite(R.ravel()))[0]] += 1           # one relative extent off
+    st["R"] = R
+    np.savez(p, **st)
+    with pytest.raises(RuntimeError, match="gate"):
+        v15._hook_run(S, [("a", dates[-30:])], units_keep, truth, open_reader=open_reader, row_block=8)
+    out = v15._hook_run(S, [("a", dates[-30:])], units_keep, truth, open_reader=open_reader, row_block=8,
+                        soft_gates=True)
+    assert not out["a"]["gate"]["ok"] and out["a"]["status"] == "ok"
+
+
+def test_hook_public_function_found_by_v19_and_v16(tmp_path, monkeypatch):
+    """nidem_on_scenes: one subset or several; v19 and v16 find it and call
+    it with the keywords their hooks offer (it takes no 'mask' or 'obs': the
+    per-pixel mask is its 'pixel_rule', ITEM's by default, per call or per
+    subset; see the pixel-rule tests below)."""
+    from experiments import v16_window_curves as v16
+    from experiments import v19_fixed_config_tables as v19
+
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    c, S, dates, units_keep, truth, _ = _hook_site(tmp_path)
+    monkeypatch.setattr(v15, "_hook_site", lambda site, inputs=None: S)
+    monkeypatch.setattr(v15, "_hook_open_cube", lambda S_, ti, lock, batch: _Reader(c["D"][ti]))
+    one = v15.nidem_on_scenes("synthetic", dates=dates[-40:], units_keep=units_keep, truth=truth,
+                              kind="vaklodingen", row_block=8)
+    assert one["status"] == "ok" and one["z_units"].shape == units_keep.shape
+    many = v15.nidem_on_scenes("synthetic", subsets={"a": dates[-40:], "b": {"dates": dates[-20:]}},
+                               units_keep=units_keep, truth=truth, row_block=8)
+    assert set(many) == {"a", "b"} and np.array_equal(many["a"]["z_units"], one["z_units"], equal_nan=True)
+    with pytest.raises(ValueError):
+        v15.nidem_on_scenes("synthetic", units_keep=units_keep)
+    with pytest.raises(ValueError):
+        v15.nidem_on_scenes("synthetic", dates=dates[-5:], subsets={"a": dates[-5:]}, units_keep=units_keep)
+    for fn, info in (v19.find_nidem_hook(), v16.find_nidem_hook()):
+        assert fn is v15.nidem_on_scenes and info["function"] == "experiments.v15_nidem_scene_curves.nidem_on_scenes"
+    # v16's keywords (one window per call) and v19's batch keywords
+    res = v16.call_hook(v15.nidem_on_scenes, dict(site="synthetic", dates=list(dates[-40:]), rows=np.arange(20, 60),
+                                                  t_real=None, h=c["h"][-40:], units_keep=units_keep, px_keep=None,
+                                                  out_dir=str(tmp_path), truth=truth, kind="vaklodingen"))
+    assert np.array_equal(res["z_units"], one["z_units"], equal_nan=True)
+    res, used = v19.call_accepting(v15.nidem_on_scenes, dict(site="synthetic", units_keep=units_keep, truth=truth,
+                                                             kind="vaklodingen", mask="SCL", obs=None, inputs={},
+                                                             subsets={"n40": {"dates": list(dates[-40:])}}))
+    assert "mask" not in used and "obs" not in used and res["n40"]["status"] == "ok"
+
+
+# ── the hook's pixel rules: ITEM (v15's) and the common mask (v19's E1) ─────
+
+def _hook_site_nc(tmp_path, T=60, H=24, W=30, seed=21, n_old=6, cloud=0.25, swap=0.12, flip_c=False):
+    """A synthetic site on a REAL netCDF cube (B03, B08, SCL; chunked like the
+    production cubes): its SCL holds 2 (dark area), 11 (snow) and NaN besides
+    4 and 9, so ITEM's mask (valid: 2, 4-7, 11) and the common one (4-7)
+    differ. The extraction npz holds Y = the raw NDWI and C = SCL in {4, 5, 6,
+    7} at keep, as pyintertidal.marea.extract writes them (``flip_c``: one C
+    flipped). MAREA's record (every second pool scene) and its stored
+    sensitivity product under ITEM's rule (the library path, v7's keys)."""
+    import xarray as xr
+    from experiments import v7_waterline_contour as v7
+
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:H, 0:W]
+    elev = (-1.1 + 2.2 * xx / (W - 1) + 0.25 * np.sin(yy / 5.0)).astype(np.float32)
+    h = -1.3 + 2.6 * ((7 * np.arange(T)) % 19) / 18.0
+    wet = h[:, None, None] > elev[None]
+    g = rng.integers(200, 2500, (T, H, W)).astype(np.float32)
+    n = np.where(wet, g * rng.uniform(0.3, 0.9, (T, H, W)), g * rng.uniform(1.1, 3.0, (T, H, W)))
+    n = np.round(n).astype(np.float32)
+    sw = rng.random((T, H, W)) < swap
+    b03, b08 = np.where(sw, n, g).astype(np.float32), np.where(sw, g, n).astype(np.float32)
+    u = rng.random((T, H, W))
+    scl = np.select([u < cloud, u < cloud + 0.06, u < cloud + 0.10, u < cloud + 0.11],
+                    [9.0, 2.0, 11.0, np.nan], 4.0).astype(np.float32)
+    ndwi, item = wc.scene_ndwi(b03, b08, scl, rule="item")
+    common = np.isin(scl, wc.CLEAR)
+    assert (item & ~common).mean() > 0.05 and not (common & ~item).any()         # ITEM adds, never removes
+    dates = np.array([str(np.datetime64("2023-01-02") + np.timedelta64(5 * i, "D")) for i in range(T)])
+    cube = tmp_path / "cube.nc"
+    xr.Dataset({b: (("t", "y", "x"), a) for b, a in (("B03", b03), ("B08", b08), ("SCL", scl))},
+               coords={"t": dates.astype("datetime64[ns]"), "y": 4800000.0 - 10.0 * np.arange(H),
+                       "x": 300000.0 + 10.0 * np.arange(W)}).to_netcdf(
+        cube, encoding={b: {"chunksizes": (1, 8, W)} for b in ("B03", "B08", "SCL")})
+    c = dict(ndwi=ndwi, valid=item, D=np.where(item, ndwi, np.nan).astype(np.float32), h=h, elev=elev, T=T, H=H, W=W)
+    keep, units_keep, truth = keep_and_units(c, seed=seed + 1, n_units=150)
+    C = np.ascontiguousarray(common.reshape(T, -1)[:, keep])
+    if flip_c:
+        C[3, 5] = ~C[3, 5]
+    ext = tmp_path / "marea_extract.npz"                     # C order, as marea.extract writes it
+    np.savez(ext, Y=np.ascontiguousarray(ndwi.reshape(T, -1)[:, keep]), C=C, keep=keep, dates=dates,
+             shape=np.array([H, W]))
+    over = {d: pd.Timestamp(d + " 11:00").to_pydatetime() for d in dates}
+    h_of = {pd.Timestamp(over[d]): h[i] for i, d in enumerate(dates)}
+
+    class Boundary:
+        name = "fake"
+
+        def levels(self, t):
+            return np.array([h_of[pd.Timestamp(x)] for x in pd.DatetimeIndex(t).sort_values()])
+
+    pool = np.arange(n_old, T)
+    record = np.arange(0, len(pool), 2)
+    rec_ti = pool[record]
+    sens = tmp_path / "nidem" / v15.SENS
+    sens.mkdir(parents=True)
+    ref, (j, edges, Z, U, sizes) = wc.nidem_from_arrays(ndwi[rec_ti], item[rec_ti], h[rec_ti])
+    comp = wc.composites_from_arrays(ndwi[rec_ti], item[rec_ti], j)
+    rc, lv = wc.contour_vertices(ref["contours"])
+
+    def at(a):
+        return np.asarray(a).ravel()[keep]
+
+    np.savez(sens / "nidem.npz", R=ref["R"], valid=ref["valid"], unfiltered=ref["unfiltered"],
+             uncertainty=ref["uncertainty"], filtered_keep=at(ref["filtered"]),
+             filtered_bounded_keep=at(ref["filtered_bounded"]), conf_keep=at(ref["conf"]),
+             conf_bounded_keep=at(ref["conf_bounded"]), R_keep=at(ref["R"]),
+             count_keep=comp["count"].reshape(9, -1)[:, keep], median_keep=comp["median"].reshape(9, -1)[:, keep],
+             Z=Z, U=U, sizes=sizes, edges=edges, interval=j, time_index=rec_ti, h=h[rec_ti],
+             contour_rc=rc.astype(np.float32), contour_level=lv.astype(np.float32))
+    D = c["D"].reshape(T, -1)
+    counts = np.stack([np.isfinite(D[rec_ti[j == q]][:, keep]).sum(0) for q in range(1, 10)])
+    pre = {"n_scenes": int(len(rec_ti)), "edges_m (e_0..e_10; interval 9 = (e_8, e_10])": [float(v) for v in edges],
+           "interval_sizes |S_j|": [int(v) for v in sizes], "Z_j_m": [float(v) for v in Z],
+           v7.COV_KEY: wc.interval_coverage(counts, raise_error=False)}
+    with open(sens / "nidem_preflight.json", "w", encoding="utf-8") as f:
+        json.dump(pre, f, default=float)
+    S = dict(site="synthetic", cfg={}, keep=keep, H=H, W=W, ext_dates=dates, overpass=over,
+             pool_dates=dates[pool], pool_ti=pool, pool_h=h[pool], boundary=Boundary(), boundary_name="fake",
+             record=record, sens_dir=str(sens), cube=str(cube), cube_info=v14.file_info(str(cube)), extract=str(ext))
+    c.update(scl=scl, common=common)
+    return c, S, dates, units_keep, truth
+
+
+def _library_rule_at_units(c, ti, keep, units_keep, rule):
+    valid = c["valid"] if rule == "item" else c["common"]
+    res, _ = wc.nidem_from_arrays(c["ndwi"][ti], valid[ti], c["h"][ti])
+    return res["filtered"].ravel()[keep[units_keep]].astype(float)
+
+
+def test_masked_reader_item_rows_are_cubereaders_and_common_is_scl_4_7(tmp_path):
+    c, S, dates, _, _ = _hook_site_nc(tmp_path)
+    ti = np.arange(3, c["T"], 2)
+    for batch in (1, 32):
+        ref = v15.CubeReader(S["cube"], ti, batch)
+        new = v15.MaskedCubeReader(S["cube"], ti, batch, rules=("item", "common"))
+        try:
+            for r0, r1 in ((0, 8), (8, 16), (16, c["H"])):
+                a, b = ref(r0, r1), new(r0, r1)
+                assert a.dtype == b.dtype == np.float32 and b.shape == (2 * len(ti), r1 - r0, c["W"])
+                assert np.array_equal(a, b[:len(ti)], equal_nan=True)                  # ITEM: bitwise v15's read
+                want = np.where(c["common"][ti, r0:r1], c["ndwi"][ti, r0:r1], np.nan).astype(np.float32)
+                assert np.array_equal(b[len(ti):], want, equal_nan=True)              # common: SCL 4-7
+        finally:
+            ref.close()
+            new.close()
+    with pytest.raises(ValueError):
+        v15.MaskedCubeReader(S["cube"], ti, 32, rules=("item", "item"))
+
+
+def test_hook_item_rule_unchanged_and_common_rule_is_the_library_under_scl_4_7(tmp_path, monkeypatch):
+    """pixel_rule 'item' (the default) gives today's values and phase-1 key;
+    'common' gives the library NIDEM under SCL in {4, 5, 6, 7}; both rules in
+    one call are one read of the cube, the gate stays ITEM's (bitwise against
+    the stored product) even when only common subsets are asked for, and
+    only an ITEM subset of MAREA's record reuses the stored product."""
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    c, S, dates, units_keep, truth = _hook_site_nc(tmp_path)
+    keep = S["keep"]
+    old = v15._hook_run(S, [("a", {"dates": dates[-40:]})], units_keep, truth, open_reader=lambda S_, ti, lock, b:
+                        _Reader(c["D"][ti]), gate=False, row_block=8)
+    cache = tmp_path / "p1cache"
+    item = v15._hook_run(S, [("a", {"dates": dates[-40:]})], units_keep, truth, gate=False, row_block=8,
+                         cache_dir=str(cache))
+    assert np.array_equal(item["a"]["z_units"], old["a"]["z_units"], equal_nan=True)   # the real cube, bitwise
+    assert item["a"]["mask"] == "item" and item["a"]["pixel_rule"] == v15.PIXEL_RULE_TEXT["item"]
+    assert item["a"]["phase1_rules"] == ["item"]
+    # the phase-1 key of an ITEM-only call is v15's phase1_key, as before the pixel rules
+    ti = np.arange(20, 60)
+    sub = v15.make_subset("a", 40, -1, np.arange(40), c["h"][ti])
+    pkey = v15.phase1_key("synthetic", S["cube_info"], ti, c["h"][ti], keep, np.unique(keep[units_keep]), [sub],
+                          ["a"])
+    assert os.path.exists(cache / f"v15_hook_phase1_synthetic_{pkey}.npz")
+    # the common rule: the library NIDEM under the common mask at the units
+    com = v15._hook_run(S, [("a", {"dates": dates[-40:]})], units_keep, truth, gate=False, row_block=8,
+                        pixel_rule="common", cache_dir=str(cache))
+    want = _library_rule_at_units(c, ti, keep, units_keep, "common")
+    assert com["a"]["status"] == "ok" and com["a"]["mask"] == "common"
+    assert np.array_equal(com["a"]["z_units"], want, equal_nan=True)
+    assert not np.array_equal(com["a"]["z_units"], item["a"]["z_units"], equal_nan=True)  # the rules differ here
+    assert len(os.listdir(cache)) == 2                                     # another phase-1 key, never ITEM's
+    # both rules and the gate in ONE read; the record: computed under the common mask, stored under ITEM's
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    reads = []
+    real_open = v15._hook_open_cube_masked
+
+    def counting(*a, **k):
+        reads.append(k.get("rules"))
+        return real_open(*a, **k)
+
+    monkeypatch.setattr(v15, "_hook_open_cube_masked", counting)
+    rec = {"pool_idx": S["record"]}
+    out = v15._hook_run(S, [("n40c", {"dates": dates[-40:], "pixel_rule": "common"}),
+                            ("n40i", {"dates": dates[-40:], "pixel_rule": "item"}),
+                            ("recc", dict(rec, pixel_rule="common")), ("reci", dict(rec, pixel_rule="item"))],
+                        units_keep, truth, row_block=8)
+    assert reads == [("item", "common")]
+    rti = S["pool_ti"][S["record"]]
+    assert np.array_equal(out["n40c"]["z_units"], want, equal_nan=True)
+    assert np.array_equal(out["n40i"]["z_units"], item["a"]["z_units"], equal_nan=True)
+    assert "computed" in out["recc"]["values"] and "stored" in out["reci"]["values"]
+    assert np.array_equal(out["recc"]["z_units"], _library_rule_at_units(c, rti, keep, units_keep, "common"),
+                          equal_nan=True)
+    g = out["n40c"]["gate"]
+    assert g["ok"] and g["bitwise"] and g["common_mask_check"] and "item" in g["pixel_rule"]
+    # only common subsets: the gate still runs on ITEM's rows of MAREA's record
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    reads.clear()
+    out = v15._hook_run(S, [("c", {"dates": dates[-30:]})], units_keep, truth, row_block=8, pixel_rule="common")
+    assert reads == [("item", "common")] and out["c"]["gate"]["ok"] and out["c"]["gate"]["bitwise"]
+    assert out["c"]["phase1_rules"] == ["item", "common"] and out["c"]["mask"] == "common"
+    with pytest.raises(ValueError, match="pixel_rule"):
+        v15._hook_run(S, [("c", {"dates": dates[-30:], "pixel_rule": "scl"})], units_keep, truth, gate=False)
+
+
+def test_hook_common_rule_refuses_an_extraction_that_is_not_the_cube(tmp_path, monkeypatch):
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    c, S, dates, units_keep, truth = _hook_site_nc(tmp_path, flip_c=True)
+    with pytest.raises(v15.HookGateError, match="extraction"):
+        v15._hook_run(S, [("a", {"dates": dates[:40]})], units_keep, truth, gate=False, row_block=8,
+                      pixel_rule="common")
+    out = v15._hook_run(S, [("a", {"dates": dates[:40]})], units_keep, truth, gate=False, row_block=8)
+    assert out["a"]["status"] == "ok"                                     # ITEM never reads the extraction
+
+
+def test_hook_public_function_takes_pixel_rule_and_v19_reads_it(tmp_path, monkeypatch):
+    from experiments import v19_fixed_config_tables as v19
+
+    monkeypatch.setattr(v15, "_HOOK_GATES", {})
+    c, S, dates, units_keep, truth = _hook_site_nc(tmp_path)
+    monkeypatch.setattr(v15, "_hook_site", lambda site, inputs=None: S)
+    one = v15.nidem_on_scenes("synthetic", dates=dates[-40:], units_keep=units_keep, truth=truth, row_block=8,
+                              pixel_rule="common")
+    assert one["mask"] == "common" and v19.applied_rule(one) == "common"
+    res, used = v19.call_accepting(v15.nidem_on_scenes, dict(
+        site="synthetic", units_keep=units_keep, truth=truth, kind="vaklodingen", inputs={}, row_block=8,
+        subsets={"n40|common": {"dates": list(dates[-40:]), "pixel_rule": "common"},
+                 "n40|item": {"dates": list(dates[-40:]), "pixel_rule": "item"}}))
+    assert "pixel_rule" not in used and {v19.applied_rule(res[k]) for k in res} == {"common", "item"}
+    assert np.array_equal(res["n40|common"]["z_units"], one["z_units"], equal_nan=True)
+    with pytest.raises(ValueError, match="pixel_rule"):
+        v15.nidem_on_scenes("synthetic", dates=dates[-40:], units_keep=units_keep, pixel_rule="ITEM")
+
+
 # ── the RTK guard ────────────────────────────────────────────────────────────
 
 def test_rtk_guard_passes():

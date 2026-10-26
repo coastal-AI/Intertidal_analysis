@@ -1536,6 +1536,602 @@ def run(args):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  the hook: NIDEM on GIVEN scene subsets (added 2026-10-26 for the
+#  fixed-configuration tables of v19 and the windows of v16; nothing above
+#  changes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: the key of the hook's gate subset: MAREA's screened record (result.json
+#: record_dates: 97 / 68 / 71 / 54 scenes), whose NIDEM is the stored
+#: sensitivity_marea_record product
+HOOK_GATE = "marea_record"
+#: the hook's gates already passed in this process (key: the site's inputs,
+#: the units and the truth): v16 calls the hook once per window, the gate
+#: subset is read and checked once
+_HOOK_GATES = {}
+#: the per-pixel masks the hook applies on request (``pixel_rule``, per call
+#: or per subset): 'item' = ITEM's pixel-quality mask, v15's and v7's
+#: production NIDEM (valid iff the SCL is finite and not in (0, 1, 3, 8, 9,
+#: 10), i.e. SCL in {2, 4, 5, 6, 7, 11}); 'common' = the fixed configuration's
+#: mask of every method (SCL in wc.CLEAR = {4, 5, 6, 7}, the extraction's C).
+#: Both mask the same raw float32 NDWI; one read of the cube gives both. The
+#: gate (MAREA's record against the stored sensitivity product) is ITEM's.
+HOOK_PIXEL_RULES = ("item", "common")
+PIXEL_RULE_TEXT = {
+    "item": "item (wc.scene_ndwi rule='item', v7's reading of the cube)",
+    "common": ("common (SCL in wc.CLEAR = {4, 5, 6, 7} = the extraction's C, on the same raw NDWI; asserted equal to "
+               "marea_extract's C and Y at every keep pixel of every scene)"),
+}
+
+
+class HookGateError(RuntimeError):
+    """A gate of the hook failed (its product gate, or the common mask not
+    being the extraction's C and Y): a site-level failure, the same for every
+    subset of the call."""
+
+
+class MaskedCubeReader(CubeReader):
+    """:class:`CubeReader`'s read (the same isel calls of B03, B08 and SCL,
+    the same float32 NDWI of wc.scene_ndwi) giving the masked NDWI under every
+    pixel rule of ``rules``, stacked along time: rows [k T, (k + 1) T) hold
+    rules[k]. The 'item' rows are bitwise CubeReader's; 'common' masks the
+    same NDWI with SCL in wc.CLEAR. ``check(t, r0, r1, ndwi, valid, scl)``
+    (v7.ExtractionCheck: the SCL gives exactly the extraction's C and the
+    NDWI its Y at every keep pixel) sees every scene of every block, with the
+    common mask as ``valid``."""
+
+    def __init__(self, path, time_index, scene_batch=32, lock=None, rules=("common",), check=None):
+        super().__init__(path, time_index, scene_batch, lock)
+        rules = tuple(rules)
+        if not rules or len(set(rules)) != len(rules) or any(r not in HOOK_PIXEL_RULES for r in rules):
+            self.close()
+            raise ValueError(f"rules must be distinct values of {HOOK_PIXEL_RULES}: {rules}")
+        self.rules, self.check = rules, check
+
+    def __call__(self, r0, r1):
+        T, R = len(self.ti), r1 - r0
+        D = np.empty((len(self.rules) * T, R, self.W), np.float32)
+        with self.lock:
+            for s0 in range(0, T, self.batch):
+                tb = self.ti[s0:s0 + self.batch]
+                if self.batch == 1:
+                    sl = {self.t_dim: int(tb[0]), "y": slice(r0, r1)}
+                else:
+                    sl = {self.t_dim: tb, "y": slice(r0, r1)}
+                shp = (len(tb), R, self.W)
+                scl = self.bands["SCL"].isel(sl).values.reshape(shp)
+                ndwi, item = wc.scene_ndwi(self.bands["B03"].isel(sl).values.reshape(shp),
+                                           self.bands["B08"].isel(sl).values.reshape(shp), scl, rule="item")
+                common = np.isin(scl, wc.CLEAR)
+                if self.check is not None:
+                    for k, t in enumerate(tb):
+                        self.check(int(t), r0, r1, ndwi[k], common[k], scl[k])
+                for m, rule in enumerate(self.rules):
+                    D[m * T + s0:m * T + s0 + len(tb)] = np.where(item if rule == "item" else common, ndwi,
+                                                                  np.nan).astype(np.float32)
+        return D
+
+
+def _hook_site(site, inputs=None):
+    """What :func:`nidem_on_scenes` reads of a site: v15's inputs
+    (:func:`site_config`, with the non-empty ``inputs`` of extract / product /
+    comparison / nidem / cube), keep and the grid, the extraction dates (the
+    cube's time axis), the overpass times, v7.build_record's 'all' pool with
+    its boundary object, MAREA's record inside the pool (result.json
+    record_dates) and the folder of the stored sensitivity product."""
+    import pandas as pd
+    from experiments import v7_waterline_contour as v7
+
+    cfg = site_config(site)
+    for k in ("extract", "product", "comparison", "nidem", "cube"):
+        v = (inputs or {}).get(k)
+        if v:
+            cfg[k] = v
+    with np.load(cfg["extract"], allow_pickle=False) as ex:
+        keep = np.asarray(ex["keep"], np.int64)
+        ext_dates = np.asarray(ex["dates"]).astype(str)
+        H, W = (int(v) for v in ex["shape"])
+    with open(os.path.join(cfg["product"], "result.json"), encoding="utf-8") as f:
+        res = json.load(f)
+    if site != "villaviciosa":
+        _, missing = v14.gauge_cache(site)
+        if missing:
+            raise SystemExit(f"[{site}] gauge cache missing for {missing} in data_v4/gauges: refusing to download "
+                             "(production used the cache)")
+    rec = v7.build_record(site, v7.SITES[site], ext_dates)
+    pool_dates = np.asarray(rec["dates"]).astype(str)
+    pos = {d: i for i, d in enumerate(pool_dates)}
+    rec_dates = [str(d)[:10] for d in res["record_dates"]]
+    lost = [d for d in rec_dates if d not in pos]
+    if lost:
+        raise RuntimeError(f"[{site}] {len(lost)} record date(s) not in the 'all' pool: {lost[:5]}")
+    with open(v7.SITES[site]["overpass"], encoding="utf-8") as f:
+        overpass = {k: pd.Timestamp(v).to_pydatetime() for k, v in json.load(f).items()}
+    return dict(site=site, cfg=cfg, keep=keep, H=H, W=W, ext_dates=ext_dates, overpass=overpass,
+                pool_dates=pool_dates, pool_ti=np.asarray(rec["time_index"], np.int64),
+                pool_h=np.asarray(rec["h"], float), boundary=rec["boundary_obj"], boundary_name=rec["boundary"],
+                record=np.array([pos[d] for d in rec_dates], np.int64), sens_dir=os.path.join(cfg["nidem"], SENS),
+                cube=cfg["cube"], cube_info=v14.file_info(cfg["cube"]), extract=cfg["extract"])
+
+
+def _hook_open_cube(S, time_index, lock, scene_batch):
+    """The cube reader of the hook: :class:`CubeReader` (v7's reading, the
+    ITEM rule) on the scenes ``time_index``, with v15's checks (the cube grid
+    and dates are the extraction's)."""
+    reader = CubeReader(S["cube"], time_index, scene_batch, lock)
+    try:
+        if (reader.H, reader.W) != (int(S["H"]), int(S["W"])):
+            raise SystemExit(f"[{S['site']}] cube {reader.H}x{reader.W} != extraction {S['H']}x{S['W']}")
+        cube_dates = np.array([str(np.datetime64(v, "D")) for v in reader.ds[reader.t_dim].values])
+        if not np.array_equal(cube_dates, np.asarray(S["ext_dates"]).astype(str)):
+            raise SystemExit(f"[{S['site']}] cube dates differ from the extraction dates")
+    except BaseException:
+        reader.close()
+        raise
+    return reader
+
+
+def _hook_open_cube_masked(S, time_index, lock, scene_batch, rules=("common",), check=None):
+    """The cube reader of the hook when a subset asks for the common mask:
+    :class:`MaskedCubeReader` (one read, the masked NDWI under every rule of
+    ``rules``; ``check`` = the extraction check) with :func:`_hook_open_cube`'s
+    checks (the cube grid and dates are the extraction's)."""
+    reader = MaskedCubeReader(S["cube"], time_index, scene_batch, lock, rules=rules, check=check)
+    try:
+        if (reader.H, reader.W) != (int(S["H"]), int(S["W"])):
+            raise SystemExit(f"[{S['site']}] cube {reader.H}x{reader.W} != extraction {S['H']}x{S['W']}")
+        cube_dates = np.array([str(np.datetime64(v, "D")) for v in reader.ds[reader.t_dim].values])
+        if not np.array_equal(cube_dates, np.asarray(S["ext_dates"]).astype(str)):
+            raise SystemExit(f"[{S['site']}] cube dates differ from the extraction dates")
+    except BaseException:
+        reader.close()
+        raise
+    return reader
+
+
+def _hook_rule_of(specs, pixel_rule):
+    """{subset key: pixel rule}: the spec's 'pixel_rule' (a dict spec) or the
+    call's ``pixel_rule``; every value one of :data:`HOOK_PIXEL_RULES`."""
+    if pixel_rule not in HOOK_PIXEL_RULES:
+        raise ValueError(f"pixel_rule {pixel_rule!r} is not one of {HOOK_PIXEL_RULES}")
+    out = {}
+    for k, spec in specs:
+        r = (spec.get("pixel_rule") if isinstance(spec, dict) else None) or pixel_rule
+        if r not in HOOK_PIXEL_RULES:
+            raise ValueError(f"subset {k!r}: pixel_rule {r!r} is not one of {HOOK_PIXEL_RULES}")
+        out[str(k)] = r
+    return out
+
+
+def _hook_resolve(S, key, spec):
+    """(dates, cube time indices, the caller's levels or None) of one given
+    subset: ``spec`` holds 'dates', or 'rows' (extraction rows = cube time
+    indices), or 'pool_idx' (indices into v7.build_record's 'all' pool), and
+    optionally 'h' (the caller's zero-lag levels, checked later); a bare
+    sequence is a list of dates."""
+    if not isinstance(spec, dict):
+        spec = {"dates": spec}
+    ext = np.asarray(S["ext_dates"]).astype(str)
+    rows = spec.get("rows")
+    if spec.get("pool_idx") is not None:
+        dates = np.asarray(S["pool_dates"])[np.asarray(spec["pool_idx"], np.int64)]
+    elif spec.get("dates") is not None:
+        dates = np.array([str(d)[:10] for d in spec["dates"]])
+    elif rows is not None:
+        dates = ext[np.asarray(rows, np.int64)]
+    else:
+        raise ValueError(f"subset {key!r}: give 'dates', 'rows' (extraction rows) or 'pool_idx'")
+    dates = np.asarray(dates).astype(str)
+    if not len(dates) or (len(dates) > 1 and np.any(dates[1:] <= dates[:-1])):
+        raise ValueError(f"subset {key!r}: the scenes must be non-empty, sorted and unique")
+    epos = {d: i for i, d in enumerate(ext)}
+    miss = [d for d in dates if d not in epos]
+    if miss:
+        raise ValueError(f"subset {key!r}: {len(miss)} date(s) are not extraction (cube) dates: {miss[:5]}")
+    ti = np.array([epos[d] for d in dates], np.int64)
+    if rows is not None and not np.array_equal(ti, np.asarray(rows, np.int64)):
+        raise ValueError(f"subset {key!r}: the rows given are not the extraction rows of its dates")
+    h = spec.get("h")
+    return dates, ti, (None if h is None else np.asarray(h, float))
+
+
+def _hook_levels(S, dates):
+    """h_B without lag at the scenes ``dates`` (sorted extraction dates):
+    v7.build_record's level where the scene is in its pool (bitwise), else
+    the same boundary object read at the overpass label instant (one
+    chronological call, as build_record reads it). Returns (levels, in
+    pool)."""
+    import pandas as pd
+
+    pos = {d: i for i, d in enumerate(np.asarray(S["pool_dates"]).astype(str))}
+    h = np.full(len(dates), np.nan)
+    in_pool = np.array([d in pos for d in dates], bool)
+    for q in np.flatnonzero(in_pool):
+        h[q] = float(np.asarray(S["pool_h"])[pos[dates[q]]])
+    other = np.flatnonzero(~in_pool)
+    if len(other):
+        miss = [dates[q] for q in other if dates[q] not in S["overpass"]]
+        if miss:
+            raise ValueError(f"[{S['site']}] {len(miss)} scene(s) without an overpass time: {miss[:5]}")
+        t = pd.DatetimeIndex(pd.to_datetime([S["overpass"][dates[q]] for q in other]))
+        if t.tz is not None:
+            t = t.tz_localize(None)
+        if len(t) > 1 and not t.is_monotonic_increasing:
+            raise RuntimeError("overpass times are not chronological")
+        lev = np.asarray(S["boundary"].levels(t), float)
+        if lev.shape != (len(other),):
+            raise RuntimeError(f"the boundary returned {lev.shape} levels for {len(other)} instants")
+        h[other] = lev
+    bad = [dates[q] for q in np.flatnonzero(~np.isfinite(h))]
+    if bad:
+        raise ValueError(f"[{S['site']}] no finite boundary level at {len(bad)} scene(s): {bad[:5]}")
+    return h, in_pool
+
+
+def _hook_gate_without_scores(g):
+    """v15's product gate when the caller gave no truth: the scores cannot be
+    compared, the product is (R bitwise on the full frame and either every
+    check bitwise or 0 validity flips at the units with max |dz| <= TOL_DZ)."""
+    g = dict(g)
+    tol = g.get("tolerance") or {}
+    chk = g.get("checks") or {}
+    g["scores_v14_reference"] = None
+    g["note"] = "no truth given: the product is compared with the stored one, the scores are not"
+    g["ok"] = bool(chk.get("R_full_frame") and (g.get("bitwise") or (
+        tol.get("filtered_validity_flips_units") == 0 and tol.get("filtered_max_abs_dz_units_m", 1.0) <= TOL_DZ)))
+    return g
+
+
+def _hook_run(S, specs, units_keep, truth=None, kind=None, open_reader=None, io_lock=None, cache_dir=None,
+              row_block=256, scene_batch=32, gate=True, soft_gates=False, pixel_rule="item"):
+    """v15's NIDEM path on the given subsets ``specs`` = [(key, spec)] of the
+    site ``S`` (:func:`_hook_site`): ONE phase-1 read of the cube for every
+    subset (and MAREA's record, the gate), then phase 2 per subset, scored on
+    the caller's units. Returns {key: result} (see :func:`nidem_on_scenes`).
+
+    ``pixel_rule`` ('item', the default and v15's rule, or 'common'; a dict
+    spec may set its own 'pixel_rule'): the per-pixel mask of the subset. One
+    read serves both rules (:class:`MaskedCubeReader`: the scenes are stacked
+    once per rule needed, a subset reads its rule's rows); the gate subset is
+    always ITEM's (the stored sensitivity product is ITEM's). With only ITEM
+    subsets the path, the phase-1 key and the values are those of the
+    ITEM-only hook. With a common subset every scene is checked, at every
+    keep pixel, against the extraction's C and Y (v7.ExtractionCheck, never
+    soft: a mismatch raises :class:`HookGateError`).
+
+    ``open_reader(S, time_index, lock, scene_batch)`` gives the block reader
+    (default :func:`_hook_open_cube`); when a common subset is asked for it
+    is called with ``rules=`` and ``check=`` too (default
+    :func:`_hook_open_cube_masked`)."""
+    import inspect
+    import shutil
+    import tempfile
+
+    t_start = time.perf_counter()
+    site = S["site"]
+    keep = np.asarray(S["keep"], np.int64)
+    H, W = int(S["H"]), int(S["W"])
+    units_keep = np.ascontiguousarray(units_keep, np.int64)
+    if units_keep.ndim != 1 or not len(units_keep) or units_keep.min() < 0 or units_keep.max() >= len(keep):
+        raise ValueError("units_keep must be a non-empty 1-D array of keep indices")
+    truth_given = truth is not None
+    truth = (np.full(len(units_keep), np.nan) if not truth_given
+             else np.ascontiguousarray(truth, float).reshape(-1))
+    if truth.shape != units_keep.shape:
+        raise ValueError(f"truth has {truth.shape} values for {len(units_keep)} units")
+    kind = str(kind or "vaklodingen")
+    keys = [str(k) for k, _ in specs]
+    if len(set(keys)) != len(keys) or HOOK_GATE in keys:
+        raise ValueError(f"subset keys must be unique and not {HOOK_GATE!r}: {keys}")
+    rule_of = _hook_rule_of(specs, pixel_rule)
+    units_flat = keep[units_keep]
+    unit_px = np.unique(units_flat)
+    ci = S.get("cube_info") or {}
+    gkey = hashlib.sha1((f"{site}|{S.get('cube')}|{ci.get('bytes')}|{ci.get('mtime')}|{S.get('extract')}|"
+                         f"{S.get('sens_dir')}|{kind}|").encode() + units_keep.tobytes() + truth.tobytes()).hexdigest()
+    prev_gate = _HOOK_GATES.get(gkey) if gate else None
+    run_gate = bool(gate) and prev_gate is None
+
+    # the subsets and the union of their scenes (+ MAREA's record for the gate)
+    resolved = [(k, *_hook_resolve(S, k, spec)) for k, spec in specs]
+    rec_dates = np.asarray(S["pool_dates"]).astype(str)[np.asarray(S["record"], np.int64)]
+    union = set()
+    for _, d, _, _ in resolved:
+        union |= set(d.tolist())
+    if run_gate:
+        union |= set(rec_dates.tolist())
+    dates_u = np.array(sorted(union))
+    epos = {d: i for i, d in enumerate(np.asarray(S["ext_dates"]).astype(str))}
+    ti_u = np.array([epos[d] for d in dates_u], np.int64)
+    h_u, in_pool = _hook_levels(S, dates_u)
+    # the rules read (ITEM first: its rows, offset 0, are the ITEM-only hook's), the scenes stacked per rule
+    rules = tuple(r for r in HOOK_PIXEL_RULES if r in set(rule_of.values()) or (r == "item" and run_gate))
+    off = {r: q * len(ti_u) for q, r in enumerate(rules)}
+    ti_all, h_all, pool_all = (np.tile(a, len(rules)) for a in (ti_u, h_u, in_pool))
+    upos = {d: i for i, d in enumerate(dates_u)}
+    subsets = []
+    for key, d, ti, hg in resolved:
+        idx = np.array([upos[x] for x in d], np.int64)
+        if hg is not None:
+            if hg.shape != idx.shape:
+                raise ValueError(f"subset {key!r}: {hg.shape} levels for {len(idx)} scenes")
+            dh = float(np.max(np.abs(hg - h_u[idx])))
+            if not dh <= v14.TOL_LEVEL:
+                raise ValueError(f"subset {key!r}: the caller's levels differ from NIDEM's (v7.build_record's "
+                                 f"boundary at the overpass times) by up to {dh:.3g} m")
+        subsets.append(make_subset(str(key), len(idx), -1, idx + off[rule_of[str(key)]], h_all))
+    k_gate = None
+    if run_gate:
+        subsets.append(make_subset(HOOK_GATE, len(rec_dates), -1,
+                                   np.array([upos[x] for x in rec_dates], np.int64) + off["item"], h_all,
+                                   gate=True))
+        k_gate = len(subsets) - 1
+    # the full-frame audit of the fast R: the given subset with the fewest scenes
+    cand = [s for s in subsets if s["status"] == "assigned" and not s["gate"]]
+    audit = [min(cand, key=lambda s: (s["N"], s["key"]))["key"]] if cand else []
+
+    # phase 1: one read of the cube for every subset (and every rule)
+    pkey = phase1_key(site, ci, ti_all, h_all, keep, unit_px, subsets, audit)
+    if rules != ("item",):
+        # another reader and the extraction check: never the key of an ITEM-only read
+        ext = v14.file_info(S["extract"]) if S.get("extract") and os.path.exists(str(S["extract"])) else {}
+        pkey = hashlib.sha1((f"{pkey}|rules={','.join(rules)}|{S.get('extract')}|{ext.get('bytes')}|"
+                             f"{ext.get('mtime')}|").encode()
+                            + inspect.getsource(MaskedCubeReader).encode()).hexdigest()[:20]
+    cache = os.path.join(cache_dir, f"v15_hook_phase1_{site}_{pkey}.npz") if cache_dir else None
+    lock = IoLock(io_lock)
+    p1 = None
+    if cache:
+        v14.guard_out(cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
+        if os.path.exists(cache):
+            p1 = load_phase1(cache, pkey, subsets)
+    if p1 is None:
+        chk, tmp, ext_rows = None, None, ()
+        try:
+            if "common" in rules:
+                from experiments import v7_waterline_contour as v7
+                # the extraction's Y and C of the scenes read (memory-mapped when large; with a cache_dir outside
+                # the repository), for the check at every keep pixel of every scene
+                tmp = tempfile.mkdtemp(prefix="v15_hook_ext_", dir=cache_dir or None)
+                ext_rows = (v7.npz_rows(S["extract"], "Y", ti_u, tmp), v7.npz_rows(S["extract"], "C", ti_u, tmp))
+                chk = v7.ExtractionCheck(ext_rows[0], ext_rows[1], ti_u, keep, W)
+                reader = (open_reader or _hook_open_cube_masked)(S, ti_u, lock, scene_batch, rules=rules, check=chk)
+            else:
+                reader = (open_reader or _hook_open_cube)(S, ti_u, lock, scene_batch)
+            try:
+                if getattr(reader, "chunk_rows", None) and int(row_block) % int(reader.chunk_rows):
+                    log(f"[{site}] hook: row block {row_block} is not a multiple of the cube's {reader.chunk_rows} "
+                        "chunk rows")
+                log(f"[{site}] NIDEM hook phase 1: {len(ti_u)} scenes ({int(in_pool.sum())} in the 'all' pool), "
+                    f"pixel rules {list(rules)}, {len(subsets)} subsets{' (with the gate)' if run_gate else ''}, "
+                    f"{len(unit_px):,} scored px")
+                try:
+                    p1 = phase1(reader, (len(ti_all), H, W), subsets, keep, unit_px, int(row_block),
+                                label=f"[{site}] hook ", audit=audit)
+                except AssertionError as e:
+                    if chk is None:
+                        raise
+                    raise HookGateError(f"[{site}] the common mask is not the extraction's C and Y: {e}") from e
+            finally:
+                reader.close()
+            if chk is not None:
+                if chk.n_c != len(ti_u) * len(keep):
+                    raise HookGateError(f"[{site}] the extraction check compared {chk.n_c:,} scene-pixels, not "
+                                        f"{len(ti_u)} x {len(keep):,}")
+                p1["timing"]["extraction_check"] = chk.summary()
+        finally:
+            chk = ext_rows = None
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)
+        p1["timing"].update(io_lock_wait_s=round(lock.wait_s, 1), io_lock_acquired=lock.n)
+        if cache:
+            try:
+                with lock:
+                    save_phase1(cache, p1, pkey)
+            except OSError as e:          # the cache is optional
+                log(f"[{site}] hook: phase-1 cache not written ({e})")
+    ctx = dict(site=site, size=len(ti_u), subsets=subsets, p1=p1, keep=keep, units_keep=units_keep,
+               units_flat=units_flat, unit_px=unit_px, unit_col=np.searchsorted(unit_px, units_flat),
+               truth=truth, kind=kind, H=H, W=W, time_index=ti_all)
+
+    # the gates: the fast R on a whole frame, the common mask against the extraction, and MAREA's record
+    # against the stored product (ITEM's)
+    gates = {}
+    aud = p1.get("audit", {})
+    if audit:
+        gates["fast_r_full_frame_audit"] = {
+            "subsets": aud, "chosen": audit, "frame_px": H * W,
+            "ok": bool(sorted(aud) == sorted(audit) and all(a["differing_px"] == 0 and a["px"] == H * W
+                                                            for a in aud.values()))}
+    if "common" in rules:
+        ec = (p1.get("timing") or {}).get("extraction_check")
+        gates["common_mask_equals_extraction_C_and_Y_at_keep"] = {
+            "scenes": int(len(ti_u)), "summary": ec, "ok": bool(ec),
+            "rule": "SCL in wc.CLEAR gives the extraction's C and the raw NDWI its Y at every keep pixel (v7)"}
+    stored_npz = os.path.join(S["sens_dir"], "nidem.npz")
+    gate_row = None
+    gate_bitwise = False
+    if run_gate:
+        if not os.path.exists(stored_npz):
+            gates["marea_record_vs_nidem_sensitivity"] = {"path": stored_npz, "ok": False,
+                                                         "reason": "no stored sensitivity_marea_record product"}
+        else:
+            gates["marea_record_preflight_vs_stored"] = preflight_gate(
+                ctx, k_gate, os.path.join(S["sens_dir"], "nidem_preflight.json"), expect_stop=False)
+            ref = None
+            if truth_given:
+                with np.load(stored_npz, allow_pickle=False) as st:
+                    ref = v14.score(kind, truth, np.asarray(st["filtered_keep"])[units_keep])
+            g, gate_row = product_gate(ctx, k_gate, stored_npz, ref)
+            gates["marea_record_vs_nidem_sensitivity"] = g if truth_given else _hook_gate_without_scores(g)
+            gate_bitwise = bool(gates["marea_record_vs_nidem_sensitivity"].get("ok") and g.get("bitwise"))
+    ok = all(v.get("ok", True) for v in gates.values())
+    failed = [k for k, v in gates.items() if not v.get("ok", True)]
+    summary = {"ok": bool(ok), "failed": failed, "reused": not run_gate and prev_gate is not None,
+               "checked": bool(gate), "subset": HOOK_GATE, "n_record": int(len(rec_dates)), "stored": stored_npz,
+               "pixel_rule": "item (the stored sensitivity product is ITEM's)",
+               "bitwise": gate_bitwise if run_gate else (prev_gate or {}).get("bitwise"),
+               "max_abs_score_diff": gates.get("marea_record_vs_nidem_sensitivity", {}).get("max_abs_score_diff",
+                                                                                           (prev_gate or {}).get(
+                                                                                               "max_abs_score_diff")),
+               "audit_differing_px": {k: a["differing_px"] for k, a in aud.items()}}
+    if "common" in rules:
+        summary["common_mask_check"] = gates["common_mask_equals_extraction_C_and_Y_at_keep"]["ok"]
+    for k, v in gates.items():
+        log(f"[{site}] hook gate {k}: {'OK' if v.get('ok', True) else 'FAILED'}"
+            + (f" (bitwise {v.get('bitwise')}, max |score diff| {v.get('max_abs_score_diff')})"
+               if "bitwise" in v else ""))
+    if not ok:
+        if not soft_gates:
+            detail = {k: {kk: vv for kk, vv in gates[k].items() if kk in ("checks", "tolerance", "reason", "mine")}
+                      for k in failed}
+            raise HookGateError(f"[{site}] NIDEM hook gate(s) {failed} failed: {detail}")
+        log(f"[{site}] WARNING: hook gate(s) {failed} failed and soft gates are set: continuing")
+    if run_gate and ok:
+        _HOOK_GATES[gkey] = summary
+
+    # phase 2: NIDEM of every given subset; the phase-1 R codes are shared out by the subsets' scenes
+    tim = p1["timing"]
+    n_coded = sum(int(x["N"]) for x in subsets if int(x.get("slot", -1)) >= 0)
+    gate_ti = ti_all[subsets[k_gate]["idx"]] if k_gate is not None else None
+    out = {}
+    for k, (key, d, ti, _) in enumerate(resolved):
+        s = subsets[k]
+        rule = rule_of[str(key)]
+        t0 = time.perf_counter()
+        # MAREA's record under ITEM's rule: the gate reproduced the stored product bitwise (never a common subset)
+        same = rule == "item" and gate_bitwise and gate_ti is not None and np.array_equal(ti, gate_ti)
+        if same:
+            # MAREA's record: the gate reproduced the stored product bitwise; its values are this subset's
+            with np.load(stored_npz, allow_pickle=False) as st:
+                z = np.asarray(st["filtered_keep"])[units_keep].astype(float)
+            row = gate_row
+            t_est = float(gates["marea_record_vs_nidem_sensitivity"].get("stage2_seconds", 0.0))
+            values = "the stored sensitivity_marea_record product, reproduced bitwise by the gate"
+        else:
+            row, res = stage2(ctx, k)
+            t_est = time.perf_counter() - t0
+            z = None if res is None else res["filtered"].reshape(-1)[units_flat].astype(float)
+            values = "computed (phase 2 on the full frame)"
+            del res
+        # no R codes without an assignment; else the subset's share by its number of scenes
+        share = (float(tim.get("codes_s", 0.0)) * int(s["N"]) / max(1, n_coded)
+                 if int(s.get("slot", -1)) >= 0 else 0.0)
+        reason = "" if z is not None else f"{row['status']}: {row['reason']}"
+        if rule == "common":
+            reason = reason.replace("(ITEM rule)", "(common mask)")
+        r = {"status": "ok" if z is not None else "NOT COMPUTABLE",
+             "reason": reason,
+             "nidem_status": row["status"], "n_scenes": int(s["N"]), "first_date": str(d[0]),
+             "last_date": str(d[-1]), "scenes_sha1": v14.draw_sha1(ti), "sizes": [int(v) for v in s["sizes"]],
+             "levels_from_pool": int(pool_all[s["idx"]].sum()),
+             "levels_from_boundary": int((~pool_all[s["idx"]]).sum()),
+             "keep_valid_share": row["keep_valid_share"], "median_valid_obs": row["median_valid_obs"],
+             "n_vertices": row["n_vertices"], "values": values,
+             "score": ({kk: row[kk] for kk in ("rmse", "bias", "slope", "r", "n", "coverage")} if truth_given
+                       else None),
+             "seconds_stage2": round(float(t_est), 3), "seconds_codes_share": round(share, 3),
+             "seconds_estimator": round(float(t_est) + share, 3),
+             "phase1": {kk: tim.get(kk) for kk in ("read_s", "codes_s", "gate_composites_s", "audit_s", "total_s",
+                                                   "io_lock_wait_s", "from_cache")},
+             "phase1_scenes": int(len(ti_u)), "phase1_subsets": int(len(subsets)), "phase1_rules": list(rules),
+             "gate": summary, "mask": rule, "pixel_rule": PIXEL_RULE_TEXT[rule],
+             "product": "filtered: R in 1..8 and conf <= 0.25 (wc.nidem on the full frame)",
+             "function": "experiments.v15_nidem_scene_curves.nidem_on_scenes"}
+        if z is not None:
+            r["z_units"] = z
+        out[key] = r
+        log(f"[{site}] hook {key} ({rule}): {r['status']}" + (f" ({r['reason'][:160]})" if z is None else
+                                                             f", {int(np.isfinite(z).sum()):,} of {len(z):,} units")
+            + f" | {r['seconds_estimator']:.1f} s")
+    log(f"[{site}] NIDEM hook: {len(out)} subset(s) in {time.perf_counter() - t_start:.1f} s")
+    return out
+
+
+def nidem_on_scenes(site, dates=None, rows=None, h=None, units_keep=None, subsets=None, truth=None, kind=None,
+                    inputs=None, io_lock=None, cache_dir=None, row_block=256, scene_batch=32, gate=True,
+                    soft_gates=False, pixel_rule="item"):
+    """NIDEM (v15's own production path) on GIVEN scene subsets of a site,
+    scored on the caller's units: the hook of v19 (fixed-configuration
+    tables) and v16 (window curves).
+
+    The path is :func:`run`'s, unchanged: phase 1 reads the cube ONCE for
+    every subset in chunk-aligned blocks of rows (``io_lock``: the lock file
+    shared by processes reading cubes on one disk), with v7's reading and
+    the ITEM pixel rule (:class:`CubeReader`), the exact sort-free R codes,
+    the pre-flight counts and the masked NDWI at the scored pixels; phase 2
+    per subset applies the pre-flight rule (wc.MIN_VALID_SHARE), puts the
+    confidence at the scored pixels, and runs wc.nidem on the full frame;
+    the value is the 'filtered' product (R in 1..8, conf <= 0.25). Levels:
+    h = the site's boundary level at the scene's overpass time, no lag
+    (v7.build_record's level for a scene of its pool, the same boundary
+    object otherwise); ``h`` given by the caller must equal it (1e-9 m).
+
+    Pixel rule (``pixel_rule``, per call; a dict spec may set its own
+    'pixel_rule'): 'item' (the default: ITEM's pixel-quality mask, SCL in {2,
+    4, 5, 6, 7, 11}, v15's and v7's production rule; the path and values above,
+    unchanged) or 'common' (the fixed configuration's mask of every method,
+    SCL in {4, 5, 6, 7} = the extraction's C, on the same raw NDWI, the whole
+    frame included). ONE read of the cube serves both rules
+    (:class:`MaskedCubeReader`); with a common subset every scene is checked
+    at every keep pixel against the extraction's C and Y (never soft). The
+    gate is always ITEM's, and only an ITEM subset of MAREA's record reuses
+    the stored product.
+
+    Gate (``gate``, default on): MAREA's screened record (97 / 68 / 71 / 54
+    scenes) is added to the phase-1 read and must reproduce the stored
+    sensitivity_marea_record product as :func:`run`'s gate does
+    (:func:`preflight_gate`, :func:`product_gate`; the reference scores are
+    the stored product's on the same units with the caller's ``truth``; with
+    no truth, the product alone is compared); the fast R of the smallest
+    given subset is audited on the whole frame. A failed gate raises
+    :class:`HookGateError`, a RuntimeError (``soft_gates``: recorded, the run
+    goes on). A passed gate is not repeated in this process for the same
+    inputs and units.
+
+    One subset: ``dates`` (YYYY-MM-DD) or ``rows`` (extraction rows, i.e.
+    cube time indices), optionally ``h``. Several subsets, one cube read:
+    ``subsets`` = {key: spec} (or [(key, spec)]), spec = dict with 'dates',
+    'rows' or 'pool_idx' (indices into v7.build_record's 'all' pool) and
+    optionally 'h' and 'pixel_rule', or a bare list of dates. ``units_keep``:
+    the keep index of every scored unit; ``truth``/``kind`` (optional): the
+    truth per unit and v14.score's kind, for the scores and the gate.
+    ``inputs``: overrides of extract / product / comparison / nidem / cube;
+    ``cache_dir`` (outside the repository): the phase-1 arrays, keyed by
+    every input (and the extraction check's temporary rows).
+
+    Returns, per subset, a dict: 'status' ('ok' or 'NOT COMPUTABLE' with a
+    'reason': an empty tide interval or the pre-flight stop), 'z_units'
+    (float, one value per unit, NaN where NIDEM has none; absent when not
+    computable), 'mask' (the rule applied: 'item' or 'common') and
+    'pixel_rule' (its text), the scenes, interval sizes, keep valid share,
+    the timing ('seconds_estimator' = phase 2 of the subset + its share of
+    the phase-1 R codes by number of scenes; the cube read is not counted),
+    the score on the units when a truth is given, and the gate summary. One
+    subset: that dict; several: {key: dict}."""
+    if subsets is None:
+        if dates is None and rows is None:
+            raise ValueError("give one subset (dates or rows) or several (subsets)")
+        specs = [("subset", {"dates": dates, "rows": rows, "h": h, "pixel_rule": pixel_rule})]
+    else:
+        if dates is not None or rows is not None or h is not None:
+            raise ValueError("give either one subset (dates / rows / h) or subsets, not both")
+        items = list(subsets.items()) if isinstance(subsets, dict) else list(subsets)
+        if not items:
+            raise ValueError("subsets is empty")
+        specs = [(str(k), v) for k, v in items]
+    if units_keep is None:
+        raise ValueError("units_keep (the keep index of every scored unit) is needed")
+    _hook_rule_of(specs, pixel_rule)                          # refuse an unknown rule before any read
+    S = _hook_site(site, inputs)
+    out = _hook_run(S, specs, units_keep, truth=truth, kind=kind, io_lock=io_lock, cache_dir=cache_dir,
+                    row_block=row_block, scene_batch=scene_batch, gate=gate, soft_gates=soft_gates,
+                    pixel_rule=pixel_rule)
+    return out["subset"] if subsets is None else out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  plot
 # ─────────────────────────────────────────────────────────────────────────────
 

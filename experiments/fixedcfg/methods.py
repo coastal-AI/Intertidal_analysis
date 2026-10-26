@@ -31,6 +31,11 @@ side-interpreter worker) is never imported. A module that fails to import or
 to register is skipped and its error is recorded in ``REGISTRY_ERRORS`` (the
 runner should print it). :func:`catalogue_order` sorts ids by catalogue
 number (E2, E4, E5a, ..., E12) for the tables.
+
+DEA Intertidal 2.5.3 (dea_intertidal.py, its own ``register``) is added last
+by :func:`register_dea` under the catalogue id E2, importing the adapter only
+there, and only when its side interpreter (venv-dea or $MAREA_DEA_PYTHON)
+exists; otherwise it is skipped cleanly and ``REGISTRY_SKIPPED`` says why.
 """
 from __future__ import annotations
 
@@ -45,12 +50,19 @@ from experiments.fixedcfg import elev_base as base
 #: the built-in competitors, in column order (catalogue ids,
 #: docs/validation_v2_spec.md s3.2)
 BUILTIN = ("elev_logitide", "elev_freq", "elev_coastxray", "elev_bracket")
-#: modules of the package that are never method modules
-_NOT_METHODS = {"methods", "elev_base", "level_series", "smoke_competitors"}
+#: DEA Intertidal 2.5.3 (dea_intertidal.py): registered by :func:`register_dea`
+#: under its catalogue id, only when its side interpreter exists
+DEA_MODULE = "dea_intertidal"
+DEA_ID = "E2"
+#: modules of the package that are never discovered as method modules (DEA
+#: is registered by register_dea; dea_worker runs in the side interpreter)
+_NOT_METHODS = {"methods", "elev_base", "level_series", "smoke_competitors", DEA_MODULE, "dea_worker"}
 
 METHODS = {}
 VARIANTS = {}
 REGISTRY_ERRORS = {}
+#: methods not registered in this environment, with why (not errors)
+REGISTRY_SKIPPED = {}
 
 
 def _add(modname, entries, target, strict):
@@ -104,6 +116,40 @@ def _discover():
             and _defines_methods(os.path.join(here, m + ".py"))]
 
 
+def register_dea(methods=None, skipped=None, method_id=DEA_ID):
+    """Register DEA Intertidal (experiments/fixedcfg/dea_intertidal.py,
+    imported here only) through its own ``register`` under ``method_id``
+    (the catalogue's E2) when its side interpreter exists; otherwise skip it
+    cleanly: nothing is registered and ``skipped`` (default
+    REGISTRY_SKIPPED) says why. The DEA card names its sources under
+    'references'; the registry's 'reference' is set to them. Returns the
+    side interpreter's path, or None when skipped."""
+    methods = METHODS if methods is None else methods
+    skipped = REGISTRY_SKIPPED if skipped is None else skipped
+    from experiments.fixedcfg import dea_intertidal as dea
+
+    try:
+        side = dea.find_side_python()
+    except dea.DEAEnvironmentError as e:
+        skipped[method_id] = f"{dea.LABEL}: no side interpreter ({e})"
+        return None
+    got = dea.register({}, method_id=method_id)
+    label, run, card = got[method_id]
+    card = dict(card)
+    card.setdefault("reference", "; ".join(r["cite"] for r in card.get("references", [])) or card.get("name", label))
+    card.setdefault("side_interpreter", str(side))
+    miss = [k for k in base.CARD_KEYS if k not in card]
+    if miss:
+        raise ValueError(f"{DEA_MODULE}:{method_id}: card lacks {miss}")
+    if method_id in methods or (methods is METHODS and method_id in VARIANTS):
+        raise ValueError(f"method id {method_id!r} of {DEA_MODULE} is already registered")
+    if not callable(run):
+        raise TypeError(f"{DEA_MODULE}:{method_id}: run is not callable")
+    methods[method_id] = (label, run, card)
+    skipped.pop(method_id, None)
+    return side
+
+
 for _m in BUILTIN:
     _merge(_m, strict=True)          # a broken built-in is a hard error
 for _m in _discover():
@@ -111,6 +157,10 @@ for _m in _discover():
         _merge(_m)
     except Exception as _e:   # another builder's module: record, do not break the registry
         REGISTRY_ERRORS[_m] = f"{type(_e).__name__}: {_e}"
+try:
+    register_dea()
+except Exception as _e:       # the DEA adapter itself is broken: record, do not break the registry
+    REGISTRY_ERRORS[DEA_MODULE] = f"{type(_e).__name__}: {_e}"
 
 
 def get(method_id):
