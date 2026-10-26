@@ -305,6 +305,107 @@ few dates. ``--products main,angles`` (default both) selects the products;
 a complete store is skipped, so re-running a year whose main store is
 complete fetches only its angles.
 
+Band subsets (``--bands``, 2026-10-26)
+--------------------------------------
+Opt-in and off by default: without ``--bands`` nothing above changes
+(process, job title, stores, attributes, reports, dry run). ``--bands
+B03,B08,SCL`` (any subset of the nine that holds B03, B08 and SCL:
+SUBSET_REQUIRED; the registration measures with B08 / B03 and chooses its
+dates by SCL, the verification compares B03 B08 SCL) makes the MAIN product
+with those bands only, for about a third of the credits (the method
+comparison needs NDWI = (B03 - B08) / (B03 + B08) and SCL only). Same
+collection, extent, window, resampling, property filter and job options:
+only the band list of ``load_collection`` differs, so the graph hash and the
+job title (``zarr_cube_B03_B08_SCL_<site>_<year>_<hash>``) differ, and a
+nine-band job or download is never reattached or reused for a subset, nor
+the reverse. Its stores go to ``--store-root`` (default ``SUBSET_ROOT``,
+``cubes_light``): ``<store-root>/<site>/<year>.zarr`` in the same format
+(``FORMAT_ID``), with sidecars, ``download.log``, ``overpass_times.json`` and
+a site lock of their own. ONE BAND SET PER ROOT (``open_cube`` refuses a
+window whose years differ in bands): a store root that is the nine-band
+``--root``, lies inside it, holds it, or holds a store of another band set
+is refused before anything is made (``subset_root_problem``). The stores
+under ``--root`` are only READ:
+
+* the frame and the reference grid are the nine bands' (the site's netCDF
+  cube, else a complete store under ``--root``); where the reference covers
+  the year the registration is the nine bands'. In a year it does not cover,
+  ``--offset-px`` (the site's known offset, one site per command) or the
+  offset of a registered store of the same request is checked against the
+  median composites of the netCDF-registered stores of the site under the
+  store root AND under ``--root`` (the nine-band 2023-2025 years), and,
+  stricter than for the nine bands, taken only when the composites CONFIRM
+  it on a store whose delivery had this delivery's array shape
+  (``--accept-unverified-offset`` takes it otherwise, recorded);
+* without B8A / B11 / B12 the 20 m checks of the nine bands cannot run; the
+  subset's SCL (its only 20 m band) is checked at the four phases of the
+  20 m lattice instead (``scl_phase_check``: nearest neighbour from the
+  native grid makes phase (0, 0) the best; another phase beating it refuses
+  the year);
+* a year that also has a complete nine-band store under ``--root`` is
+  compared with it after writing (``nine_band_gate``, ``<year>.vs_nine_band.
+  json``): the subset's bands BITWISE on every pixel and date (the fill
+  included), the same dates and grid, the same registration offset,
+  delivered shape and input baselines. Passing, the store is accepted as
+  'identical to the nine-band store' (the LIGHT-PATH GATE: one cheap year
+  that has a nine-band store proves the subset's layout and values before
+  years without reference are bought); failing, the usual rule against the
+  reference decides and the log says the gate FAILED. A year WITHOUT a
+  nine-band store of its own is refused before any job until a store of the
+  same bands (any site) has passed the gate (``subset_gate_problem``;
+  ``--without-light-gate`` overrides, recorded in ``light_gate``);
+* ``radiometry`` is recorded on B12, else B11, else B08 (a weaker indicator
+  over turbid water); the store records ``band_subset`` and
+  ``nine_band_root``; the dry run's disk estimate is per band;
+* ``--dry-run`` prints per site-year the registration it will meet, the
+  expected input megapixels and the credits estimated from the cost per
+  megapixel MEASURED on the site's jobs (``<year>.job.json`` under the store
+  root, else under ``--root``; else QUOTED_COSTS): a range, since against
+  nine-band jobs B03 B08 SCL cost 1/3 (bands counted on the 10 m output
+  grid) to 0.43 (the 20 m bands at their native resolution) of the nine; a subset
+  job of the site settles it (same bands: one number), and the share of the
+  nine bands' cost MEASURED at a site with both (``measured_share``: the
+  Westerschelde 2023 job of the gate) gives the other sites' best estimate;
+  the raw deliveries a subset keeps are counted in the disk total.
+
+Gates added 2026-10-26 (band subsets only):
+
+* a light-path gate that fails on the DATES alone (every common date bitwise,
+  the same offset, delivered shape and input baselines; e.g. the CDSE
+  catalogue changed since the nine-band job) still lifts the wait of the
+  years without a nine-band store (``light_gate_common_dates``, recorded in
+  their ``light_gate``); the store itself is accepted as NINE_BAND_HOW only
+  when the gate passes. A gate that fails on the offset or the delivered
+  shape says that the nine-band offsets do not hold for the subset;
+* at EXTRACTION_GATE_SITES (Westerschelde, Wadden, Ems) a year without a
+  nine-band store of its own is bought only once the converter's FREE 2023
+  extraction gate of the site (``experiments/light_to_extraction.py gate``,
+  ``results/fixedcfg/light/<site>_gate_2023.json``) passed, or failed on
+  extraction values only and the user accepted it there (``gate
+  --accept-gate-differences``); ``extraction_gate_problem``,
+  ``--without-extraction-gate`` (recorded).
+
+``--expect-account <e-mail>`` (any run, off by default): before any job is
+submitted or looked up, ``connection.describe_account()`` is called, the
+account's e-mail printed, and the run stops when it is another account (the
+refresh token in use is chosen by ``OPENEO_CONFIG_HOME``).
+
+Order of the pre-2023 purchases (2026-10-26): the free steps first
+(``light_to_extraction reference`` and ``gate`` of each site, the dry runs),
+then the one cheap light-path year (escalda 2023), then ONE site-year per
+command, newest first, the cheapest and best-surveyed site first: escalda
+2022, 2021, 2020, then wadden, then ems; after each year the converter's
+``build`` prints the screened scenes still missing for n = 125 (``n_target``)
+and an older year is bought only while some are missing. A loop over years
+stops on an INCOMPLETE store, not on the exit code (1 also means overpass
+times missing).
+
+Resuming, the ledger, the reattachment by title, ``--renormalise``,
+``--verify-only`` and ``--accept-differences`` work as above (give the same
+``--bands`` and ``--store-root``); a subset's raw delivery (``<year>.part``)
+is always kept, as with ``--keep-raw``. Not with --test, --odd-window,
+--lonlat-extent or the angles (main product only).
+
 Usage (from the repository root; on the server after ``source env.sh``)::
 
     $PY -X utf8 -m experiments.download_cube_zarr --login          # once, interactive
@@ -321,6 +422,10 @@ Usage (from the repository root; on the server after ``source env.sh``)::
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023 --renormalise
     $PY -X utf8 -m experiments.download_cube_zarr ems --years 2022 --offset-px 288,271
     $PY -X utf8 -m experiments.download_cube_zarr villaviciosa --years 2023 --accept-differences
+    $PY -X utf8 -m experiments.download_cube_zarr escalda --years 2023 --bands B03,B08,SCL --dry-run
+    $PY -X utf8 -m experiments.download_cube_zarr escalda --years 2023 --bands B03,B08,SCL --keep-raw
+    $PY -X utf8 -m experiments.download_cube_zarr ems --years 2022 --bands B03,B08,SCL --offset-px 288,271 --keep-raw
+    $PY -X utf8 -m experiments.download_cube_zarr escalda --years 2022 --bands B03,B08,SCL --offset-px 5,1 --keep-raw --expect-account <e-mail>
 
 To force a fresh job for a year, pass ``--new-job`` ONCE: the year's
 ``<year>.part`` (and ``<year>.angles.part``) is moved aside and no job is
@@ -643,6 +748,64 @@ RANGE_EPS = 1e-3
 #: dates whose angles at the frame centre the reports print
 CENTRE_DATES = 5
 
+#: BAND SUBSETS (--bands; module docstring, "Band subsets"). Off by default:
+#: nothing below is used by a request of the nine bands. The default root of
+#: the subsets' stores (--store-root), relative to the repository root
+SUBSET_ROOT = "cubes_light"
+#: the bands every subset holds: the registration measures with B08 / B03 and
+#: chooses its dates by SCL; the verification compares B03 B08 SCL
+SUBSET_REQUIRED = REGISTRATION_BANDS + ("SCL",)
+#: the radiometry indicator of a subset: B12, else B11 (as the nine bands),
+#: else B08 (NIR: water below DN 500 without the +1000 offset, as B12, but
+#: turbid water reaches it less often)
+SUBSET_RADIOMETRY_BANDS = RADIOMETRY_BANDS + ("B08",)
+#: bytes on disk per pixel and date of each band (int16, Blosc/Zstd-5 ratios
+#: of BYTES_PER_PIXEL_DATE: 10 m bands ~1.75x, 20 m bands nearest-resampled
+#: ~4.5x, SCL ~100x, CLD ~30x; the nine sum to ~6): a subset's disk estimate
+BYTES_PER_BAND_PIXEL_DATE = {"B02": 1.14, "B03": 1.14, "B04": 1.14, "B08": 1.14, "B8A": 0.44,
+                             "B11": 0.44, "B12": 0.44, "SCL": 0.02, "CLD": 0.07}
+#: the SCL of a subset without B8A / B11 / B12 at the four phases of the 20 m
+#: lattice (``scl_phase_check``): nearest neighbour from the native 20 m grid
+#: makes every 20 m cell of the placed frame uniform, so phase (0, 0) holds the
+#: highest share of equal pixel pairs. Measured on the Ferrol 10 m cube
+#: (2023-2025, 25 dates): phase (0, 0) 1.0 on every date, the other phases
+#: 0.894-0.9986 (the structure of the scene); the same SCL one pixel off gives
+#: phase (0, 0) 0.948-0.9986 and 1.0 at another phase. Refused when another
+#: phase beats (0, 0) by more than SUBSET_SCL_PHASE_TOL (on at least
+#: REGISTRATION_PHASE_MIN_PAIRS pairs); confirmed when (0, 0) beats every other
+#: phase by at least SUBSET_SCL_PHASE_MIN_GAP; else not confirmed (a warning)
+SUBSET_SCL_PHASE_TOL = 0.001
+SUBSET_SCL_PHASE_MIN_GAP = 0.002
+#: the credits of NINE-BAND 10 m site-year jobs on the CDSE account (approximate,
+#: as measured in October 2026), with the dates and the delivered (padded)
+#: arrays of those years (results/server_logs_2026-10-19/zarr_verification): the
+#: dry run's calibration of the cost per megapixel of a site when no job
+#: sidecar of it (``<year>.job.json`` with the job's ``costs``) is on this
+#: machine. Not the same at every site: ~0.20 credits per band-megapixel-date
+#: of the delivered arrays at Westerschelde, ~0.16 at Wadden and Ems
+QUOTED_COSTS = (
+    {"site": "escalda", "year": 2023, "credits": 890.0, "dates": 146,
+     "delivered_shape": (1536, 2176)},
+    {"site": "wadden", "year": None, "credits": 2000.0, "dates": 145,
+     "delivered_shape": (3456, 2816)},
+    {"site": "wadden", "year": 2025, "credits": 2400.0, "dates": 172,
+     "delivered_shape": (3456, 2816)},
+    {"site": "ems", "year": 2023, "credits": 3240.0, "dates": 145,
+     "delivered_shape": (3840, 3968)},
+)
+#: a calibration job's measured input (``usage.input_pixel``) picks the band
+#: convention of the estimate when it is within this share of one of them
+COST_CONVENTION_TOL = 0.1
+#: the sites whose band-subset years without a nine-band store of their own
+#: feed the method comparison through experiments/light_to_extraction.py: such
+#: a year is bought only once that converter's free 2023 EXTRACTION gate of the
+#: site (``<EXTRACTION_GATE_DIR>/<site>_gate_2023.json``) passed, or failed on
+#: extraction values only and the user accepted it there (``gate
+#: --accept-gate-differences``, recorded in the report);
+#: ``extraction_gate_problem``, --without-extraction-gate
+EXTRACTION_GATE_SITES = ("escalda", "wadden", "ems")
+EXTRACTION_GATE_DIR = "results/fixedcfg/light"
+
 
 class FormatError(RuntimeError):
     """The backend delivered something the normaliser does not understand."""
@@ -678,6 +841,24 @@ class VerificationRefused(RuntimeError):
 
 class RawMissing(RuntimeError):
     """--renormalise: the store's raw delivery (``<year>.part``) is gone."""
+
+
+class LightGateMissing(RuntimeError):
+    """A band-subset year without a nine-band store of its own, while no store
+    of those bands has passed the light-path gate yet (``subset_gate_problem``;
+    --without-light-gate): no job is made."""
+
+
+class ExtractionGateMissing(LightGateMissing):
+    """A band-subset year of an EXTRACTION_GATE_SITES site without a nine-band
+    store of its own, while the converter's 2023 extraction gate of the site
+    has not passed nor been accepted by the user (``extraction_gate_problem``;
+    --without-extraction-gate): no job is made."""
+
+
+class AccountMismatch(RuntimeError):
+    """--expect-account: the openEO connection is authenticated as another
+    account (or names none): nothing is started."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -723,6 +904,24 @@ def parse_products(text):
     return [p for p in PRODUCTS if p in names]
 
 
+def parse_bands(text):
+    """``"B03,B08,SCL"`` (any case, any order) -> the bands of a subset of the
+    main product in store order (BANDS). ValueError for an unknown band, an
+    empty list, or one without SUBSET_REQUIRED (B03, B08, SCL)."""
+    names = [b.strip().upper() for b in str(text or "").replace(";", ",").split(",") if b.strip()]
+    unknown = sorted(set(names) - set(BANDS))
+    if unknown:
+        raise ValueError(f"unknown band(s) {unknown}; choose from {list(BANDS)}")
+    if not names:
+        raise ValueError(f"no band given; choose from {list(BANDS)}")
+    need = [b for b in SUBSET_REQUIRED if b not in names]
+    if need:
+        raise ValueError(f"a band subset holds {list(SUBSET_REQUIRED)} (the registration measures "
+                         f"with B08 / B03 and chooses its dates by SCL; the verification compares "
+                         f"B03 B08 SCL): {need} missing")
+    return tuple(b for b in BANDS if b in names)
+
+
 @dataclass
 class Request:
     """One store to produce: a site, a year (the store name), a window and
@@ -735,7 +934,13 @@ class Request:
     2026-10-13: ``--lonlat-extent``). ``bbox`` is always the lon/lat box (the
     stores keep it in their provenance); ``extent_source`` says where the
     extent comes from, ``extent_origin`` the same in a few words (reference
-    netCDF, complete store, or SNAPPING of the lon/lat box)."""
+    netCDF, complete store, or SNAPPING of the lon/lat box).
+
+    ``bands`` other than the product's: a BAND SUBSET of the main product
+    (``is_subset``; --bands, module docstring): ``root`` is then the subset's
+    store root and ``main_root`` the root of the nine-band stores, only read
+    (the reference grid, the registered stores that check an offset, the
+    same year's nine-band store of the light-path gate, the cost calibration)."""
     site: str
     year: int
     start: str
@@ -748,6 +953,7 @@ class Request:
     extent: dict = None          # UTM extent requested; None: the lon/lat bbox
     extent_source: str = ""
     extent_origin: str = ""
+    main_root: Path = None       # a band subset: the nine-band root (read only)
 
     def __post_init__(self):
         if self.product not in PRODUCTS:
@@ -769,9 +975,15 @@ class Request:
         return self.product == ANGLES.name
 
     @property
+    def is_subset(self):
+        """A main request of fewer bands than the nine (--bands)."""
+        return self.product == MAIN.name and tuple(self.bands) != tuple(MAIN.bands)
+
+    @property
     def tag(self):
         what = f" {self.product}" if self.product != MAIN.name else ""
-        return f"{self.site} {self.year}{what}{' TEST' if self.test else ''}"
+        sub = f" {'+'.join(self.bands)}" if self.is_subset else ""
+        return f"{self.site} {self.year}{what}{sub}{' TEST' if self.test else ''}"
 
     @property
     def store(self):
@@ -834,28 +1046,38 @@ def parse_years(tokens):
     return sorted(years)
 
 
-def year_requests(sites, years, root, products=(MAIN.name,), lonlat=False, extents=True):
+def year_requests(sites, years, root, products=(MAIN.name,), lonlat=False, extents=True,
+                  bands=None, main_root=None):
     """The requests of a run: per site, per year, the products in order
     (the angles of a year right after its main store, so their dates can be
     compared at once). Each carries its UTM extent: the site's 10 m frame
     (``site_frame``) for the main store, its 300 m frame (``angles_frame``)
     for the angles; ``lonlat``: the lon/lat box instead (--lonlat-extent);
-    ``extents=False``: none (--verify-only needs none)."""
+    ``extents=False``: none (--verify-only needs none). ``bands`` (a subset
+    of the nine, --bands): the main requests are a BAND SUBSET whose stores go
+    under ``root`` (the store root) while ``main_root`` (the nine-band root,
+    only read) gives their frame: the nine bands' (``Request.main_root``)."""
     frames, out = {}, []
+    sub = bands is not None and tuple(bands) != tuple(MAIN.bands)
     for s in sites:
         for y in years:
             for p in products:
+                subset = sub and p == MAIN.name
+                fr_root = Path(main_root) if subset and main_root is not None else root
                 ext, src, org = None, "", ""
                 if lonlat:
                     src, org = LONLAT_SOURCE, LONLAT_ORIGIN
                 elif extents:
                     if (s, p) not in frames:
-                        fr = angles_frame(s, root) if p == ANGLES.name else site_frame(s, root)
+                        fr = angles_frame(s, root) if p == ANGLES.name else site_frame(s, fr_root)
                         frames[(s, p)] = (extent_of(fr), fr["source"], fr["origin"])
                     ext, src, org = frames[(s, p)]
+                kw = (dict(bands=tuple(bands), main_root=None if main_root is None
+                           else Path(main_root)) if subset else {})
                 out.append(Request(site=s, year=y, start=zc.year_window(y)[0],
                                    end=zc.year_window(y)[1], bbox=site_bbox(s), root=root,
-                                   product=p, extent=ext, extent_source=src, extent_origin=org))
+                                   product=p, extent=ext, extent_source=src, extent_origin=org,
+                                   **kw))
     return out
 
 
@@ -1036,10 +1258,14 @@ def graph_hash(flat_graph):
 def job_title(req, ghash):
     """``zarr_cube_<site>_<year>_<hash>`` (``zarr_angles_...`` for the
     angles; ``..._test_<site>_<start>_<end>_...`` for --test): a job left
-    on the backend is found again by it, never for another product."""
+    on the backend is found again by it, never for another product. A band
+    subset (--bands) carries its bands, ``zarr_cube_B03_B08_SCL_<site>_
+    <year>_<hash>`` (its graph, hence its hash, differs from the nine's)."""
     prefix = req.spec.title_prefix
     if req.test:
         return f"{prefix}_test_{req.site}_{req.start}_{req.end}_{ghash[:8]}"
+    if req.is_subset:
+        return f"{prefix}_{'_'.join(req.bands)}_{req.site}_{req.year}_{ghash[:8]}"
     return f"{prefix}_{req.site}_{req.year}_{ghash[:8]}"
 
 
@@ -3190,7 +3416,8 @@ def radiometry_summary(per_date, n_pixels, band, low=LOW_DN):
 
 
 def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, groups=None,
-                format_id=None, complete=True, supersede_to=None):
+                format_id=None, complete=True, supersede_to=None,
+                radiometry_bands=RADIOMETRY_BANDS):
     """Write the canonical dataset to ``out`` (``<out>.tmp`` then rename).
     ``format_id``: the store's ``format`` attribute (the cubes'
     ``zarr_cubes.FORMAT_ID`` unless given; the angles pass theirs).
@@ -3212,9 +3439,10 @@ def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, grou
     in the available memory stops the write before anything is read. The
     per-date share of low B12 (else B11) digital numbers is computed on the
     way and stored as the ``radiometry`` attribute (see
-    ``radiometry_summary``). ``complete = 1`` and the consolidated metadata
-    are written last, then the folder is renamed: a store under its final
-    name is always whole.
+    ``radiometry_summary``; ``radiometry_bands``: the bands tried, in order;
+    a band subset passes SUBSET_RADIOMETRY_BANDS). ``complete = 1`` and the
+    consolidated metadata are written last, then the folder is renamed: a
+    store under its final name is always whole.
     """
     import dask.array as da
     import xarray as xr
@@ -3262,7 +3490,7 @@ def write_store(ds, fills, out, attrs, log=print, chunks=None, verify=True, grou
                           f"x {H} x {W} px x {widest} band(s) decoded together, plus the read-back) "
                           f"and {avail / 1e9:.1f} GB are available: free memory first")
     tmpl.to_zarr(tmp, mode="w", compute=False, encoding=enc, zarr_format=2, consolidated=False)
-    rad_band = next((b for b in RADIOMETRY_BANDS if b in bands), None)
+    rad_band = next((b for b in radiometry_bands if b in bands), None)
     rad = {}
     nblk = (T + bt - 1) // bt
     t0 = time.time()
@@ -4144,6 +4372,11 @@ def verify_request(req, log):
             f"{r.get('dates_used')} dates = {r.get('p90_share_below_low')} -> {r.get('offset_state')}"
             + (f"; input baselines {rep['input_baselines']['counts']}"
                if rep.get("input_baselines") else ""))
+    if req.is_subset and written:   # the light-path gate: the same year's nine-band store
+        gate = nine_band_gate(req, log)
+        if gate is not None:
+            rep["nine_band_store"] = gate
+            zc.write_json(rep, req.sidecar("verify.json"))
     return rep
 
 
@@ -4322,9 +4555,10 @@ def verify_and_complete(ctx, req, log):
     ``ctx.accept_differences`` (--accept-differences: accepted, recorded;
     never a store whose geometry is not the reference's, ``geometry_blocks``)
     or --test (reported, never refused). The decision is also written into
-    ``<year>.verify.json`` (``acceptance``)."""
+    ``<year>.verify.json`` (``acceptance``). A band subset is decided by
+    ``decide`` (the light-path gate first)."""
     rep = verify_request(req, log)
-    ok, how, why = verification_decision(rep)
+    ok, how, why = decide(req, rep)
     geo = rep.get("geometry") or {}
     acc = {"accepted": ok, "how": how, "why": why, "rule": dict(VERIFY_MIN_EQUAL),
            "verdict": rep.get("verdict"), "checked_utc": rep.get("checked_utc")}
@@ -4527,6 +4761,16 @@ class Context:
         #: --accept-unverified-offset: an --offset-px nothing can check is taken although the
         #: delivered arrays are not the shape the site's stores were delivered in (recorded)
         self.accept_unverified_offset = bool(getattr(a, "accept_unverified_offset", False))
+        #: --without-light-gate (band subsets): buy a year without a nine-band store of its own
+        #: before any store of its bands passed the light-path gate (recorded)
+        self.without_light_gate = bool(getattr(a, "without_light_gate", False))
+        #: band subsets of EXTRACTION_GATE_SITES: where the converter's 2023 extraction gates are
+        #: (--extraction-gate-dir) and --without-extraction-gate (recorded)
+        self.extraction_gate_dir = getattr(a, "extraction_gate_dir", None) or EXTRACTION_GATE_DIR
+        self.without_extraction_gate = bool(getattr(a, "without_extraction_gate", False))
+        #: --expect-account: the e-mail the connection must be authenticated as (None: unchecked)
+        self.expect_account = getattr(a, "expect_account", None)
+        self.account = None
         self.network = True
         self.poll_s, self.poll_max_s, self.capacity_wait_s = 10.0, 60.0, 300
         self.sleep = sleep
@@ -4536,13 +4780,63 @@ class Context:
     def connection(self):
         if self._conn is None:
             if self._connect is not None:
-                self._conn = self._connect()
+                conn = self._connect()
             else:
                 import pyintertidal as pit
 
                 pit.net.use_system_certificates()
-                self._conn = pit.scenes.connect(interactive=False)
+                conn = pit.scenes.connect(interactive=False)
+            if self.expect_account:         # before anything is submitted on it (AccountMismatch)
+                self.account = check_account(conn, self.expect_account)
+            self._conn = conn
         return self._conn
+
+
+def account_email(desc):
+    """The e-mail of an openEO ``describe_account()`` (``GET /me``): the first
+    ``email`` value found (CDSE: ``info.oidc_userinfo.email``), else a user id,
+    name or preferred user name holding an '@'; None when there is none."""
+    found = []
+
+    def walk(o, key=""):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                walk(v, str(k).lower())
+        elif isinstance(o, (list, tuple)):
+            for v in o:
+                walk(v, key)
+        elif isinstance(o, str) and "@" in o:
+            found.append((0 if key == "email" else 1 if key in ("preferred_username", "user_id", "name",
+                                                                 "username") else 2, o.strip()))
+
+    walk(desc)
+    found = [f for f in found if f[0] < 2]
+    return min(found, key=lambda f: f[0])[1] if found else None
+
+
+def check_account(conn, expected, log=print):
+    """--expect-account: ``conn.describe_account()``, the account's e-mail
+    printed; AccountMismatch when it is not ``expected`` (case-insensitive) or
+    names no e-mail. Returns ``{"email", "user_id", "name"}``."""
+    try:
+        desc = conn.describe_account()
+    except Exception as exc:  # noqa: BLE001 - any failure: the account is unknown, nothing starts
+        raise AccountMismatch(f"--expect-account {expected}: the account could not be described "
+                              f"({type(exc).__name__}: {exc}); nothing started") from None
+    email = account_email(desc)
+    who = {"email": email, "user_id": (desc or {}).get("user_id") if isinstance(desc, dict) else None,
+           "name": (desc or {}).get("name") if isinstance(desc, dict) else None}
+    log(f"openEO account: {email or '(no e-mail in the account description)'} (user_id "
+        f"{who['user_id']}); expected {expected}")
+    if not email:
+        raise AccountMismatch(f"--expect-account {expected}: the account description names no e-mail "
+                              f"(keys {sorted(desc) if isinstance(desc, dict) else type(desc).__name__}); "
+                              f"nothing started")
+    if email.strip().lower() != str(expected).strip().lower():
+        raise AccountMismatch(f"--expect-account {expected}: the connection is authenticated as {email}, "
+                              f"another account (OPENEO_CONFIG_HOME selects the refresh token); nothing "
+                              f"started")
+    return who
 
 
 def snap_to_lattice(interp, ref, step=RESOLUTION_M):
@@ -4818,6 +5112,11 @@ class RegistrationPlan:
     strict: bool = True
     root: object = None               # registered sibling stores are looked for here (None: nowhere)
     accept_unverified: bool = False   # --accept-unverified-offset (an expert offset nothing can check)
+    #: a band subset (--bands): more roots whose registered stores check an offset (the
+    #: nine-band root, read only), and an offset taken only when the composites CONFIRM it on
+    #: a store delivered in this delivery's array shape (unless accept_unverified)
+    sibling_roots: tuple = ()
+    require_confirmed: bool = False
 
 
 def registration_plan(req, ctx=None, ref_grid=None):
@@ -4826,7 +5125,8 @@ def registration_plan(req, ctx=None, ref_grid=None):
     (``ref_grid``, from ``reference_grid``) and covers the request's window;
     ``ctx.offset_px`` (--offset-px; production only) and
     ``ctx.accept_unverified_offset``; registered stores of the site under the
-    request's root (production only)."""
+    request's root (production only). A band subset (--bands): also those
+    under its ``main_root`` (read only), and ``require_confirmed``."""
     cfg = SITE_CONFIG[req.site]
     path = ROOT / cfg["reference"]
     p0, p1 = cfg["reference_period"]
@@ -4834,6 +5134,10 @@ def registration_plan(req, ctx=None, ref_grid=None):
     common = dict(expert=tuple(int(v) for v in expert) if expert else None, strict=not req.test,
                   root=None if req.test else Path(req.root),
                   accept_unverified=bool(getattr(ctx, "accept_unverified_offset", False)))
+    if req.is_subset and not req.test:
+        common.update(require_confirmed=True, sibling_roots=tuple(
+            Path(r) for r in (req.main_root,) if r is not None
+            and Path(r).resolve() != Path(req.root).resolve()))
     if not path.is_file():
         why = f"{path.name} is not on this machine"
     elif not (req.start < p1 and req.end > p0):
@@ -5227,6 +5531,65 @@ def phase_check(interp, idx):
                 and max(other) - s0 >= REGISTRATION_PHASE_MIN_GAIN):
             out["contradicted"].append(b)
     return out
+
+
+def scl_phase_check(interp, idx):
+    """The 20 m PHASE of a band subset's SCL, its only 20 m band without B8A /
+    B11 / B12 (SUBSET_SCL_PHASE_*): the share of valid pixel pairs (SCL
+    neither the fill nor 0) inside one 20 m cell of the UTM lattice holding
+    the same class, at the four phases of that lattice (as ``phase_check``),
+    pooled over the dates ``idx`` (positions). Nearest neighbour from the
+    native grid makes phase (0, 0) the best (1.0 on a frame from tiles of its
+    own UTM zone). ``verdict``: 'contradicted' when another phase beats (0, 0)
+    by more than SUBSET_SCL_PHASE_TOL on at least REGISTRATION_PHASE_MIN_PAIRS
+    pairs (the SCL sits an odd number of pixels away), 'confirmed' when (0, 0)
+    beats every other phase by at least SUBSET_SCL_PHASE_MIN_GAP, 'not
+    confirmed' otherwise ('not checked' without SCL, dates or pairs)."""
+    x = np.asarray(interp.x, dtype="float64")
+    y = np.asarray(interp.y, dtype="float64")
+    idx = [int(i) for i in idx]
+    dts = zc._dates_of(interp.t)
+    out = {"band": "SCL", "dates": [dts[i] for i in idx], "shares": {}, "pairs": 0,
+           "verdict": "not checked", "best_other": None, "tol": SUBSET_SCL_PHASE_TOL,
+           "min_gap": SUBSET_SCL_PHASE_MIN_GAP}
+    if "SCL" not in interp.bands or not idx:
+        return dict(out, why="no SCL or no date")
+    a = np.asarray(interp.bands["SCL"].isel(t=idx).values)
+    ok = _valid_px(a, interp.fills.get("SCL"))
+    shares, pairs = {}, 0
+    for py, px in ((0, 0), (0, 1), (1, 0), (1, 1)):
+        eq, n = block_equal_counts(a, x + 10.0 * px, y - 10.0 * py, ok)
+        shares[f"{py}{px}"] = round(eq / n, 6) if n else None
+        if (py, px) == (0, 0):
+            pairs = n
+    del a, ok
+    out.update(shares=shares, pairs=int(pairs))
+    s0 = shares["00"]
+    other = {k: v for k, v in shares.items() if k != "00" and v is not None}
+    if s0 is None or not other or pairs < REGISTRATION_PHASE_MIN_PAIRS:
+        return dict(out, why=f"{pairs} valid pair(s) at phase 00 (at least "
+                             f"{REGISTRATION_PHASE_MIN_PAIRS} needed)")
+    best = max(other, key=other.get)
+    out["best_other"] = best
+    if other[best] - s0 > SUBSET_SCL_PHASE_TOL:
+        return dict(out, verdict="contradicted")
+    if s0 - other[best] >= SUBSET_SCL_PHASE_MIN_GAP:
+        return dict(out, verdict="confirmed")
+    return dict(out, verdict="not confirmed",
+                why=f"phase 00 beats phase {best} by {s0 - other[best]:.4f} (< "
+                    f"{SUBSET_SCL_PHASE_MIN_GAP})")
+
+
+def scl_phase_line(chk):
+    """A line on ``scl_phase_check``'s record."""
+    shares = " ".join(f"{k} {'-' if v is None else f'{v:.4f}'}" for k, v in chk["shares"].items())
+    head = {"contradicted": "SCL 20 m phase CONTRADICTED", "confirmed": "SCL 20 m phase confirmed",
+            "not confirmed": "SCL 20 m phase NOT confirmed"}.get(chk["verdict"],
+                                                                 "SCL 20 m phase: not checked")
+    return (f"{head} (band subset without B8A / B11 / B12): share of equal SCL pairs inside one "
+            f"20 m cell of the lattice at the phases 00 (the frame's) / 01 / 10 / 11 on "
+            f"{chk['dates']}: {shares or '-'} ({chk['pairs']} pairs at 00)"
+            + (f"; {chk['why']}" if chk.get("why") else ""))
 
 
 def phase_line(chk):
@@ -5691,7 +6054,12 @@ def register_delivery(interp, req, target, plan, results_meta=None, log=print):
         line = layer_20m_line(chk)
         if chk["contradicted"]:
             raise _Refused(line)
-        if not chk["confirmed"] and not confirmed_otherwise:
+        if (not chk["confirmed"] and not confirmed_otherwise and req.is_subset
+                and REGISTRATION_20M_BAND not in interp.bands):
+            # a band subset without B8A: its SCL is checked at the 20 m phases (phase_gate)
+            interp.notes.append(f"{line}; this band subset's 20 m layer (SCL) is checked at the "
+                                f"phases of the 20 m lattice after the placement")
+        elif not chk["confirmed"] and not confirmed_otherwise:
             interp.warnings.append(f"the 20 m layer is not confirmed at the offset {tuple(off)} ("
                                    f"{line}; nothing else checks it in this year)")
         return line
@@ -5701,6 +6069,13 @@ def register_delivery(interp, req, target, plan, results_meta=None, log=print):
             return [], []
         cands, skipped = sibling_candidates(req, frame, (Hr, Wr), rec["backend_version"],
                                             plan.root, same_request=same_request)
+        for extra in plan.sibling_roots:      # a band subset: the nine-band stores, read only
+            more, why = sibling_candidates(req, frame, (Hr, Wr), rec["backend_version"],
+                                           extra, same_request=same_request)
+            cands += more
+            skipped += [(y, f"{w} (under {extra})") for y, w in why]
+        if plan.sibling_roots:
+            cands.sort(key=lambda c: (abs(c["year"] - req.year), c["year"]))
         rec["siblings_skipped"] = [[y, w] for y, w in skipped]
         return cands, skipped
 
@@ -5787,17 +6162,34 @@ def register_delivery(interp, req, target, plan, results_meta=None, log=print):
                     raise _Refused(f"--offset-px {ex[0]},{ex[1]} contradicts the median composites "
                                    f"against the registered {cand['year']} store, which put the "
                                    f"frame at ({m[0]}, {m[1]}): {got['why']}")
+                same_shape = list(cand.get("delivered_shape") or []) == [Hr, Wr]
                 if got["outcome"] == "confirmed":
+                    if plan.require_confirmed and not same_shape and not plan.accept_unverified:
+                        raise _Refused(
+                            f"--offset-px {ex[0]},{ex[1]} is confirmed by the median composites "
+                            f"against the registered {cand['year']} store, but this delivery's "
+                            f"arrays ({Hr} x {Wr} px) are not the shape that store was delivered "
+                            f"in ({cand.get('delivered_shape')}): a band subset takes an offset "
+                            f"only from a delivery of the same layout (--accept-unverified-offset "
+                            f"takes it anyway, recorded)")
                     line = layer(ex, got["positions"])
                     rec["checked"] = (f"confirmed by the median composites against the registered "
-                                      f"{cand['year']} store")
+                                      f"{cand['year']} store"
+                                      + ("" if same_shape or not plan.require_confirmed else
+                                         "; delivered in another array shape: "
+                                         "--accept-unverified-offset"))
                     return done("expert --offset-px", ex, False,
                                 f"--offset-px {ex[0]},{ex[1]}: confirmed by the median composites "
                                 f"of {len(got['dates'])} clear dates of this delivery and "
                                 f"{len(got['sibling_dates'])} of the registered {cand['year']} "
                                 f"store ({_composite_line(got)}); not verified against a reference "
                                 f"netCDF ({plan.no_reference}); {line}")
-                same_shape = list(cand.get("delivered_shape") or []) == [Hr, Wr]
+                if plan.require_confirmed and not plan.accept_unverified:
+                    raise _Refused(f"--offset-px {ex[0]},{ex[1]} is not confirmed by the median "
+                                   f"composites against the registered {cand['year']} store "
+                                   f"({got['why']}): a band subset takes an offset only when they "
+                                   f"confirm it (--accept-unverified-offset takes it anyway, "
+                                   f"recorded)")
                 if not same_shape and not plan.accept_unverified:
                     raise _Refused(f"--offset-px {ex[0]},{ex[1]} cannot be checked against the "
                                    f"registered {cand['year']} store ({got['why']}) and this "
@@ -5814,7 +6206,19 @@ def register_delivery(interp, req, target, plan, results_meta=None, log=print):
                 return done("expert --offset-px", ex, False,
                             f"--offset-px, {rec['checked']}; not verified ({plan.no_reference}); "
                             f"{line}")
+            if plan.require_confirmed and not plan.accept_unverified:
+                raise _Refused(f"--offset-px {ex[0]},{ex[1]} cannot be checked: no store of "
+                               f"{req.site} registered against a reference netCDF with this extent "
+                               f"and grid under {[str(r) for r in (plan.root,) + plan.sibling_roots]}"
+                               + (f" ({'; '.join(f'{y}: {w}' for y, w in skipped)})" if skipped
+                                  else "")
+                               + ": a band subset takes an offset only when the median composites "
+                                 "of such a store confirm it (--accept-unverified-offset takes it "
+                                 "anyway, recorded)")
             shapes = recorded_delivered_shapes(req, plan.root)
+            for extra in plan.sibling_roots:
+                for s_, ys_ in recorded_delivered_shapes(req, extra).items():
+                    shapes.setdefault(s_, []).extend(ys_)
             if shapes and (Hr, Wr) not in shapes and not plan.accept_unverified:
                 raise _Refused(f"--offset-px {ex[0]},{ex[1]} cannot be checked (no store of "
                                f"{req.site} registered against a reference netCDF with this extent "
@@ -5959,6 +6363,22 @@ def phase_gate(interp, req, plan, log=print):
     reg["phase_20m"] = chk
     line = phase_line(chk)
     log(line)
+    if req.is_subset and not chk["bands"]:          # a band subset without B8A / B11 / B12
+        scl = scl_phase_check(interp, pos)
+        reg["phase_20m_scl"] = scl
+        sline = scl_phase_line(scl)
+        log(sline)
+        if scl["verdict"] == "contradicted":
+            msg = (f"{sline}: the SCL is displaced by an odd number of pixels against the frame "
+                   f"(the offset {reg.get('offset')} of the {reg.get('method')} registration does "
+                   f"not hold for it)")
+            if plan.strict:
+                raise RegistrationRefused(f"{req.tag}: {msg}; nothing written")
+            interp.warnings.append(f"{msg} (--test only; a production year is refused)")
+        elif scl["verdict"] == "confirmed":
+            interp.notes.append(sline)
+        else:
+            interp.warnings.append(f"{sline}: this band subset's 20 m layer is not confirmed")
     if not chk["contradicted"]:
         interp.notes.append(line)
         return chk
@@ -6346,6 +6766,29 @@ def provenance(req, job_info, results_meta, interp, ctx, flat_graph, graph_sourc
             "registration_r": json.dumps(reg.get("r") or {}),
             "registration": json.dumps(reg, default=str),
         })
+    if req.is_subset:               # a band subset (--bands): what it is, where its nine bands are
+        attrs.update({
+            "title": (f"Sentinel-2 L2A cube, {req.site} {req.year} (bands {' '.join(req.bands)})"
+                      + (" (format test)" if req.test else "")),
+            "resampling": subset_resampling(req.bands),
+            "band_subset": json.dumps(list(req.bands)),
+            "band_subset_of": json.dumps(list(MAIN.bands)),
+            "nine_band_root": str(req.main_root or ""),
+            "light_gate": json.dumps({
+                "passed_by": light_gate_passed(req.root, req.bands),
+                "passed_on_common_dates": light_gate_common_dates(req.root, req.bands),
+                "own_nine_band_store": bool(req.main_root is not None and zc.is_complete(
+                    zc.store_path(req.site, req.year, req.main_root))),
+                "without_light_gate": bool(getattr(ctx, "without_light_gate", False)),
+                "extraction_gate": (extraction_gate_status(req.site, ctx)[1]
+                                    if req.site in EXTRACTION_GATE_SITES else None),
+                "without_extraction_gate": bool(getattr(ctx, "without_extraction_gate", False))}),
+            "band_subset_note": (
+                "a band subset of the main product (download_cube_zarr --bands): the process, "
+                "extent, window, resampling and registration of the nine-band stores with fewer "
+                "bands, in a store root of its own (one band set per root); the nine-band stores "
+                "under nine_band_root were only read"),
+        })
     if req.is_angles:
         attrs.update({
             "title": (f"Sentinel-2 L2A sun and view angles, {req.site} {req.year}"
@@ -6445,6 +6888,10 @@ def run_request(ctx, req, log):
     Returns a summary."""
     t0 = time.time()
     angles = req.is_angles
+    if req.is_subset:               # a band subset never writes into a root of other bands
+        why = subset_root_problem(req.root, req.bands, req.main_root)
+        if why:
+            raise FormatError(f"{req.tag}: {why}; nothing done")
     if not req.test and req.complete():                 # also with --new-job: never paid twice
         log(f"{req.store} is complete: nothing to download")
         if angles:                  # cheap; the main store of the year may have come since
@@ -6465,6 +6912,13 @@ def run_request(ctx, req, log):
     if why and not ctx.allow_snapped:
         raise FrameRefused(why)
     part = Path(req.part)
+    if req.is_subset and not (part / ASSETS_DONE).is_file():     # a job may be bought
+        why = light_wait_problem(req, ctx)
+        if why:
+            raise LightGateMissing(f"{req.tag}: {why}; nothing started (no job, no download)")
+        why = extraction_wait_problem(req, ctx)
+        if why:
+            raise ExtractionGateMissing(f"{req.tag}: {why}; nothing started (no job, no download)")
     flat = build_process(req, None, ctx.backend_format, ctx.format_options).flat_graph()
     title = job_title(req, graph_hash(flat))
     if not ctx.new_job:
@@ -6518,7 +6972,7 @@ def run_request(ctx, req, log):
         graph, gsrc = cur["process_graph"], f"submitted with job {cur.get('job_id')}"
     else:
         graph, gsrc = flat, "built offline (the submitted graph was not recorded)"
-    ref_root = req.root.parent if req.test else req.root
+    ref_root = _grid_root(req)
     ref = (angles_reference_grid(req.site, root=ref_root, log=log) if angles else
            reference_grid(req.site, root=ref_root, log=log))
     plan = None if angles else registration_plan(req, ctx, ref)
@@ -6535,7 +6989,8 @@ def run_request(ctx, req, log):
            f"px, {len(req.bands)} bands)"))
     # the main store is completed only once its verification accepts it (verify_and_complete)
     write_store(ds, store_fills(interp, req.spec), req.store, attrs, log=log, groups=interp.groups,
-                chunks=req.spec.chunks, format_id=req.spec.format_id, complete=angles)
+                chunks=req.spec.chunks, format_id=req.spec.format_id, complete=angles,
+                **_subset_write_kw(req))
     job_side = {"ledger": json.loads(led_path.read_text(encoding="utf-8"))
                 if led_path.is_file() else {}, "job": info, "results_metadata": meta}
     zc.write_json(job_side, req.sidecar("job.json"))
@@ -6583,11 +7038,16 @@ def run_request(ctx, req, log):
         return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
                 "mb": round(size / 1e6, 2), "job": info.get("id")}
     reg = interp.registration or {}
-    return {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
-            "accepted": (rep.get("acceptance") or {}).get("how"),
-            "registration": f"{reg.get('method')} {reg.get('offset')}",
-            "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id"),
-            "radiometry": (rep.get("radiometry") or {}).get("offset_state")}
+    out = {"status": "done", "dates": len(dates), "verdict": rep.get("verdict"),
+           "accepted": (rep.get("acceptance") or {}).get("how"),
+           "registration": f"{reg.get('method')} {reg.get('offset')}",
+           "missing_overpass": still, "gb": round(size / 1e9, 3), "job": info.get("id"),
+           "radiometry": (rep.get("radiometry") or {}).get("offset_state")}
+    if req.is_subset:               # a band subset: its light-path gate, and what its job cost
+        gate = rep.get("nine_band_store")
+        out.update(light_path_gate=None if gate is None else
+                   "passed" if gate.get("passed") else "FAILED", job_costs=info.get("costs"))
+    return out
 
 
 def raw_after_store(ctx, req, part, rep, log):
@@ -6595,9 +7055,12 @@ def raw_after_store(ctx, req, part, rep, log):
     store is complete, unless --keep-raw or --test; a MAIN store accepted as
     anything but 'identical' or 'near-identical' (not verified: a sibling's
     or an expert offset, no reference; or --accept-differences) keeps it:
-    it is the only way to register that year again without a new job.
+    it is the only way to register that year again without a new job. A
+    band subset (--bands) always keeps it.
     ``rep``: the main store's verification (None for the angles)."""
     keep = "--keep-raw" if ctx.keep_raw else "--test" if req.test else None
+    if keep is None and req.is_subset:      # a band subset never deletes its raw delivery
+        keep = "a band subset keeps its raw delivery (--renormalise can rebuild it offline)"
     how = ((rep or {}).get("acceptance") or {}).get("how")
     if keep is None and rep is not None and how not in ("identical", "near-identical"):
         keep = (f"the store was accepted as {how!r}: the raw delivery is the only way to register "
@@ -6694,6 +7157,730 @@ def log_report(req, lines, log):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  band subsets (--bands; module docstring, "Band subsets"): off by default,
+#  nothing here is used by a request of the nine bands
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: the ``acceptance`` of a band subset that passed the light-path gate
+NINE_BAND_HOW = "identical to the nine-band store"
+
+
+def _grid_root(req):
+    """Where the reference grid of ``req`` falls back to complete stores
+    (``reference_grid``): the cubes root of a --test (the parent of
+    ``<root>/_test``), the request's root, or for a band subset the
+    nine-band root (``main_root``), whose stores are on the frame the
+    subset requests."""
+    if req.test:
+        return req.root.parent
+    if req.is_subset and req.main_root is not None:
+        return Path(req.main_root)
+    return req.root
+
+
+def _subset_write_kw(req):
+    """``write_store`` keywords: none for the nine bands; a band subset's
+    radiometry indicator (SUBSET_RADIOMETRY_BANDS)."""
+    return {"radiometry_bands": SUBSET_RADIOMETRY_BANDS} if req.is_subset else {}
+
+
+def subset_resampling(bands):
+    """The ``resampling`` attribute of a band subset's store (RESAMPLING for
+    its own bands)."""
+    ten = [b for b in bands if zc.NATIVE_RES_M.get(b) == RESOLUTION_M]
+    twenty = [b for b in bands if zc.NATIVE_RES_M.get(b) != RESOLUTION_M]
+    return (f"resample_spatial(resolution={RESOLUTION_M}, method='{RESAMPLE_METHOD}') on the "
+            f"whole cube, as the existing netCDF cubes: identity for the native 10 m bands "
+            f"({' '.join(ten)})"
+            + (f"; nearest neighbour 20 m -> 10 m for {' '.join(twenty)}" if twenty else ""))
+
+
+def subset_root_problem(store_root, bands, main_root):
+    """Why stores of the band subset ``bands`` may NOT go under
+    ``store_root`` (None when they may): it is the nine-band root
+    ``main_root``, lies inside it or holds it, or holds a main store
+    (complete or pending its verification) of another band set: one band set
+    per root, so ``open_cube`` and the registered-store searches of each root
+    never mix them."""
+    s = Path(store_root).resolve()
+    if main_root is not None:
+        m = Path(main_root).resolve()
+        if s == m:
+            return (f"the store root {s} is the root of the nine-band stores (--root): a band "
+                    f"subset never goes there (--store-root, default {SUBSET_ROOT})")
+        for a, b, how in ((s, m, "lies inside"), (m, s, "holds")):
+            try:
+                a.relative_to(b)
+            except ValueError:
+                continue
+            return (f"the store root {s} {how} the nine-band root {m}: keep the two apart "
+                    f"(--store-root, default {SUBSET_ROOT})")
+    if not s.is_dir():
+        return None
+    want = list(bands)
+    for d in sorted(s.iterdir()):
+        if not d.is_dir() or d.name.startswith((".", "_")):
+            continue
+        for p in sorted(d.iterdir()):
+            if not (p.is_dir() and re.fullmatch(r"\d{4}\.zarr", p.name)):
+                continue
+            attrs = zc.store_attrs(p)
+            if not attrs:
+                continue
+            got = _json_attr(attrs.get("bands"))
+            if list(got or []) != want:
+                return (f"{p} holds the bands {got}, not {want}: one band set per store root "
+                        f"(open_cube refuses a window whose years differ in bands); give another "
+                        f"--store-root")
+    return None
+
+
+def nine_band_root_problem(root):
+    """Why NINE-BAND stores may not go under ``root`` (None when they may): it
+    holds a band-subset store (the ``band_subset`` attribute every --bands
+    store carries). One band set per root, as ``subset_root_problem`` for the
+    subsets; the nine-band root ``cubes/`` holds none, so a default run is
+    unchanged."""
+    base = Path(root)
+    if not base.is_dir():
+        return None
+    for d in sorted(base.iterdir()):
+        if not d.is_dir() or d.name.startswith((".", "_")):
+            continue
+        for p in sorted(d.iterdir()):
+            if not (p.is_dir() and re.fullmatch(r"\d{4}\.zarr", p.name)):
+                continue
+            attrs = zc.store_attrs(p)
+            if attrs.get("band_subset"):
+                got = _json_attr(attrs.get("band_subset"))
+                return (f"{p} is a band-subset store (bands {got}): the nine-band stores never go "
+                        f"into a root of band subsets (--root; the subsets' --store-root is "
+                        f"{SUBSET_ROOT})")
+    return None
+
+
+def compare_stores(store, other, bands, log=None, t_block=None, row_block=None):
+    """Two canonical main stores of one site and year compared BITWISE on
+    ``bands``: their dates, their grids (axes and CRS) and, per band over the
+    common dates, every pixel as stored (the fill included), with the dtype
+    and the no-data value. Reads blocks of ``t_block`` dates x ``row_block``
+    rows (the store chunks). Returns a JSON-able report; ``verdict``:
+    'identical' (the same dates and grid, every band equal), 'differs' or
+    'not comparable' (a band missing, another grid, no common date)."""
+    say = log or (lambda m: None)
+    t0 = time.time()
+    a, b = zc.open_store(store), zc.open_store(other)
+    try:
+        da_, db_ = zc.dates(a), zc.dates(b)
+        sa, sb = set(da_), set(db_)
+        common = sorted(sa & sb)
+        rep = {"store": str(store), "other": str(other), "bands": list(bands),
+               "dates": {"store": len(da_), "other": len(db_), "common": len(common),
+                         "only_store": sorted(sa - sb), "only_other": sorted(sb - sa)},
+               "grid_identical": bool(zc._same_grid(a, b)), "per_band": {}}
+        missing = [x for x in bands if x not in a.data_vars or x not in b.data_vars]
+        if missing or not common or not rep["grid_identical"]:
+            why = (f"band(s) {missing} missing" if missing else
+                   "no common date" if not common else "another grid")
+            return dict(rep, verdict="not comparable", reason=why,
+                        seconds=round(time.time() - t0, 1))
+        ia = {d: i for i, d in enumerate(da_)}
+        ib = {d: i for i, d in enumerate(db_)}
+        H = int(a.sizes["y"])
+        tb, rb = int(t_block or zc.CHUNKS["t"]), int(row_block or zc.CHUNKS["y"])
+        for x in bands:
+            fa, fb = zc.fill_of(a[x]), zc.fill_of(b[x])
+            s = {"dtype": [str(a[x].dtype), str(b[x].dtype)], "fill": [fa, fb], "pixels": 0,
+                 "differing": 0, "dates_differing": {}}
+            for k in range(0, len(common), tb):
+                sel = common[k:k + tb]
+                for r0 in range(0, H, rb):
+                    va = np.asarray(a[x].isel(t=[ia[d] for d in sel], y=slice(r0, r0 + rb)).values)
+                    vb = np.asarray(b[x].isel(t=[ib[d] for d in sel], y=slice(r0, r0 + rb)).values)
+                    ne = va != vb
+                    if va.dtype.kind == "f" and vb.dtype.kind == "f":
+                        ne &= ~(np.isnan(va) & np.isnan(vb))
+                    per = ne.reshape(len(sel), -1).sum(axis=1)
+                    s["pixels"] += int(va.size)
+                    s["differing"] += int(per.sum())
+                    for d, c in zip(sel, per):
+                        if c:
+                            s["dates_differing"][d] = s["dates_differing"].get(d, 0) + int(c)
+                    del va, vb, ne
+            s["identical"] = bool(s["differing"] == 0 and s["dtype"][0] == s["dtype"][1]
+                                  and _same_value(fa, fb))
+            say(f"{x}: {s['differing']} of {s['pixels']} pixel-dates differ on {len(common)} "
+                f"common dates (dtype {s['dtype'][0]} / {s['dtype'][1]}, fill {fa} / {fb})")
+            rep["per_band"][x] = s
+        same = all(s["identical"] for s in rep["per_band"].values())
+        rep["bitwise_on_common_dates"] = same
+        rep["verdict"] = ("identical" if same and not rep["dates"]["only_store"]
+                          and not rep["dates"]["only_other"] else "differs")
+        rep["seconds"] = round(time.time() - t0, 1)
+        return rep
+    finally:
+        a.close()
+        b.close()
+
+
+def nine_band_gate(req, log=print):
+    """The LIGHT-PATH GATE of a band subset (module docstring): its store
+    against the complete NINE-BAND store of the same site and year under
+    ``req.main_root``: ``compare_stores`` on the subset's bands ('identical':
+    the same dates and grid, every pixel of every date equal, the fill
+    included), the same registration offset and delivered array shape
+    (``delivered_offset_px`` / ``delivered_shape_px``) and the same input
+    baselines per date (where both recorded them). The whole record goes to
+    ``<year>.vs_nine_band.json``; returns its summary (``passed``, ``why``),
+    or None when there is no such store (nothing to compare: a year without
+    a nine-band store)."""
+    if not req.is_subset or req.main_root is None:
+        return None
+    other = zc.store_path(req.site, req.year, req.main_root)
+    if not zc.is_complete(other):
+        return None
+    log(f"light-path gate: {req.store.name} against the nine-band store {other} "
+        f"({' '.join(req.bands)}, bitwise)")
+    cmp_ = compare_stores(req.store, other, req.bands, log=lambda m: log(f"  {m}"))
+    mine, theirs = zc.store_attrs(req.store), zc.store_attrs(other)
+    checks = {}
+    for k in ("delivered_offset_px", "delivered_shape_px"):
+        va, vb = _json_attr(mine.get(k)), _json_attr(theirs.get(k))
+        checks[k] = {"subset": va, "nine_band": vb, "equal": va is not None and va == vb}
+    pa = (zc.store_baselines(mine) or {}).get("per_date") or {}
+    pb = (zc.store_baselines(theirs) or {}).get("per_date") or {}
+    both = sorted(set(pa) & set(pb))
+    differ = [d for d in both if sorted(pa[d]) != sorted(pb[d])]
+    checks["input_baselines"] = {
+        "dates_subset": len(pa), "dates_nine_band": len(pb), "dates_compared": len(both),
+        "differing": differ[:40],
+        "equal": (None if not pa or not pb else not differ and set(pa) == set(pb)),
+        "equal_on_common_dates": None if not pa or not pb else not differ}
+    layout_bad = [k for k in ("delivered_offset_px", "delivered_shape_px") if not checks[k]["equal"]]
+    bad = []
+    if cmp_["verdict"] != "identical":
+        d = cmp_["dates"]
+        bad.append(("the values are bitwise equal on all the common dates, but the DATES differ"
+                    if cmp_.get("bitwise_on_common_dates") else
+                    "the two stores differ" if cmp_["verdict"] == "differs" else
+                    f"the two stores are not comparable ({cmp_.get('reason')})")
+                   + f": dates {d['store']} / {d['other']}, only in the subset {d['only_store'][:6]}"
+                   f", only in the nine bands {d['only_other'][:6]}"
+                   + "".join(f"; {x} {s['differing']} differing pixel-dates"
+                             + ("" if s["identical"] or s["differing"] else
+                                f" (dtype {s['dtype']}, fill {s['fill']})")
+                             for x, s in cmp_["per_band"].items()))
+    for k in ("delivered_offset_px", "delivered_shape_px"):
+        if not checks[k]["equal"]:
+            bad.append(f"{k} {checks[k]['subset']} != the nine bands' {checks[k]['nine_band']}")
+    if checks["input_baselines"]["equal"] is False:
+        bad.append(f"input baselines differ ({len(differ)} of {len(both)} common dates, dates "
+                   f"{len(pa)} / {len(pb)})")
+    passed = not bad
+    # the dates alone differ (the CDSE catalogue changed since the nine-band job): every common
+    # date bitwise, the same layout and the same input baselines on them. Not an acceptance of
+    # this store (that stays NINE_BAND_HOW, strict), but enough to lift the wait of the years
+    # without a nine-band store (subset_gate_problem, recorded in their light_gate)
+    common_only = bool(not passed and cmp_.get("bitwise_on_common_dates") and not layout_bad
+                       and checks["input_baselines"]["equal_on_common_dates"] is not False
+                       and cmp_["dates"]["common"] > 0)
+    was = _json_attr(theirs.get("verification"))
+    checks["nine_band_acceptance"] = was.get("how") if isinstance(was, dict) else None
+    why = ("; ".join(bad) if bad else
+           f"{cmp_['dates']['common']} = {cmp_['dates']['other']} dates, "
+           f"{' '.join(req.bands)} bitwise equal on every pixel of every date, offset "
+           f"{checks['delivered_offset_px']['subset']}, delivered shape "
+           f"{checks['delivered_shape_px']['subset']}, input baselines "
+           + ("equal" if checks["input_baselines"]["equal"] else "not recorded on one side")
+           + (f"; the nine-band store was accepted as '{checks['nine_band_acceptance']}'"
+              if checks["nine_band_acceptance"] else ""))
+    path = req.sidecar("vs_nine_band.json")
+    zc.write_json({"site": req.site, "year": req.year, "store": str(req.store),
+                   "nine_band_store": str(other), "bands": list(req.bands), "passed": passed,
+                   "passed_on_common_dates": passed or common_only, "dates_differ_only": common_only,
+                   "layout_differs": layout_bad, "why": why, "checks": checks,
+                   "comparison": cmp_, "checked_utc": utcnow().isoformat(timespec="seconds")},
+                  path)
+    if passed:
+        log(f"light-path gate PASSED: {why} ({path.name})")
+    elif common_only:
+        log(f"LIGHT-PATH GATE FAILED on the dates only: {why}. Every common date is bitwise equal "
+            f"with the same layout and input baselines, which lifts the wait of the years without a "
+            f"nine-band store (recorded in their light_gate); this store is decided by the rule "
+            f"({path.name})")
+    elif layout_bad:
+        log(f"LIGHT-PATH GATE FAILED: {why}. The nine-band registration offsets / delivered shapes do "
+            f"NOT hold for deliveries of these bands: each site needs a subset job of a year its "
+            f"reference netCDF covers (registered against it) to measure its own offset before any "
+            f"year without reference; those stay refused ({path.name})")
+    else:
+        log(f"LIGHT-PATH GATE FAILED: {why}. Do not download years without reference with this band "
+            f"subset before this is explained ({path.name})")
+    return {"store": str(other), "passed": passed, "why": why, "verdict": cmp_["verdict"],
+            "passed_on_common_dates": passed or common_only, "layout_differs": layout_bad,
+            "dates": {k: cmp_["dates"][k] for k in ("store", "other", "common")},
+            "checks": checks, "report": str(path)}
+
+
+def light_gate_passed(root, bands):
+    """The complete stores of ``bands`` under ``root`` (any site) accepted by
+    the light-path gate (``verification`` how NINE_BAND_HOW): ``[path]``."""
+    out = []
+    for site, years in zc.available(root).items():
+        for y in years:
+            p = zc.store_path(site, y, root)
+            attrs = zc.store_attrs(p)
+            acc = _json_attr(attrs.get("verification"))
+            if (isinstance(acc, dict) and acc.get("how") == NINE_BAND_HOW
+                    and list(_json_attr(attrs.get("bands")) or []) == list(bands)):
+                out.append(str(p))
+    return out
+
+
+def light_gate_reports(root, bands):
+    """The light-path gate reports (``<year>.vs_nine_band.json``) of stores of
+    ``bands`` under ``root`` (any site) whose store is still there:
+    ``[(path of the report, report)]``."""
+    base = Path(root)
+    out = []
+    if not base.is_dir():
+        return out
+    for d in sorted(base.iterdir()):
+        if not d.is_dir() or d.name.startswith((".", "_")):
+            continue
+        for p in sorted(d.glob("*.vs_nine_band.json")):
+            try:
+                rep = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            store = Path(str(rep.get("store") or ""))
+            got = rep.get("bands") or _json_attr(zc.store_attrs(store).get("bands"))
+            if store.is_dir() and list(got or []) == list(bands):
+                out.append((p, rep))
+    return out
+
+
+def light_gate_common_dates(root, bands):
+    """The stores of ``bands`` under ``root`` whose light-path gate failed on
+    the DATES only (``passed_on_common_dates``: every common date bitwise, the
+    same offset, delivered shape and input baselines on them; the dates differ,
+    e.g. the CDSE catalogue changed since the nine-band job): ``[path]``."""
+    return [str(rep.get("store")) for _, rep in light_gate_reports(root, bands)
+            if not rep.get("passed") and rep.get("passed_on_common_dates")
+            and not rep.get("layout_differs")
+            and (rep.get("comparison") or {}).get("bitwise_on_common_dates")]
+
+
+def subset_gate_problem(req, ctx=None):
+    """Why the job of a band-subset year may not be bought yet (None when it
+    may): a year without a complete nine-band store of its own under
+    ``req.main_root`` (nothing to compare it with) waits until a store of the
+    same bands under the store root, of any site, has passed the light-path
+    gate (``light_gate_passed``: the cheap verification year comes first;
+    or ``light_gate_common_dates``: it failed on the dates alone), unless
+    ``ctx.without_light_gate`` (--without-light-gate, recorded); and, at the
+    EXTRACTION_GATE_SITES, until the converter's 2023 extraction gate of the
+    site passed or the user accepted it (``extraction_gate_problem``)."""
+    return light_wait_problem(req, ctx) or extraction_wait_problem(req, ctx)
+
+
+def _own_nine_band_store(req):
+    return req.main_root is not None and zc.is_complete(zc.store_path(req.site, req.year,
+                                                                      req.main_root))
+
+
+def extraction_wait_problem(req, ctx=None):
+    """``extraction_gate_problem`` for a year without a nine-band store of
+    its own (a gate year never waits)."""
+    if not req.is_subset or _own_nine_band_store(req):
+        return None
+    return extraction_gate_problem(req, ctx)
+
+
+def light_wait_problem(req, ctx=None):
+    """The light-path part of ``subset_gate_problem``."""
+    if not req.is_subset or _own_nine_band_store(req):
+        return None                          # a gate year itself
+    if not getattr(ctx, "without_light_gate", False) and not (
+            light_gate_passed(req.root, req.bands) or light_gate_common_dates(req.root, req.bands)):
+        layout = [str(rep.get("store")) for _, rep in light_gate_reports(req.root, req.bands)
+                  if rep.get("layout_differs")]
+        return (f"no store of the bands {' '.join(req.bands)} under {req.root} has passed the "
+                f"light-path gate yet: first download a year that has a complete nine-band store "
+                f"under {req.main_root} (the cheap one: escalda --years 2023 --bands "
+                f"{','.join(req.bands)}), which must be accepted as '{NINE_BAND_HOW}'"
+                + (f" (the gate of {layout} FAILED on the layout: the nine-band offsets do not hold "
+                   f"for these bands; each site needs a subset year its reference covers first)"
+                   if layout else "")
+                + "; --without-light-gate buys this year anyway (recorded)")
+    return None
+
+
+def extraction_gate_path(site, ctx=None):
+    """``<EXTRACTION_GATE_DIR>/<site>_gate_2023.json`` (``ctx.extraction_gate_dir``,
+    relative to the repository root unless absolute)."""
+    d = Path(getattr(ctx, "extraction_gate_dir", None) or EXTRACTION_GATE_DIR)
+    return (d if d.is_absolute() else ROOT / d) / f"{site}_gate_2023.json"
+
+
+def extraction_gate_status(site, ctx=None):
+    """``(ok, summary)`` of the converter's 2023 extraction gate of ``site``
+    (experiments/light_to_extraction.py ``gate``): ok when it passed, or when
+    it failed on extraction values only (the same dates, screening and static
+    mask) and the user's acceptance is recorded in it (``accepted``)."""
+    p = extraction_gate_path(site, ctx)
+    if not p.is_file():
+        return False, {"path": str(p), "present": False}
+    try:
+        g = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return False, {"path": str(p), "present": True, "readable": False, "why": str(exc)}
+    only_values = bool((g.get("dates") or {}).get("equal")
+                       and (g.get("screening") or {}).get("equal_record_dates")
+                       and (g.get("extraction") or {}).get("keep_px_in_static_mask") == 0)
+    accepted = g.get("accepted") if isinstance(g.get("accepted"), dict) else None
+    dn = g.get("legacy_dn") or {}
+    s = {"path": str(p), "present": True, "ok": g.get("ok"), "strict_ok": g.get("strict_ok"),
+         "only_extraction_differences": only_values, "accepted_by": (accepted or {}).get("by"),
+         "store": (g.get("store") or {}).get("path"), "utc": g.get("utc"),
+         "legacy_dn_differ_pct": dn.get("differ_pct_of_valid_both"),
+         "decision": g.get("decision")}
+    return bool(g.get("ok") is True or (only_values and accepted)), s
+
+
+def extraction_gate_problem(req, ctx=None):
+    """Why a band-subset year without a nine-band store of its own, at an
+    EXTRACTION_GATE_SITES site, may not be bought yet (None when it may): the
+    converter's free 2023 extraction gate of the site has not passed and the
+    user has not accepted its extraction-value differences
+    (``extraction_gate_status``), unless --without-extraction-gate
+    (recorded). Credits are spent on a site only once its 2023 extraction is
+    shown reproducible (the Ems 9-band 2023 store differs from the legacy cube
+    on 0.74 % of its valid B03 / B08 pixel-dates)."""
+    if (not req.is_subset or req.site not in EXTRACTION_GATE_SITES
+            or getattr(ctx, "without_extraction_gate", False)):
+        return None
+    ok, s = extraction_gate_status(req.site, ctx)
+    if ok:
+        return None
+    if not s["present"] or s.get("readable") is False:
+        what = f"no readable 2023 extraction gate of {req.site} at {s['path']}"
+    elif s["only_extraction_differences"]:
+        what = (f"the 2023 extraction gate of {req.site} ({s['path']}) FAILED on extraction values "
+                f"only (B03 / B08 vs the legacy cube: {s.get('legacy_dn_differ_pct')} % of the valid "
+                f"pixel-dates differ): accepting them is the user's decision, `python -X utf8 -m "
+                f"experiments.light_to_extraction gate {req.site} --accept-gate-differences` "
+                f"(recorded)")
+    else:
+        what = (f"the 2023 extraction gate of {req.site} ({s['path']}) FAILED on the dates, the "
+                f"screening or the static mask: no flag accepts it")
+    return (f"{what}. Run the free steps first (`light_to_extraction reference {req.site}`, then "
+            f"`gate {req.site}`); --without-extraction-gate buys this year anyway (recorded)")
+
+
+def decide(req, rep):
+    """``(accepted, how, why)`` of a written main store: the rule
+    (``verification_decision``); a band subset whose year has a complete
+    nine-band store is accepted as NINE_BAND_HOW when its light-path gate
+    passed (``rep['nine_band_store']``, ``nine_band_gate``: it holds what an
+    accepted store holds), and otherwise decided by the rule, the gate's
+    failure said."""
+    ok, how, why = verification_decision(rep)
+    gate = rep.get("nine_band_store") if req.is_subset else None
+    if not gate:
+        return ok, how, why
+    if gate.get("passed"):
+        return True, NINE_BAND_HOW, (f"the light-path gate passed against {gate.get('store')} "
+                                     f"({gate.get('why')}); against the reference: {how} ({why})")
+    return ok, how, f"{why}; the LIGHT-PATH GATE FAILED ({gate.get('why')})"
+
+
+def band_weight(bands, native=False):
+    """The input weight of ``bands`` in a cost estimate: their number (each
+    counted on the 10 m output grid), or (``native``) the 20 m bands at their
+    native resolution, a quarter of a 10 m band each (nine: 5.25)."""
+    if not native:
+        return float(len(bands))
+    return float(sum((RESOLUTION_M / float(zc.NATIVE_RES_M.get(b, RESOLUTION_M))) ** 2
+                     for b in bands))
+
+
+def subset_bytes_per_px_date(bands):
+    """Bytes on disk per pixel and date of ``bands`` (BYTES_PER_BAND_PIXEL_DATE)."""
+    return float(sum(BYTES_PER_BAND_PIXEL_DATE.get(b, 2.0) for b in bands))
+
+
+def _input_mpx(usage):
+    """A job's measured input in megapixels (``usage.input_pixel``: a value
+    with its unit, mega-pixel on the CDSE backend), or None."""
+    v = usage.get("input_pixel") if isinstance(usage, dict) else None
+    unit = "mega-pixel"
+    if isinstance(v, dict):
+        unit, v = str(v.get("unit") or unit).lower(), v.get("value")
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v / 1e6 if unit in ("pixel", "pixels", "px") else v
+
+
+def measured_costs(site, root):
+    """The measured jobs of ``site`` under ``root``: per complete main store
+    whose sidecar ``<year>.job.json`` holds the job's ``costs``, ``{"site",
+    "year", "credits", "dates", "delivered_shape" (the store's
+    ``delivered_shape_px``, else its frame), "bands", "input_mpx" (None
+    unless the job recorded ``usage.input_pixel``), "job", "source"}``."""
+    out = []
+    if root is None:
+        return out
+    for year in zc.list_years(site, root):
+        side = zc.sidecar_path(site, year, "job.json", root)
+        try:
+            job = json.loads(Path(side).read_text(encoding="utf-8")).get("job") or {}
+            credits = float(job.get("costs"))
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+        if not credits > 0:
+            continue
+        meta = (zc._consolidated(zc.store_path(site, year, root)) or {}).get("metadata", {})
+        attrs = meta.get(".zattrs", {})
+        bands = _json_attr(attrs.get("bands")) or list(BANDS)
+        tyx = (meta.get(f"{bands[0]}/.zarray") or {}).get("shape") or []
+        shape = _json_attr(attrs.get("delivered_shape_px"))
+        if not (isinstance(shape, list) and len(shape) == 2):
+            shape = tyx[1:3]
+        if len(tyx) != 3 or len(shape) != 2:
+            continue
+        out.append({"site": site, "year": int(year), "credits": credits, "dates": int(tyx[0]),
+                    "delivered_shape": [int(shape[0]), int(shape[1])], "bands": list(bands),
+                    "input_mpx": _input_mpx(job.get("usage")), "job": job.get("id"),
+                    "source": str(side)})
+    return out
+
+
+def cost_calibration(req, roots):
+    """The jobs whose cost per megapixel estimates ``req``'s: ``(entries,
+    kind)``. The site's measured jobs (``measured_costs`` under ``roots``) of
+    the same bands, else of other bands (the nine), else QUOTED_COSTS of the
+    site, else QUOTED_COSTS of every site (a site never measured)."""
+    measured = [e for r in roots if r is not None for e in measured_costs(req.site, r)]
+    same = [e for e in measured if list(e["bands"]) == list(req.bands)]
+    if same:
+        return same, "measured on the site's jobs of the same bands"
+    if measured:
+        return measured, "measured on the site's jobs of other bands"
+    quoted = [dict(e, bands=list(BANDS), input_mpx=None, source="QUOTED_COSTS")
+              for e in QUOTED_COSTS if e["site"] == req.site]
+    if quoted:
+        return quoted, "quoted for the site's nine-band jobs (QUOTED_COSTS)"
+    return ([dict(e, bands=list(BANDS), input_mpx=None, source="QUOTED_COSTS")
+             for e in QUOTED_COSTS],
+            f"no job of {req.site} measured or quoted: the other sites' (QUOTED_COSTS)")
+
+
+def _credits_per_px_date(e):
+    """Credits per delivered pixel-date of a calibration entry (0 when empty)."""
+    pe = float(e["delivered_shape"][0]) * float(e["delivered_shape"][1]) * float(e["dates"])
+    return e["credits"] / pe if pe > 0 else 0.0
+
+
+def measured_share(bands, root, main_root):
+    """The cost of a job of ``bands`` against a nine-band job, MEASURED where a
+    site has both: its jobs of ``bands`` (``measured_costs`` under ``root``)
+    and its nine-band jobs (under ``main_root``), the ratio of their median
+    credits per delivered pixel-date. ``[(site, share)]`` (empty when no site
+    has both; e.g. the Westerschelde 2023 job of the light-path gate gives
+    the share the other sites' estimates then use)."""
+    out = []
+    if root is None or main_root is None:
+        return out
+    for site in SITES:
+        mine = [e for e in measured_costs(site, root) if list(e["bands"]) == list(bands)]
+        nine = [e for e in measured_costs(site, main_root) if list(e["bands"]) == list(BANDS)]
+        if mine and nine:
+            a = float(np.median([_credits_per_px_date(e) for e in mine]))
+            b = float(np.median([_credits_per_px_date(e) for e in nine]))
+            if a > 0 and b > 0:
+                out.append((site, round(a / b, 4)))
+    return out
+
+
+def credit_estimate(bands, px, n_dates, entries, share=None):
+    """The credits of a job of ``bands`` delivering ``px`` pixels on
+    ``n_dates`` dates, at the median cost per input megapixel of the
+    calibration ``entries`` (``cost_calibration``), the input counted two
+    ways: every band on the 10 m output grid (``credits_grid``), the 20 m
+    bands at their native resolution (``credits_native``); ``credits_lo`` /
+    ``credits_hi`` the two (one number when the calibration has the same
+    bands). ``best``: with a calibration of other bands (the nine), the
+    ``share`` of their cost MEASURED at another site (``measured_share``)
+    when given, else the way a calibration job's measured input
+    (``usage.input_pixel``, per pixel-date of its delivery: ``measured_k``)
+    points to, within COST_CONVENTION_TOL; else None."""
+    in_g = px * n_dates * band_weight(bands) / 1e6
+    in_n = px * n_dates * band_weight(bands, native=True) / 1e6
+    out = {"input_grid_mpx": in_g, "input_native_mpx": in_n, "credits_lo": None,
+           "credits_hi": None, "credits_grid": None, "credits_native": None, "best": None,
+           "convention": None, "rate_grid": None, "rate_native": None, "measured_k": None}
+    rg, rn, ks = [], [], []
+    for e in entries:
+        pe = float(e["delivered_shape"][0]) * float(e["delivered_shape"][1]) * float(e["dates"])
+        if pe <= 0:
+            continue
+        rg.append(e["credits"] / (pe * band_weight(e["bands"]) / 1e6))
+        rn.append(e["credits"] / (pe * band_weight(e["bands"], native=True) / 1e6))
+        if e.get("input_mpx"):
+            ks.append((e["input_mpx"] / (pe / 1e6), band_weight(e["bands"]),
+                       band_weight(e["bands"], native=True)))
+    if not rg:
+        return out
+    rate_g, rate_n = float(np.median(rg)), float(np.median(rn))
+    cg, cn = rate_g * in_g, rate_n * in_n
+    out.update(rate_grid=rate_g, rate_native=rate_n, credits_grid=cg, credits_native=cn,
+               credits_lo=min(cg, cn), credits_hi=max(cg, cn))
+    other = [e for e in entries if list(e["bands"]) != list(bands)]
+    if share is not None and other:
+        rate = float(np.median([_credits_per_px_date(e) for e in other]))
+        out.update(best=rate * px * n_dates * float(share), share=float(share),
+                   convention=f"the cost share {float(share):.3f} of the nine bands measured on "
+                              f"a job of these bands")
+        return out
+    if ks:
+        k = float(np.median([v[0] for v in ks]))
+        wg, wn = ks[0][1], ks[0][2]
+        out["measured_k"] = round(k, 4)
+        if abs(k - wg) <= COST_CONVENTION_TOL * wg:
+            out.update(convention="every band on the 10 m grid", best=cg)
+        elif abs(k - wn) <= COST_CONVENTION_TOL * wn:
+            out.update(convention="the 20 m bands at their native resolution", best=cn)
+    return out
+
+
+def expected_delivered_shape(req, frame_shape):
+    """``([rows, cols], source)``: the (padded) arrays a job of ``req`` should
+    deliver, for its cost: the shape the site's stores of the same extent
+    recorded (``recorded_delivered_shapes``: the store root, else the
+    nine-band root; the most frequent), else QUOTED_COSTS's, else the frame."""
+    for r in (req.root, req.main_root):
+        shapes = recorded_delivered_shapes(req, r) if r is not None else {}
+        if shapes:
+            s = max(shapes, key=lambda k: len(shapes[k]))
+            return [int(s[0]), int(s[1])], f"as delivered to the {r} stores {sorted(shapes[s])}"
+    quoted = [e for e in QUOTED_COSTS if e["site"] == req.site]
+    if quoted:
+        return ([int(v) for v in quoted[0]["delivered_shape"]],
+                "as delivered to the site's nine-band jobs (QUOTED_COSTS)")
+    return [int(v) for v in frame_shape], "the frame: no delivered shape recorded"
+
+
+def _calibration_line(entries, kind):
+    return (kind + ": " + "; ".join(
+        f"{e['site']} {e.get('year') or '?'} {e['credits']:g} credits, {e['dates']} dates x "
+        f"{e['delivered_shape'][0]} x {e['delivered_shape'][1]} px x {len(e['bands'])} bands"
+        + (f", input_pixel {e['input_mpx']:.0f} Mpx" if e.get("input_mpx") else "")
+        for e in entries[:6]) + (" ..." if len(entries) > 6 else ""))
+
+
+def subset_dry_run(req, ctx, frame_shape, n_dates, say):
+    """The dry run of a band-subset request (no network): the registration it
+    will meet (the reference netCDF covering the year; else the registered
+    stores of the site under the store root and the nine-band root that will
+    check its offset), the light-path gate, the expected input megapixels and
+    the credits (``credit_estimate``). Returns the estimate."""
+    cfg = SITE_CONFIG[req.site]
+    ref = ROOT / cfg["reference"]
+    p0, p1 = cfg["reference_period"]
+    roots = [Path(req.root)] + ([Path(req.main_root)] if req.main_root is not None else [])
+    if ref.is_file() and req.start < p1 and req.end > p0:
+        say(f"registration: against the reference netCDF {ref.name}, which covers the year (as "
+            f"the nine bands)")
+    else:
+        why = (f"{ref.name} is not on this machine" if not ref.is_file() else
+               f"{ref.name} covers [{p0}, {p1})")
+        ex = getattr(ctx, "offset_px", None)
+        grid = request_grid(req)
+        found = []
+        for r in roots if grid is not None else []:
+            found += [c for c in sibling_candidates(req, grid, (0, 0), "", r,
+                                                    same_request=False)[0]]
+        say(f"registration: no reference for [{req.start}, {req.end}) ({why}): "
+            + (f"--offset-px {ex[0]},{ex[1]}" if ex else
+               "the offset of a registered store delivered in the same array shape")
+            + ", taken only when the median composites of a registered store CONFIRM it on a "
+              "delivery of that store's array shape")
+        for c in found:
+            say(f"  registered store {c['path']}: offset {c['offset']}, delivered "
+                f"{c['delivered_shape']}")
+        offs = sorted({tuple(c["offset"]) for c in found})
+        if not found:
+            say(f"  NO registered store of {req.site} with this extent and grid under "
+                f"{[str(r) for r in roots]}: the year would be refused")
+        elif ex and tuple(ex) not in offs:
+            say(f"  WARNING: --offset-px {ex[0]},{ex[1]} is not the offset of the site's "
+                f"registered stores {offs}")
+    if req.main_root is not None and zc.is_complete(zc.store_path(req.site, req.year,
+                                                                  req.main_root)):
+        say(f"light-path gate: after writing, against the complete nine-band store "
+            f"{zc.store_path(req.site, req.year, req.main_root)} ({' '.join(req.bands)} bitwise)")
+    else:
+        passed = light_gate_passed(req.root, req.bands)
+        common = light_gate_common_dates(req.root, req.bands)
+        if passed:
+            say(f"light-path gate: passed by {passed}: this year may be bought")
+        elif common:
+            say(f"light-path gate: failed on the dates only by {common} (every common date "
+                f"bitwise, the same layout): this year may be bought (recorded)")
+        elif getattr(ctx, "without_light_gate", False):
+            say("light-path gate: NOT passed yet by any store of these bands; "
+                "--without-light-gate: this year would be bought anyway (recorded)")
+        else:
+            say(f"light-path gate: NOT passed yet by any store of {' '.join(req.bands)} under "
+                f"{req.root}: this year would be REFUSED before any job (the gate year first, "
+                f"e.g. escalda 2023; or --without-light-gate)")
+        if req.site in EXTRACTION_GATE_SITES:
+            ok, s = extraction_gate_status(req.site, ctx)
+            if ok:
+                say(f"extraction gate (experiments.light_to_extraction): {s['path']} "
+                    + ("passed" if s.get("strict_ok") else f"accepted by the user ({s['accepted_by']})")
+                    + ": this year may be bought")
+            elif getattr(ctx, "without_extraction_gate", False):
+                say(f"extraction gate: not passed ({s['path']}); --without-extraction-gate: this "
+                    f"year would be bought anyway (recorded)")
+            else:
+                say(f"extraction gate: NOT passed ({extraction_gate_problem(req, ctx)}): this year "
+                    f"would be REFUSED before any job")
+    shape, ssrc = expected_delivered_shape(req, frame_shape)
+    entries, kind = cost_calibration(req, roots)
+    shares = measured_share(req.bands, req.root, req.main_root)
+    share = float(np.median([s for _, s in shares])) if shares else None
+    est = credit_estimate(req.bands, shape[0] * shape[1], n_dates, entries, share=share)
+    est["delivered_shape"] = shape
+    say(f"input: {shape[0]} x {shape[1]} px ({ssrc}) x ~{n_dates:.0f} dates x "
+        f"{len(req.bands)} bands = ~{est['input_grid_mpx']:,.0f} Mpx counted on the 10 m grid "
+        f"(~{est['input_native_mpx']:,.0f} Mpx with the 20 m bands at their native resolution)")
+    if est["credits_lo"] is None:
+        say("credits: no calibration (no measured or quoted job)")
+        return est
+    rng = (f"~{est['credits_lo']:,.0f}" if round(est["credits_lo"]) == round(est["credits_hi"])
+           else f"~{est['credits_lo']:,.0f}-{est['credits_hi']:,.0f}")
+    if est.get("share") is not None:
+        best = (f"; best ~{est['best']:,.0f}: {est['convention']} ("
+                + ", ".join(f"{s} {v}" for s, v in shares) + ")")
+    elif est["best"] is not None:
+        best = (f"; best ~{est['best']:,.0f}: the calibration jobs' measured input is "
+                f"{est['measured_k']} Mpx per Mpx-date, {est['convention']}")
+    elif est["measured_k"]:
+        best = (f"; measured input of the calibration jobs {est['measured_k']} Mpx per Mpx-date, "
+                f"neither way")
+    else:
+        best = ""
+    say(f"credits: {rng} (cost per Mpx {est['rate_grid']:.4f} on the 10 m grid / "
+        f"{est['rate_native']:.4f} native{best}; plus any fixed cost per job)")
+    say(f"  calibration {_calibration_line(entries, kind)}")
+    return est
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  --renormalise: a store rebuilt from its kept raw delivery (no network, no job)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -6786,6 +7973,10 @@ def renormalise_request(ctx, req, log, dry_run=False):
     if req.is_angles:
         log("--renormalise: the angles stores are not registered (no B08): skipped")
         return {"status": "skipped", "why": "angles"}
+    if req.is_subset:               # a band subset never writes into a root of other bands
+        why = subset_root_problem(req.root, req.bands, req.main_root)
+        if why:
+            raise FormatError(f"{req.tag}: {why}; nothing done")
     part, title, led, cur, info, meta, graph, gsrc = _raw_of(ctx, req)
     log(f"--renormalise{' --dry-run' if dry_run else ''}: rebuilding {req.store.name} from the raw "
         f"delivery of job {info.get('id')} in {part} (no network, no job)")
@@ -6801,7 +7992,8 @@ def renormalise_request(ctx, req, log, dry_run=False):
         log(f"DRY RUN: {reuse_why}: it would be verified again (not rewritten) and completed if "
             f"accepted; nothing done")
         return {"status": "dry run", "would": "verify the pending store again"}
-    ref = reference_grid(req.site, root=req.root, log=log)
+    ref = reference_grid(req.site, root=req.main_root if req.is_subset and req.main_root is not None
+                         else req.root, log=log)
     plan = registration_plan(req, ctx, ref)
     kw = dict(job_info=info, results_meta=meta, ref_grid=ref, allow_offset=ctx.allow_offset,
               nodata=ctx.nodata, allow_padding=ctx.allow_padding,
@@ -6861,7 +8053,7 @@ def renormalise_request(ctx, req, log, dry_run=False):
                f"{aside.name}" if aside else ""))
         write_store(ds, store_fills(interp, req.spec), req.store, attrs, log=log,
                     groups=interp.groups, chunks=req.spec.chunks, format_id=req.spec.format_id,
-                    complete=False, supersede_to=aside)
+                    complete=False, supersede_to=aside, **_subset_write_kw(req))
         if aside is not None and aside.exists():
             note["superseded_store"] = str(aside)
         rep = verify_and_complete(ctx, req, log)
@@ -6950,6 +8142,7 @@ def dry_run(reqs, ctx):
     shown, guarded = set(), set()
     refs, angle_refs = {}, {}
     ext_seen = {}
+    credits = {}                    # band subsets: site -> [lo, hi, best-or-None, site-years]
 
     def say(m):
         print(f"   {m}", flush=True)
@@ -6995,7 +8188,7 @@ def dry_run(reqs, ctx):
             refs[req.site] = None if req.test else reference_summary(req.site)
         if (req.site, spec.name) not in guarded:
             guarded.add((req.site, spec.name))
-            ref_root = req.root.parent if req.test else req.root
+            ref_root = _grid_root(req)
             try:
                 if angles:
                     angle_refs[req.site] = angles_reference_grid(req.site, root=ref_root, log=say)
@@ -7028,7 +8221,8 @@ def dry_run(reqs, ctx):
             dsrc = "typical count for the year"
         px = shape[0] * shape[1]
         raw = px * n * spec.raw_itemsize * len(req.bands)
-        disk = px * n * spec.disk_per_px_date
+        bpd = subset_bytes_per_px_date(req.bands) if req.is_subset else spec.disk_per_px_date
+        disk = px * n * bpd
         total = totals.setdefault(spec.name, {"px_dates": 0.0, "raw": 0.0, "disk": 0.0,
                                               "biggest_raw": 0.0, "todo": 0, "of": 0})
         total["of"] += 1
@@ -7038,6 +8232,8 @@ def dry_run(reqs, ctx):
             total["disk"] += disk
             total["biggest_raw"] = max(total["biggest_raw"], raw)
             total["todo"] += 1
+            if req.is_subset:               # a band subset KEEPS its raw delivery (raw_after_store)
+                total["raw_kept"] = total.get("raw_kept", 0.0) + raw
         if angles:
             print(f"   grid {shape[0]} x {shape[1]} cells of {spec.resolution} m ({gsrc}); "
                   f"~{n:.0f} dates ({dsrc})", flush=True)
@@ -7046,8 +8242,22 @@ def dry_run(reqs, ctx):
                   f"{spec.disk_per_px_date} B per cell-date)", flush=True)
             continue
         print(f"   grid {shape[0]} x {shape[1]} px ({gsrc}); ~{n:.0f} dates ({dsrc})", flush=True)
-        print(f"   size: {px * n / 1e9:.3f} G pixel-dates; {_size(raw)} as int16, ~{_size(disk)} "
-              f"on disk (estimate {BYTES_PER_PIXEL_DATE} B per pixel-date)", flush=True)
+        if not req.is_subset:
+            print(f"   size: {px * n / 1e9:.3f} G pixel-dates; {_size(raw)} as int16, "
+                  f"~{_size(disk)} on disk (estimate {BYTES_PER_PIXEL_DATE} B per pixel-date)",
+                  flush=True)
+            continue
+        print(f"   size: {px * n / 1e9:.3f} G pixel-dates; {_size(raw)} as int16 "
+              f"({len(req.bands)} bands), ~{_size(disk)} on disk (estimate {bpd:.2f} B per "
+              f"pixel-date for {' '.join(req.bands)})", flush=True)
+        est = subset_dry_run(req, ctx, shape, n, say)
+        if not complete and est.get("credits_lo") is not None:
+            c = credits.setdefault(req.site, [0.0, 0.0, 0.0, 0, 0])
+            c[0] += est["credits_lo"]
+            c[1] += est["credits_hi"]
+            c[2] += est["best"] if est.get("best") is not None else 0.0
+            c[3] += 1 if est.get("best") is not None else 0
+            c[4] += 1
     root = Path(reqs[0].root) if reqs else zc.cubes_root()
     probe = root
     while not probe.exists() and probe.parent != probe:
@@ -7072,7 +8282,16 @@ def dry_run(reqs, ctx):
                                       for r in refused}))
                   + " (or pass --allow-snapped-frame)", flush=True)
     for name, t in totals.items():
-        if name == MAIN.name:
+        if name == MAIN.name and t.get("raw_kept"):     # band subsets: the raw deliveries stay
+            need = t["disk"] + t["raw_kept"]
+            print(f"TOTAL main: {t['todo']} store(s) to make (of {t['of']}): "
+                  f"{t['px_dates'] / 1e9:.2f} G pixel-dates, {_size(t['raw'])} as int16, "
+                  f"~{_size(t['disk'])} on disk; a band subset KEEPS its raw download (zip + "
+                  f"extracted, ~{_size(t['raw_kept'])} for these site-years, cumulative): ~"
+                  f"{_size(need)} in all" + ("" if need < free else
+                                             f"; WARNING: more than the {_size(free)} free"),
+                  flush=True)
+        elif name == MAIN.name:
             print(f"TOTAL main: {t['todo']} store(s) to make (of {t['of']}): "
                   f"{t['px_dates'] / 1e9:.2f} G pixel-dates, {_size(t['raw'])} as int16, "
                   f"~{_size(t['disk'])} on disk; while a year is processed its raw download also "
@@ -7083,6 +8302,18 @@ def dry_run(reqs, ctx):
                   f"{t['px_dates'] / 1e6:.3f} M cell-dates, {_size_small(t['raw'])} as "
                   f"{PRODUCTS[name].store_dtype}, ~{_size_small(t['disk'])} on disk; one small "
                   f"job each", flush=True)
+    if credits:                     # band subsets only
+        lo, hi = sum(c[0] for c in credits.values()), sum(c[1] for c in credits.values())
+        n = sum(c[4] for c in credits.values())
+        print(f"TOTAL credits of the band-subset stores to make: ~{lo:,.0f}-{hi:,.0f} for {n} "
+              f"site-year(s), plus any fixed cost per job (per site: "
+              + "; ".join(f"{s} ~{c[0]:,.0f}-{c[1]:,.0f} ({c[4]})"
+                          + (f", best ~{c[2]:,.0f} on {c[3]}" if c[3] else "")
+                          for s, c in credits.items())
+              + "); an account holds ~10,000 a month", flush=True)
+    if getattr(ctx, "expect_account", None):
+        print(f"--expect-account {ctx.expect_account}: not checked (a dry run makes no network call)",
+              flush=True)
     print(f"free under {probe}: {_size(free)}", flush=True)
     return 0
 
@@ -7103,7 +8334,7 @@ def verify_only(reqs):
         if old:
             log(old)
         rep = verify_request(req, log)
-        ok, how, why = verification_decision(rep)
+        ok, how, why = decide(req, rep)
         was = _json_attr(zc.store_attrs(req.store).get("verification"))
         flagged = (not ok and isinstance(was, dict)
                    and was.get("how") == "accepted with --accept-differences")
@@ -7157,12 +8388,44 @@ def parse_args(argv=None):
                          "instead of the UTM extent on the reference lattice: for diagnosis only "
                          "(its grid is off the lattice and is refused unless --allow-grid-offset); "
                          "with --test it works under <root>/_test_lonlat")
-    ap.add_argument("--products", default=",".join(PRODUCTS),
+    ap.add_argument("--products", default=None,
                     help="the stores to make, comma-separated: main (<year>.zarr: the nine bands "
                          f"at {RESOLUTION_M} m, int16) and/or angles (<year>.angles.zarr: sun and "
                          f"view angles on {ANGLES_RES_M} m cells, float32 degrees; one small "
-                         "separate job). Default: both. A complete store is skipped, so a year "
-                         "whose main store exists only fetches its angles")
+                         "separate job). Default: both (with --bands: main, the only one). A "
+                         "complete store is skipped, so a year whose main store exists only "
+                         "fetches its angles")
+    ap.add_argument("--bands", default=None, metavar="B03,B08,SCL",
+                    help="opt-in BAND SUBSET of the main product (default: the nine bands): any "
+                         f"of {' '.join(BANDS)} holding {' '.join(SUBSET_REQUIRED)}; the same "
+                         "process, extent, window and registration with fewer bands (fewer "
+                         "credits), its own job title, its stores under --store-root, never "
+                         "beside the nine-band ones (whose --root is then only read: frame, "
+                         "registered stores that check an offset, the light-path gate against "
+                         "the same year's nine-band store, the cost calibration of --dry-run). "
+                         "Not with --test, --odd-window, --lonlat-extent or the angles")
+    ap.add_argument("--store-root", default=None,
+                    help=f"with --bands: the root of the band-subset stores (default "
+                         f"<repo>/{SUBSET_ROOT}); refused when it is the nine-band --root, lies "
+                         f"inside it or holds it, or holds a store of another band set")
+    ap.add_argument("--without-light-gate", action="store_true",
+                    help="with --bands: buy a year that has no nine-band store of its own although "
+                         "no store of these bands has passed the light-path gate yet (default: "
+                         "refused before any job; the cheap gate year comes first, e.g. escalda "
+                         "2023); recorded in the store")
+    ap.add_argument("--extraction-gate-dir", default=None,
+                    help=f"with --bands: where experiments.light_to_extraction writes its 2023 "
+                         f"extraction gates <site>_gate_2023.json (default {EXTRACTION_GATE_DIR}); a "
+                         f"year without a nine-band store of its own at {', '.join(EXTRACTION_GATE_SITES)} "
+                         "is bought only once that gate passed or the user accepted it there")
+    ap.add_argument("--without-extraction-gate", action="store_true",
+                    help="with --bands: buy such a year although the site's 2023 extraction gate has "
+                         "not passed nor been accepted (recorded in the store)")
+    ap.add_argument("--expect-account", default=None, metavar="E-MAIL",
+                    help="before any job is submitted or looked up, describe the openEO account "
+                         "(connection.describe_account()), print its e-mail and stop if it is not this "
+                         "one (the refresh token in use is chosen by OPENEO_CONFIG_HOME); default: not "
+                         "checked")
     ap.add_argument("--login", action="store_true",
                     help="only authenticate with the Copernicus Data Space (interactive, once)")
     ap.add_argument("--dry-run", action="store_true",
@@ -7241,8 +8504,35 @@ def parse_args(argv=None):
         a.years = parse_years(a.years) if a.years else list(DEFAULT_YEARS)
     except ValueError as exc:
         ap.error(str(exc))
+    if a.bands is not None:
+        try:
+            a.bands = parse_bands(a.bands)
+        except ValueError as exc:
+            ap.error(f"--bands: {exc}")
+        if a.bands == tuple(BANDS):          # the nine bands: the default product
+            a.bands = None
+    if (a.store_root is not None or a.without_light_gate) and a.bands is None:
+        ap.error("--store-root and --without-light-gate concern a band subset's stores: they go "
+                 "with --bands (a subset of the nine bands)")
+    if (a.extraction_gate_dir is not None or a.without_extraction_gate) and a.bands is None:
+        ap.error("--extraction-gate-dir and --without-extraction-gate concern a band subset's "
+                 "purchases: they go with --bands")
+    if a.expect_account is not None and "@" not in str(a.expect_account):
+        ap.error(f"--expect-account {a.expect_account!r}: an e-mail address expected")
+    if a.bands is not None:
+        if a.test or a.odd_window or a.lonlat_extent:
+            ap.error("--bands (a band subset of the production stores) goes without --test, "
+                     "--odd-window and --lonlat-extent")
+        try:
+            given = parse_products(a.products) if a.products is not None else [MAIN.name]
+        except ValueError:
+            given = [MAIN.name]                  # reported below as for the nine bands
+        if given != [MAIN.name]:
+            ap.error("--bands is a subset of the main product: --products main (or nothing); "
+                     "the angles do not depend on the bands")
     try:
-        a.products = parse_products(a.products)
+        a.products = parse_products(a.products if a.products is not None else
+                                    MAIN.name if a.bands is not None else ",".join(PRODUCTS))
     except ValueError as exc:
         ap.error(f"--products: {exc}")
     for opt in ("job_options", "format_options"):
@@ -7277,17 +8567,39 @@ def main(argv=None):
     if a.login:
         import pyintertidal as pit
 
-        pit.scenes.connect(interactive=True)
+        conn = pit.scenes.connect(interactive=True)
         print("authenticated; the refresh token is cached for unattended downloads", flush=True)
+        if getattr(a, "expect_account", None):
+            try:
+                check_account(conn, a.expect_account)
+            except AccountMismatch as exc:
+                print(f"REFUSED: {exc}", flush=True)
+                return 2
         return 0
     root = zc.cubes_root(a.root)
     ctx = Context(a)
+    # --bands: a band subset; its stores under --store-root, the nine-band root only read
+    bands = getattr(a, "bands", None)
+    store_root = zc.cubes_root(getattr(a, "store_root", None) or SUBSET_ROOT) if bands else None
+    sub_kw = {"bands": bands, "main_root": root} if bands else {}
+    if bands:
+        print(f"band subset {' '.join(bands)}: stores under {store_root}; the nine-band stores "
+              f"under {root} are only read", flush=True)
+        why = subset_root_problem(store_root, bands, root)
+        if why:
+            print(f"REFUSED, nothing started (no job, no download): {why}", flush=True)
+            return 2
+    else:                           # the nine bands never go into a root of band subsets
+        why = nine_band_root_problem(root)
+        if why:
+            print(f"REFUSED, nothing started (no job, no download): {why}", flush=True)
+            return 2
     # --renormalise: the main stores only (the angles carry no B08 to register), so the angles
     # requests (and their reference grids) are never built
     products = [MAIN.name] if a.renormalise else a.products
     reqs = (test_requests(root, products, lonlat=a.lonlat_extent, odd=a.odd_window) if a.test
-            else year_requests(a.sites, a.years, root, products, lonlat=a.lonlat_extent,
-                               extents=not a.verify_only))
+            else year_requests(a.sites, a.years, store_root or root, products,
+                               lonlat=a.lonlat_extent, extents=not a.verify_only, **sub_kw))
     if a.renormalise:
         return renormalise_run(reqs, ctx, dry_run=a.dry_run)
     if a.dry_run:
@@ -7300,7 +8612,13 @@ def main(argv=None):
         for m in refused:
             print(f"  {m}", flush=True)
         return 2
-    ensure_gitignore(root)
+    if ctx.expect_account:          # the account first: before any job is submitted or looked up
+        try:
+            ctx.connection()
+        except Exception as exc:  # noqa: BLE001 - AccountMismatch, or no connection to check it on
+            print(f"REFUSED, nothing started (no job, no download): {exc}", flush=True)
+            return 2
+    ensure_gitignore(store_root or root)
     results, failed = {}, {}
     by_site = {}
     for r in reqs:
@@ -7336,6 +8654,8 @@ def main(argv=None):
               "<year>.angles.part/job.json for the angles).", flush=True)
         return 130
     print("\nSUMMARY", flush=True)
+    if ctx.expect_account:
+        print(f"  openEO account: {(ctx.account or {}).get('email')} (--expect-account)", flush=True)
     for tag, r in results.items():
         print(f"  {tag}: {r}", flush=True)
     for tag, e in failed.items():
