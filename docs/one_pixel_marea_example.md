@@ -145,27 +145,27 @@ The pixel model is simple. The pixel has a mean elevation $z$ and an
 internal relief $\sigma$ (inside 10 m there is not one height but many).
 With the water well above $z$ it reads wet; well below, dry; near $z$,
 sometimes one and sometimes the other. The probability of reading wet when
-the water stands at level $h$ is the cumulative bell $\Phi\big((h -
-z)/\sigma\big)$.
+the water stands at level $h$ is the cumulative bell
+$\Phi\big((h - z)/\sigma\big)$.
 
 With that, for a candidate clock $\tau$ and a candidate pair $(z, \sigma)$,
 five operations are done visit by visit:
 
 1. **The level under the clock.** Read the boundary $\tau$ minutes before
    the overpass:
-   $$h_t(\tau) = h_{\mathrm{EOT20}}\!\left(t_{\mathrm{overpass}} - \tau\right).$$
+   $$h_t(\tau) = h_{\mathrm{EOT20}}\left(t_{\mathrm{overpass}} - \tau\right).$$
 2. **How much water stood over the pixel**, in units of its relief:
    $$u_t = \frac{h_t(\tau) - z}{\sigma}.$$
    Positive, water above the mean height; negative, below; $|u_t| \gg 1$,
    the model is sure of what it should see.
 3. **The probability of wet:**
-   $$P_t = \Phi(u_t) = \frac{1}{\sqrt{2\pi}}\int_{-\infty}^{u_t} e^{-x^2/2}\,\mathrm{d}x,$$
+   $$P_t = \Phi(u_t) = \frac{1}{\sqrt{2\pi}}\int_{-\infty}^{u_t} e^{-x^2/2}\mathrm{d}x,$$
    clipped to $[10^{-6},\ 1 - 10^{-6}]$ so that one impossible visit cannot
    send the sum to $-\infty$ (the product clips at $10^{-4}$).
 4. **The cost of the visit:**
-   $$\ell_t = w_t \ln P_t + (1 - w_t)\ln(1 - P_t)
-   = \begin{cases}\ln P_t & \text{if it came out wet},\\ \ln(1 - P_t) & \text{if it came out dry.}\end{cases}$$
-   Never positive: close to 0 when the model was confidently right, very
+   $$\ell_t = w_t \ln P_t + (1 - w_t)\ln(1 - P_t),$$
+   that is, $\ln P_t$ if it came out wet and $\ln(1 - P_t)$ if it came out
+   dry. Never positive: close to 0 when the model was confidently right, very
    negative when it was confidently wrong.
 5. **The sum over the 199 visits:**
    $$\ell(\tau; z, \sigma) = \sum_{t=1}^{199} \ell_t .$$
@@ -211,7 +211,7 @@ $$
 
 $Z$ is 120 levels between the lowest and highest observed tide (60 over the
 tidal range ± 0.3 m in the product); $S$ is the archive's set of relief
-atoms, $\{0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45, 0.65\}$ m (extended
+atoms, $\lbrace 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45, 0.65 \rbrace$ m (extended
 here to 1.10 m only to see the whole surface). The figure is
 $\ell(0; z, \sigma)$ for the ocean clock, with the maximum marked.
 

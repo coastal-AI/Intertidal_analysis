@@ -30,7 +30,7 @@ paragraph of [`../docs/METHOD.md`](../docs/METHOD.md).
   Pixels without an estimate are NaN.
 * The second example of the [repository README](../README.md#minimal-examples)
   opens this product and writes its elevation as a GeoTIFF.
-* **Emerged time** is not stored: for a pixel at elevation z it is
+* **Emersion time** is not stored: for a pixel at elevation z it is
   `1 - pyintertidal.hydroperiod.hydroperiod(z, h)`, with h the mouth tide
   read the pixel's delay earlier over a continuous record.
 

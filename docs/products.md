@@ -2,9 +2,11 @@
 
 Every file a user may meet in this repository or on the authors' disks,
 grouped by the step that writes it. For each: contents, units and vertical
-datum, and the script and command that produce it. Commands run from the
-repository root. Validation v2 is in progress: this guide describes files,
-not results.
+datum, and the script and command that produce it; for the MAREA product and
+its inputs, a schema table of every array (type, shape, units, meaning).
+Commands run from the repository root. Validation v2 is in progress: this
+guide describes files, not results. Terms are defined in
+[`GLOSSARY.md`](GLOSSARY.md).
 
 **What is in this repository.** `products_marea/` (`marea.npz`,
 `result.json`, `figure.png`, `overpass_times.json`: the 10 m MAREA product of
@@ -22,9 +24,10 @@ given, or exists only on the authors' disks.
   sea level) at Villaviciosa, the consensus of EOT20 and the mouth gauges at
   the other sites. Survey truths keep their own datum; every comparison
   removes the median offset first and reports it separately as the bias.
-* **Units.** Elevations, levels and uncertainties in metres; delays in
+* **Units.** Elevations, levels and uncertainties in meters; delays in
   minutes (positive: the water inside is late); distances along the channel
-  in kilometres from the mouth; areas in km²; times in UTC.
+  in kilometers from the mouth; areas in km²; times in UTC; emersion time as
+  a share of time (0-1).
 * **Grids.** 10 m pixels in the UTM zone of each site (the CRS is recorded in
   every GeoTIFF and cube); a few development products are on 20 m grids.
   Pixel arrays stored "on keep" are 1-D over the intertidal pixels; `keep`
@@ -41,9 +44,27 @@ given, or exists only on the authors' disks.
 |---|---|---|
 | `ndwi_cube_<site>[_<period>].nc` (not versioned, 0.1-6 GB) | Sentinel-2 L2A cube from openEO: bands B03, B08 and SCL (and B04, B11 for some sites) as integers, dimensions (t, y, x), a `crs` variable | `pyintertidal.SentinelCube(aoi, period, water="ndwi").ensure(conn)`; `python -X utf8 -m experiments.download_cube <site>` for the Dutch and German sites |
 | `cubes/<site>/<year>.zarr` and `<year>.angles.zarr` (not versioned) | the validation cubes: one Zarr store per site and year with nine bands (B02, B03, B04, B08, B8A, B11, B12, SCL, CLD) on the reference 10 m grid, and a small store of sun and view angles | `python -X utf8 -m experiments.download_cube_zarr <site> --years 2023-2025` (format and reader: `experiments/zarr_cubes.py`) |
-| `overpass_times.json` (versioned for the study sites: `products_marea/` for Villaviciosa, `products_ferrol/`, `products_{escalda,wadden,ems}_10m/`) | `{date: acquisition time}` of every scene, the catalogue (product-name) time in UTC | `pyintertidal.overpass.get_overpass_times`, written by the site notebooks and the Zarr downloader |
+| `overpass_times.json` (versioned for the study sites: `products_marea/` for Villaviciosa, `products_ferrol/`, `products_{escalda,wadden,ems}_10m/`) | `{date: acquisition time}` of every scene, the catalog (product-name) time in UTC | `pyintertidal.overpass.get_overpass_times`, written by the site notebooks and the Zarr downloader |
 | `products_<site>/marea_extract.npz` (not versioned; 0.1-0.8 GB for the cubes on the laptop, more for the 10 m Dutch and German cubes) | the streamed extraction of a cube: `Y` (T, P) NDWI, `C` (T, P) clear look (SCL 4-7), `keep`, `dates`, `shape`, `sea` and `inter` (H, W) masks; the files saved by the comparison notebooks add `s_km` (distance from the mouth, km), `bbox` and `crs_wkt` (the older `products_marea/marea_extract.npz` has only the first seven keys) | `pyintertidal.marea.extract(cube_path)` (it returns the masks, `bbox` and `crs_wkt`, not `s_km`), saved by the site notebooks |
 | `products_<site>/water_frequency.tif`, `intertidal_mask.tif`, `reference_map.tif`, `cloud_pct.json` (not versioned) | water frequency (0-1, share of clear looks seen wet); the intertidal mask (uint8, 0/1); the reference map (uint8: 0 transition zone, 1 stable water, 2 stable land); `{date: cloud percentage}` (0-100; SCL 3, 8, 9 and 10, measured over the whole frame for scenes at most 5 % cloudy and over the transition zone for the others) | the site notebooks and `experiments/rebuild_site_masks.py` (`pyintertidal.stability`, `pyintertidal.frequency`) |
+
+**`marea_extract.npz`**, as returned by `pyintertidal.marea.extract` ($T$
+scenes of the cube, $P$ intertidal pixels):
+
+| array | dtype | shape | units | meaning |
+|---|---|---|---|---|
+| `Y` | float32 | (T, P) | NDWI | NDWI of every look; NaN where B03 + B08 = 0 |
+| `C` | bool | (T, P) | – | clear look: SCL class 4, 5, 6 or 7 |
+| `keep` | int64 | (P,) | – | flat row-major indices of the intertidal pixels |
+| `dates` | string | (T,) | dates | the date of each scene |
+| `shape` | integers | (2,) | pixels | (H, W) |
+| `sea`, `inter` | bool | (H, W) | – | permanent sea (water frequency at least 0.90) and intertidal (between 0.10 and 0.90) |
+| `bbox`, `crs_wkt` | dict, string | – | degrees | bounding box in EPSG:4326, and the cube's CRS (returned by `extract`; not in the older saved file) |
+
+**`products_villaviciosa/hsr_eot20_2023-2025.tif`** (versioned; read with
+`pyintertidal.raster.grid_of`): one float32 band of 915 × 915 pixels, 10 m,
+EPSG:32630, upper-left corner (301020, 4824840), NaN as no-data. It is kept
+for its grid, the canonical 10 m grid of Villaviciosa (section 6).
 
 ## 2. The MAREA product: `marea.npz`, `result.json`, `figure.png`
 
@@ -56,50 +77,78 @@ Written by `pyintertidal.marea.reconstruct(cube_path, out_dir, ...)` into
 * The 10 m production products, on the authors' server (laptop mirror
   `results/server_10m/`): `products_marea/marea_eot20_g0_2023-2025/`
   (Villaviciosa, with `record.json`, the dates of its record),
-  `products_ferrol/marea_eot20_g1/`, `products_escalda_10m/marea_eot20_g2/`,
-  `products_wadden_10m/marea_eot20_g1/` and `products_ems_10m/marea_eot20_g1/`
-  (`<tag>` names the tide boundary: `eot20_g1` = EOT20 with one mouth gauge).
-  At the Dutch and German sites, `products_<site>/marea_<tag>/` holds the
-  earlier 20 m runs.
+  `products_ferrol/marea_eot20_g1/`, `products_escalda_10m/marea_eot20_g2/`
+  (the Westerschelde), `products_wadden_10m/marea_eot20_g1/` and
+  `products_ems_10m/marea_eot20_g1/` (`<tag>` names the tide boundary:
+  `eot20_g1` = EOT20 with one mouth gauge). At the Dutch and German sites,
+  `products_<site>/marea_<tag>/` holds the earlier 20 m runs.
 * `runs/<cell>/marea/` (not in the public repository): the north-coast
   campaign (`nc2_cell<NNN>`: the 130 cells of
   `experiments/campaign_north_v2.py`; `north_coast_cell<NNN>`: the earlier v1
   run).
 
-**`marea.npz`**
+![Four maps of the Ría de Villaviciosa product at 10 m: the elevation z, the width sigma of the flooding curve, the distance from the mouth along the water, and the delay applied to each pixel.](figures/doc/product_maps_villaviciosa.png)
 
-| key | shape | contents | units |
+*The Villaviciosa product (`products_marea/`): elevation, the width sigma, the distance from the mouth and the delay of each pixel. A product of the method, not a validation result.*
+
+![Four panels of the Villaviciosa product: the area of mapped flats at each of the 50 elevation levels of the inversion, the hypsometric curve with its envelope, the share of pixels at each of the eight sigma values, and the elevation along the channel.](figures/doc/product_distributions.png)
+
+*The same product as distributions over its intertidal pixels.*
+
+### `marea.npz`
+
+$P$ is the number of intertidal pixels, $K$ the number of 3-km sections and
+$(H, W)$ the frame. In `products_marea/marea.npz`, $P$ = 32,120, $K$ = 3,
+$(H, W)$ = (915, 915) and `n_boot` = 30; the keys and types below were read
+from that file.
+
+| array | dtype | shape | units | meaning |
+|---|---|---|---|---|
+| `z` | float32 | (P,) | m, on the scale of the boundary tide | elevation of each intertidal pixel; NaN where the guards (or the quality rule) reject it |
+| `sigma` | float32 | (P,) | m | width of the fitted flooding curve: one of the eight values of `marea.SG_GRID`, NaN where `z` is NaN; the poster calls it the uncertainty of z; what it is and how it is computed: [`METHOD.md`](METHOD.md), paragraph "Uncertainty" (section 13) |
+| `s_km` | float32 | (P,) | km | distance from the mouth along the water; NaN where water cannot reach |
+| `band` | int16 | (P,) | – | index of the 3-km section of each pixel (0 at the mouth); -1 for pixels without a distance |
+| `keep` | int64 | (P,) | – | flat row-major index of each intertidal pixel in the (H, W) frame |
+| `shape` | int64 | (2,) | pixels | (H, W) |
+| `tau_min` | float64 | (K,) | min | delay fitted per section |
+| `tau_usado_min` | float64 | (K,) | min | delay applied per section (*usado* = used; negative values clipped to 0) |
+| `tau_lo_min`, `tau_hi_min` | float64 | (K,) | min | 2.5th and 97.5th percentiles of the scene bootstrap |
+| `tau_boot_min` | float64 | (n_boot, K) | min | every bootstrap fit; absent when `n_boot` = 0 |
+| `tau_px_min` | float32 | (P,) | whole min | delay applied to each pixel: the section profile smoothed along the channel, rounded to the minute; 0 for pixels without a distance |
+| `band_km` | float64 | (1,) | km | section length |
+| `hyp_z` | float64 | (80,) | m | levels of the hypsometric curve |
+| `hyp_area` | float64 | (80,) | km² | area of mapped pixels below each level |
+| `hyp_lo`, `hyp_hi` | float64 | (80,) | km² | 5th and 95th percentiles of that area when each elevation is jittered by its sigma |
+
+### `result.json`
+
+Spanish keys are translated in the last column.
+
+| key | type | units | meaning |
 |---|---|---|---|
-| `z` | (P,) | elevation of each intertidal pixel | m, tide-model scale |
-| `sigma` | (P,) | width of the fitted wet/dry transition (one of the eight values of `marea.SG_GRID`, NaN where `z` is NaN); the poster calls it the uncertainty of z; what it is and how it is computed: [`METHOD.md`](METHOD.md), paragraph "Uncertainty" | m |
-| `s_km` | (P,) | distance from the mouth along the water | km |
-| `band` | (P,) | index of the 3-km section of each pixel | - |
-| `keep`, `shape` | (P,), (2,) | flat indices of the intertidal pixels in the (H, W) frame | - |
-| `tau_min` | (n_sections,) | delay fitted per section | min |
-| `tau_usado_min` | (n_sections,) | delay applied per section (*usado* = used; negative values clipped to 0) | min |
-| `tau_lo_min`, `tau_hi_min` | (n_sections,) | 2.5 and 97.5 percentiles of the scene bootstrap | min |
-| `tau_boot_min` | (n_boot, n_sections) | every bootstrap fit | min |
-| `tau_px_min` | (P,) | delay applied to each pixel: the section profile smoothed along the channel, rounded to the minute | min |
-| `band_km` | (1,) | section length | km |
-| `hyp_z`, `hyp_area` | (80,) | hypsometric curve: levels and the area of mapped pixels below each | m, km² |
-| `hyp_lo`, `hyp_hi` | (80,) | 5-95 % envelope of that curve when each elevation is jittered by its sigma | km² |
+| `sitio` | string | – | site name |
+| `estado` | string | – | status: `ok`; `sin_intermareal` = fewer than 3,000 intertidal pixels; `pocas_escenas` = fewer than `min_scenes` scenes with an acquisition time (a refused run writes only the site, the status and the count) |
+| `n_escenas` | integer | scenes | scenes in the record |
+| `record_dates` | list of strings (T) | dates | the dates of the record |
+| `n_px` | integer | pixels | intertidal pixels |
+| `n_px_cota` | integer | pixels | pixels with an elevation (*cota*) |
+| `min_scenes` | integer | scenes | the shortest record accepted |
+| `overpass_source` | string | – | `given` (times passed by the caller) or `stac` |
+| `s_max_km` | number | km | the largest distance from the mouth |
+| `band_km` | number | km | section length |
+| `min_px_band` | integer | pixels | thinner sections are merged |
+| `quality_min_bracket` | integer | looks | the quality rule applied: 3 = at least three clear looks with the water below the elevation and three above (the default since 2026-10-06); 0 = no rule |
+| `centros_km` | list (K) | km | section centers |
+| `tau_min`, `tau_usado_min`, `tau_lo_min`, `tau_hi_min` | lists (K) | min | as in `marea.npz` |
+| `n_boot` | integer | resamples | scene bootstrap |
+| `tau_px_median_min`, `tau_px_max_min` | number | min | median and largest delay applied to a pixel |
+| `con_operador` | boolean | – | true when any pixel received a non-zero delay |
+| `veto_fisico` | boolean | – | true when a negative section delay was clipped to 0 |
+| `hipsometria` | object | – | `integral` (Strahler's hypsometric integral, 0-1) and `area_total_km2` (km²) |
+| `rango_marea_m` | list of 2 numbers | m | the lowest and highest zero-delay level of the record: the range the inversion searches |
+| `inputs_sha` | object | – | `cube`: sha256 of the cube file |
+| `duracion_s` | number | s | run time |
 
-**`result.json`** (Spanish keys translated): `sitio` site name; `estado`
-status (`ok`, `sin_intermareal` = fewer than 3000 intertidal pixels,
-`pocas_escenas` = too few scenes with an acquisition time); `n_escenas`
-scenes in the record; `record_dates` their dates; `n_px` intertidal pixels;
-`n_px_cota` pixels with an elevation; `min_scenes`; `overpass_source`
-(`given` or `stac`); `s_max_km`; `band_km`; `min_px_band`;
-`quality_min_bracket` (the quality rule applied: 3 = at least three clear
-looks with the water below the elevation and three above, the default since
-2026-10-06; 0 = no rule); `centros_km` section centres; `tau_min`,
-`tau_usado_min`, `tau_lo_min`, `tau_hi_min` as above; `n_boot`;
-`tau_px_median_min`, `tau_px_max_min`; `con_operador` true when any pixel
-received a non-zero delay; `veto_fisico` true when a negative section delay
-was clipped to 0; `hipsometria` {`integral` (Strahler's hypsometric
-integral), `area_total_km2`}; `rango_marea_m` the lowest and highest
-zero-delay level of the record (the range the inversion searches);
-`inputs_sha` {`cube`: sha256 of the cube file}; `duracion_s` run time.
 Older files lack some of these keys: `record_dates`, `min_scenes` and
 `overpass_source` are written since the commit of 2026-09-30,
 `quality_min_bracket` since 2026-10-06. A file without that key was made
@@ -107,15 +156,30 @@ with no quality rule (as `min_bracket = 0`); every 10 m production product
 (Villaviciosa, Ferrol, Westerschelde, Wadden, Ems) and the product in
 `products_marea/` are such files.
 
-**`figure.png`**: three panels, with Spanish titles: the elevation map
-(*cota*), the fitted and applied delay against distance from the mouth
-(*marea interior*), and the hypsometric curve with its envelope
-(*hipsometría*).
+### `figure.png`
 
-**Emerged time** is not stored by `reconstruct`: for a pixel at elevation z
-it is `1 - pyintertidal.hydroperiod.hydroperiod(z, h)`, with h the mouth tide
+A PNG (1950 × 598 pixels in `products_marea/`) with three panels and
+Spanish titles: the elevation map (*cota*), the fitted and applied delay
+against distance from the mouth (*marea interior*), and the hypsometric
+curve with its envelope (*hipsometría*).
+
+### `overpass_times.json`
+
+| content | type | units | meaning |
+|---|---|---|---|
+| object `{date: time}` | `"YYYY-MM-DD"` to `"YYYY-MM-DD HH:MM:SS"` | UTC | the acquisition time of every scene (the datatake start written in the product name); 1,380 scenes of 2016-2025 in `products_marea/` |
+
+### Emersion time (computed, not stored)
+
+| quantity | type | shape | units | meaning |
+|---|---|---|---|---|
+| emersion time | float | (P,) | 0-1 (times 24 = hours per day) | share of a continuous tide record, read the pixel's delay earlier, at or below the pixel's elevation |
+
+`reconstruct` does not store it: for a pixel at elevation z it is
+`1 - pyintertidal.hydroperiod.hydroperiod(z, h)`, with h the mouth tide
 read the pixel's delay (`tau_px_min`) earlier, over a continuous record (the
-README's first example uses the section's fitted delay).
+README's first example uses the section's fitted delay). The formula is in
+[`METHOD.md`](METHOD.md#11-emersion-time-and-hypsometry).
 
 ## 3. Per-site comparison products: `products_<site>/comparison_<tag>/`
 
@@ -131,7 +195,7 @@ published elsewhere).
 | `judge_metrics.csv` | per method, the delay at the in-estuary gauge (min), the level error there (m) and n |
 | `lag_pair_metrics.csv`, `lag_pair_by_level.csv` | the delay between the mouth gauge and the inner gauge, overall and by level |
 | `marea_effect_by_band.csv` | per section: fitted and applied delay, pixels, and the median and 10-90 % of the elevation change the delay makes |
-| `lidar_metrics.csv`, `vaklodingen_metrics*.csv`, `vaklodingen_by_band*.csv` | each product against the site's survey: n, median-centred RMSE, slope, intercept, r, bias, and the same on the common pixels |
+| `lidar_metrics.csv`, `vaklodingen_metrics*.csv`, `vaklodingen_by_band*.csv` | each product against the site's survey (PNOA LiDAR at Villaviciosa; Rijkswaterstaat's Vaklodingen depth surveys of the Dutch coast at the other sites): n, median-centered RMSE, slope, intercept, r, bias, and the same on the common pixels |
 
 ## 4. NIDEM (the main competitor): `nidem.npz`, GeoTIFFs, diagnostics
 
@@ -229,7 +293,7 @@ Not in the public repository while the work is in progress.
 | `python -X utf8 -m experiments.v19_fixed_config_tables plan\|run <site>`, `tables`, `curves` | `results/fixedcfg/<site>.csv` (one row per window, method, variant and scoring set), `<site>_settings.json`, `<site>_windows.json`, `<site>_units.npz`, `<site>_jobs/` (resumable state), `tables/` (per number of images: CSV, markdown, LaTeX), figures `curves_*` |
 
 The settings JSON of each run records the git commit, the sha256 of the
-script and of its inputs, and the conditions of the run. Errors are median-centred RMSE
+script and of its inputs, and the conditions of the run. Errors are median-centered RMSE
 (m), slope of product on truth, Pearson r and bias = median(product - truth)
 (m); "coverage" is the share of the scored pixels with an estimate.
 

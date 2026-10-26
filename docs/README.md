@@ -4,10 +4,13 @@
 
 | file | what it is | state |
 |---|---|---|
-| [`METHOD.md`](METHOD.md) | the method in equations: the pixel model (linear mixing, flooded fraction, NDWI = a + b Φ((h - z)/σ)), the binary reduction and the profiled Bernoulli likelihood of the delay, why the tidal gain cannot be estimated from wet/dry images, the bootstrap interval, how each pixel receives its delay, scoring, what the per-pixel uncertainty `sigma` of the product is and how it is computed, and sampling limits | updated 2026-09-23 for the 3-km sections; "Uncertainty" paragraph rewritten on 2026-10-26 for the `sigma` that the product stores |
+| [`METHOD.md`](METHOD.md) | the full technical method: notation, NDWI and the clear-sky mask, the scene screening, the boundary tide, the pixel model, the profiled Bernoulli likelihood of the delay and its constraints, the smoothing to pixels, the per-pixel inversion and its guards, emersion time and hypsometry, why the tidal gain cannot be estimated, the uncertainty `sigma`, sampling limits, the parameter table with file and line, and Mermaid diagrams | rewritten on 2026-10-26, every formula checked against the code |
+| [`VALIDATION_DESIGN.md`](VALIDATION_DESIGN.md) | the validation design in short, with diagrams: questions, sites, the independent checks, Stage L (delays against in-estuary gauges), Stage E (elevation against surveys), the fixed-configuration comparison, the methods compared, the metrics with formulas; no results | 2026-10-26; **the validation is in progress** |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | the code: the modules of `pyintertidal` and how they depend on each other, the data flow from download to product files, the experiments layer | 2026-10-26 |
+| [`GLOSSARY.md`](GLOSSARY.md) | plain definitions of the terms a non-specialist meets | 2026-10-26 |
 | [`validation_v2_spec.md`](validation_v2_spec.md) | the specification of validation v2: questions, sites and inputs, settings, competing methods, experiment plan, lag benchmark, elevation metrics, statistics, gates, report, code layout, server orchestration, budget, milestones, decisions | revision 2 (2026-10-09) with the authors' decisions of 2026-10-13 to 2026-10-15 at the top; **the validation is in progress** |
 | [`v13_benchmark_spec.md`](v13_benchmark_spec.md) | the controlled benchmark v13, whose harness validation v2 reuses; v2 supersedes it wherever they differ | 2026-10-08 |
-| [`products.md`](products.md) | every generated product: contents, units, vertical datum, the script and command that make it | 2026-10-26 |
+| [`products.md`](products.md) | every generated product: contents, units, vertical datum, the script and command that make it; schema tables (type, shape, units) of the MAREA product | 2026-10-26 |
 | [`one_pixel_marea_example.md`](one_pixel_marea_example.md) ([Spanish](one_pixel_marea_example.es.md)) | one real Villaviciosa pixel through MAREA: the clocks, the likelihood step by step, the decision and the inversion, from `notebooks/pixel_walkthrough_villaviciosa.ipynb` | development state of September 2026 (it still shows the 10-minute detection threshold, later removed) |
 | [`tide_adjustment_comparison.md`](tide_adjustment_comparison.md) ([Spanish](tide_adjustment_comparison.es.md)) | the tide adjustment judged by tide gauges and bathymetry, MAREA against Granadeiro et al. (2021), at four estuaries | development comparison of 2026-09-17; validation v2 supersedes it for any conclusion |
 | [`prior_art_granadeiro.md`](prior_art_granadeiro.md) | Granadeiro et al. (2021), field by field, against MAREA | 2026-08-19 |
@@ -15,8 +18,10 @@
 | [`PHASE_LOG.md`](PHASE_LOG.md) | the dated diary of the development phases (plan v4): what was done, gate verdicts, decisions | internal working notes, kept because the code cites them |
 
 How they connect: `METHOD.md` is the reference for what the code computes;
-`products.md` for what it writes; `validation_v2_spec.md` for how the method
-is being validated. The worked example and the comparison are development
+`products.md` for what it writes; `ARCHITECTURE.md` for where the code
+lives; `VALIDATION_DESIGN.md` summarizes, and `validation_v2_spec.md`
+specifies in full, how the method is being validated; `GLOSSARY.md` defines
+the terms. The worked example and the comparison are development
 documents that show the method on real data; the diary and the map record
 how the method was reached. The manuscript in preparation is not in this
 repository.
@@ -43,16 +48,26 @@ and the adoption gate were removed; their documents say so where it matters.
 
 | file | alt text | used in |
 |---|---|---|
+| `figures/doc/sites_map.png` | Map of western Europe with the five study sites, and a table of each site's elevation check, delay check and tide at the mouth. | README, `VALIDATION_DESIGN.md` |
+| `figures/doc/tide_delay_concept.png` | A synthetic tide at the mouth and 60 minutes later inside the estuary, with the Sentinel-2 passes; the looks of one flat against both levels. | README, `METHOD.md` |
+| `figures/doc/lag_profile_villaviciosa.png` | The fitted delay of each 3-km section of the Villaviciosa product, with its bootstrap fits and interval, and the delay applied to each pixel. | README, `METHOD.md` |
+| `figures/doc/flooding_curve.png` | One synthetic pixel's looks as NDWI against the water level, with the fitted flooding curve; the grid search; a pixel left empty by the quality rule. | README, `METHOD.md` |
+| `figures/doc/product_maps_villaviciosa.png` | Four maps of the Villaviciosa product: elevation, sigma, distance from the mouth and the delay of each pixel. | README, `products.md` |
+| `figures/doc/product_distributions.png` | The Villaviciosa product as distributions: elevations, the hypsometric curve, sigma, and elevation along the channel. | `products.md` |
+| `figures/doc/sentinel_sampling.png` | One month of a synthetic tide with every Sentinel-2 acquisition at Villaviciosa, and the tide levels at all times against those of the kept looks. | `METHOD.md` |
+| `figures/doc/affine_identifiability.png` | Two worlds, a gain of 1.0 and 1.2 over pixels at 1.0 and 1.2 m, that give the same wet/dry probabilities: the gain cannot be read from the images. | `METHOD.md` |
+| `figures/doc/screening_timeline.png` | Scenes per month at Villaviciosa, 2023-2025: every acquisition, and the scenes kept by the cloud screening. | `METHOD.md` |
+| `figures/doc/sections_villaviciosa.png` | The intertidal pixels of Villaviciosa colored by 3-km section, with each section's applied delay and interval. | `METHOD.md` |
 | `figures/interior_tide_schematic.png` | Inside an estuary the tide arrives late: the single level read at the mouth is wrong by an amount that grows inland; MAREA estimates one delay per band of distance along the channel. | earlier README |
 | `figures/study_area.png` | The Ría de Villaviciosa: the intertidal zone, contours of distance along the water from the mouth, the tide point, the RTK survey route, a location map and a histogram of the tide levels the archive sampled. | earlier README |
 | `figures/workflow.png` | The workflow on Villaviciosa data: the multi-temporal archive, the wet/dry classification, one pixel's record with its fitted transition, and the resulting elevation map. | earlier README |
 | `figures/datacube.svg` | The Villaviciosa data cube drawn by `pyintertidal.explain`: bands against time, with real thumbnails of the scenes, clouds included. | earlier README |
 | `figures/bands_map.png` | The estimation unit of the delay: bands of distance along the water over the ría, each sharing one delay. | earlier README |
-| `figures/pixel_model_schematic.png` | One pixel in cross-section at three tide stages, and the S-shaped curve of water index against water level they trace, with a, b, z and σ marked. | `METHOD.md` |
+| `figures/pixel_model_schematic.png` | One pixel in cross-section at three tide stages, and the S-shaped curve of NDWI against water level they trace, with a, b, z and σ marked. | `METHOD.md` |
 | `figures/sampling_schematic.png` | Sun-synchronous sampling: the M2 constituent is seen as a 14.8-day wave, while S2 is frozen at one phase. | `METHOD.md` |
-| `figures/north_cells.png` | The 130 terrain-following cells of the north-coast campaign, coloured by the verdict of each cell. | earlier README |
+| `figures/north_cells.png` | The 130 terrain-following cells of the north-coast campaign, colored by the verdict of each cell. | earlier README |
 | `figures/onepixel/cell07_0.png` | Histogram of NDWI over the clear pixels of the clearest scenes, with Otsu's split, the adopted threshold at 0, and a rug of the example pixel's own looks. | one-pixel example, figure 1 |
-| `figures/onepixel/cell10_0.png` | The example pixel's NDWI against time, coloured by what the cloud screening did with each visit (scene rejected, pixel not clear, kept). | figure 2 |
+| `figures/onepixel/cell10_0.png` | The example pixel's NDWI against time, colored by what the cloud screening did with each visit (scene rejected, pixel not clear, kept). | figure 2 |
 | `figures/onepixel/cell13_0.png` | Water frequency in a 1.2-km window around the example pixel (red square): white never wet, dark blue always wet, intermediate blues the intertidal flat. | figure 3 |
 | `figures/onepixel/cell12_0.png` | Histogram of water frequency over the transition zone, with the two Otsu valleys, the adopted window and the example pixel's value. | figure 4 |
 | `figures/onepixel/cell15_0.png` | The example pixel's kept looks, NDWI against date, wet in blue and dry in brown, each carrying the EOT20 level at its acquisition time. | figure 5 |

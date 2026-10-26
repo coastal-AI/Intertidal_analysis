@@ -15,7 +15,7 @@ water, base products, tides, HSR elevation, derived science, outputs) is
 
 One call, `marea.reconstruct(cube_path, out_dir)`, chains every step below
 except the last; each one is also a function you can call on its own.
-Emerged time is not stored: compute it afterwards from the stored z and a
+Emersion time is not stored: compute it afterwards from the stored z and a
 continuous tide series. Two runnable examples (synthetic data; the
 Villaviciosa product) are in the [repository README](../README.md#minimal-examples).
 
@@ -31,7 +31,7 @@ Villaviciosa product) are in the [repository README](../README.md#minimal-exampl
 | the delay of each pixel: the section profile smoothed along the channel | `smooth_lag_profile` | `tide_estimators.py` |
 | each pixel's elevation z and transition width sigma on the corrected tide; the quality rule applies when `min_bracket=marea.QUALITY_MIN_BRACKET` is passed, as `reconstruct` does (the function's own default, 0, keeps the older behaviour) | `invert_series` (on `elevation._fit_block`) | `marea.py`, `elevation.py` |
 | the area-elevation curve with its uncertainty band | `curve_with_uncertainty` | `hypsometry.py` |
-| emerged time from a continuous tide series (after `reconstruct`; not stored) | `1 - hydroperiod(z, h)` | `hydroperiod.py` |
+| emersion time from a continuous tide series (after `reconstruct`; not stored) | `1 - hydroperiod(z, h)` | `hydroperiod.py` |
 
 What `reconstruct` writes (`marea.npz`, `result.json`, `figure.png`) is
 described in [`../docs/products.md`](../docs/products.md). `reconstruct` does
@@ -93,7 +93,7 @@ earlier (README, first example, steps 4-5).
 | `waterline_contour.py` | a re-implementation of ITEM/NIDEM (Sagar et al. 2017; Bishop-Taylor et al. 2019), the main competitor in the validation |
 | `granadeiro2021.py` | a re-implementation of Granadeiro et al. (2021); its statistical fits run in R (`r/granadeiro_fit.R`) |
 | `terrain.py` | slope, aspect, hillshade, roughness and contours of any DEM |
-| `hydroperiod.py` | share of time under water (and its complement, emerged time); ecological zones |
+| `hydroperiod.py` | share of time under water (and its complement, emersion time); ecological zones |
 | `hypsometry.py` | area-elevation curve and hypsometric integral |
 | `morphodynamics.py` | change between two epochs, with a significance test |
 

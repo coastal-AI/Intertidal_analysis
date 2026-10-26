@@ -157,19 +157,19 @@ hacen cinco operaciones, visita a visita:
 
 1. **El nivel bajo el reloj.** Se lee el contorno $\tau$ minutos antes de la
    hora de paso:
-   $$h_t(\tau) = h_{\mathrm{EOT20}}\!\left(t_{\mathrm{paso}} - \tau\right).$$
+   $$h_t(\tau) = h_{\mathrm{EOT20}}\left(t_{\mathrm{paso}} - \tau\right).$$
 2. **Cuánta agua había sobre el píxel**, en unidades de su relieve:
    $$u_t = \frac{h_t(\tau) - z}{\sigma}.$$
    Positivo, agua por encima de la cota media; negativo, por debajo;
    $|u_t| \gg 1$, el modelo está seguro de lo que debería ver.
 3. **La probabilidad de mojado:**
-   $$P_t = \Phi(u_t) = \frac{1}{\sqrt{2\pi}}\int_{-\infty}^{u_t} e^{-x^2/2}\,\mathrm{d}x,$$
+   $$P_t = \Phi(u_t) = \frac{1}{\sqrt{2\pi}}\int_{-\infty}^{u_t} e^{-x^2/2}\mathrm{d}x,$$
    recortada a $[10^{-6},\ 1 - 10^{-6}]$ para que una sola visita
    imposible no mande la suma a $-\infty$ (el producto recorta a
    $10^{-4}$).
 4. **El coste de la visita:**
-   $$\ell_t = w_t \ln P_t + (1 - w_t)\ln(1 - P_t)
-   = \begin{cases}\ln P_t & \text{si salió mojado},\\ \ln(1 - P_t) & \text{si salió seco.}\end{cases}$$
+   $$\ell_t = w_t \ln P_t + (1 - w_t)\ln(1 - P_t),$$
+   es decir, $\ln P_t$ si salió mojado y $\ln(1 - P_t)$ si salió seco.
    Nunca es positivo: vale casi 0 cuando el modelo acertó con seguridad y
    es muy negativo cuando estaba seguro y se equivocó.
 5. **La suma sobre las 199 visitas:**
@@ -218,8 +218,8 @@ $$
 
 $Z$ son 120 niveles entre la marea observada más baja y la más alta (60
 sobre el rango mareal ± 0,3 m en el producto); $S$ son los átomos de
-relieve del archivo, $\{0{,}03, 0{,}06, 0{,}10, 0{,}15, 0{,}22, 0{,}32,
-0{,}45, 0{,}65\}$ m (aquí extendidos hasta 1,10 m solo para ver la
+relieve del archivo,
+$\lbrace 0{,}03, 0{,}06, 0{,}10, 0{,}15, 0{,}22, 0{,}32, 0{,}45, 0{,}65 \rbrace$ m (aquí extendidos hasta 1,10 m solo para ver la
 superficie entera). La figura es $\ell(0; z, \sigma)$ para el reloj
 oceánico, con el máximo marcado.
 
