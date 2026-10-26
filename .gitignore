@@ -68,6 +68,8 @@ community-notebook-competition/
 ria_de_foz_water_occurrence*
 intertidal_mask*
 reference*
+# validation v2 code (the L20 reference adapter), not a reference data file
+!experiments/benchmark/lags/references.py
 mareografo_santander*
 ARQUITECTURE.md*
 README_DATASET_GENERATOR.md

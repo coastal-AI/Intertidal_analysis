@@ -300,11 +300,13 @@ def test_cli_plan_writes_the_plans_under_the_root(tmp_path, monkeypatch, capsys)
     assert cli.main(["plan", "--design", "nope"]) == 2
 
 
+#: milestone V2 replaced the V2 stubs (run, score --part lag, lock, the V2
+#: gates, control --kind lag, timing, pilot attain): they now run their
+#: command (tests/test_benchmark_cli_lag.py); the later milestones still exit 2
 @pytest.mark.parametrize("argv,ms", [
-    (["run", "--plans", "lag", "--worker-id", "1"], "V2"),
-    (["score", "--part", "lag"], "V2"), (["lock", "--phase", "A"], "V2"),
-    (["gate", "zarr"], "V2"), (["control"], "V2"), (["timing"], "V2"),
-    (["report"], "V6"), (["pilot", "units"], "V3"), (["pilot", "attain"], "V2")])
+    (["report"], "V6"), (["pilot", "units"], "V3"),
+    (["score", "--part", "elev"], "V3"), (["score", "--part", "lag", "--blocks"], "V3"),
+    (["gate", "nidem"], "V3"), (["control", "--kind", "elev"], "V3")])
 def test_cli_later_commands_exit_with_their_milestone(argv, ms, capsys, tmp_path, monkeypatch):
     from experiments import validation_v2 as cli
     monkeypatch.setenv("VALIDATION_V2_ROOT", str(tmp_path))
@@ -833,3 +835,42 @@ def test_cli_check_env_inputs_table_names_the_code_paths(monkeypatch):
         cfg = config.site_config(site, 10)
         assert by[("production extraction", (site,))].paths == (cfg.extract,)
         assert by[("production MAREA result", (site,))].paths == (cfg.transition_result,)
+
+
+def test_l09_is_not_applicable_where_the_window_cannot_hold_its_span():
+    """HD26-H needs >= 365 days between its first and last scene: a common
+    calendar year or W1 holds at most 364, so the lag design plans L09 there
+    as not applicable and its unit writes L10 only (structural, from the
+    window bounds; the rule is not relaxed)."""
+    assert D.max_span_days("Y2023") == 364 and D.max_span_days("Y2024") == 365
+    assert D.max_span_days("W1") == 364 and D.max_span_days("W3") > 365
+    assert D.l09_span_rule("Y2024")[0] and not D.l09_span_rule("Y2023")[0]
+    rows = D.plan_rows("lag", ("ems",))
+    l09 = [r for r in rows if r["method"] == "L09"]
+    by = {}
+    for r in l09:
+        by.setdefault(r["window"], []).append((r["status"], r["products"], r["variant"]))
+    for w in ("Y2023", "W1"):
+        assert sorted(by[w]) == [("not_applicable", "L09", D.L09_SPAN_VARIANT),
+                                 ("planned", "L10", "")], w
+    for w in ("W3", "W2", "Y2024"):
+        assert by[w] == [("planned", "L09 L10", "")], w
+    na = next(r for r in l09 if r["window"] == "Y2023" and r["status"] == "not_applicable")
+    assert "365" in na["note"] and "spec §4.2" in na["note"]
+
+
+def test_write_plan_keeps_the_other_sites_rows(tmp_path):
+    root = str(tmp_path)
+    D.write_plan("lag", root=root, sites=("escalda",))
+    D.write_plan("lag", root=root, sites=("ems",))
+    import csv
+    with open(os.path.join(root, "plans", "lag.csv"), encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert {r["site"] for r in rows} == {"escalda", "ems"}
+    full = D.plan_rows("lag", ("escalda", "ems"))
+    assert [r["unit_id"] for r in rows] == [r["unit_id"] for r in full]
+    idx = json.load(open(os.path.join(root, "plans", "index.json"), encoding="utf-8"))
+    assert idx["plans"]["lag"]["sites"] == ["escalda", "ems"]
+    D.write_plan("lag", root=root, sites=("ems",), replace=True)
+    with open(os.path.join(root, "plans", "lag.csv"), encoding="utf-8", newline="") as f:
+        assert {r["site"] for r in csv.DictReader(f)} == {"ems"}

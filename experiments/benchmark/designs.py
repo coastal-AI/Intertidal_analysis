@@ -334,6 +334,9 @@ class Unit:
     note: str = ""
     cut_step: int = 0
     tier: str = "1A'"
+    #: a subset of the method's products (L09 at a window that cannot hold
+    #: HD26-H's 365-day span writes L10 only; its L09 is a not_applicable row)
+    only_products: tuple = ()
 
     @property
     def m(self):
@@ -398,6 +401,8 @@ class Unit:
         lag (L01) are LB by design (§1.6). The E0 'gaugelag' unit writes
         E0g only: MAREA's inversion with the judges' measured band lags
         (``levels.gauge_band_lags``; user decision 2026-10-15)."""
+        if self.only_products:
+            return tuple(self.only_products)
         parts = self.variant.split("+")
         if self.method == "E0" and "nodelay" in parts:
             return ("E0a",)
@@ -514,13 +519,47 @@ P0 = settings.P0.id
 LAG_WINDOWS = ("W3", "W1", "W2", "Y2023", "Y2024")
 
 
+def max_span_days(wid):
+    """The longest span (days) between two scene dates inside a window
+    (end exclusive): 364 for a common calendar year, 365 for 2024."""
+    import datetime as _dt
+    w = settings.window(wid)
+    a = _dt.date.fromisoformat(str(w.start)[:10])
+    b = _dt.date.fromisoformat(str(w.end)[:10])
+    return (b - a).days - 1
+
+
+#: the variant tag of the not_applicable L09 row at a window too short for
+#: HD26-H's span rule (the L09 unit there writes L10 only)
+L09_SPAN_VARIANT = "span365"
+
+
+def l09_span_rule(wid):
+    """``(applicable, note)`` of HD26-H (L09) at a window: its published rule
+    needs >= FROZEN hd26.min_span_days (365) between the first and the last
+    usable scene; a window whose longest possible span is shorter cannot
+    meet it whatever the data (spec §4.2 'window >= 365 d for L09'),
+    so L09 is not applicable there. Decided from the window bounds alone,
+    never from data or scores; the rule itself is not relaxed."""
+    need = float(config.FROZEN["hd26"]["min_span_days"])
+    span = max_span_days(wid)
+    if span >= need:
+        return True, ""
+    return False, (f"HD26-H needs >= {need:g} days between its first and last scene (its "
+                   f"published rule, FROZEN hd26.min_span_days); a {wid} window holds at most "
+                   f"{span} days, so L09 is structurally not applicable here (spec §4.2); "
+                   "the unit writes L10 only")
+
+
 def design_lag(sites=LAG_SITES):
     """Stage L (§5.14, §6.6): the lag rows at P0 on W3 (MAREA's 30-draw
     bootstrap and the GM20 refits: variant boot30), W1, W2, Y2023, Y2024,
     the per-orbit MAREA and the models, physics and reference rows. L16
     (the regional models) is planned only where its archive covers the
     whole window (at the Dutch sites AMM15 starts 2024-08-04: W1 only);
-    elsewhere it is a not_applicable "NOT AVAILABLE" row."""
+    elsewhere it is a not_applicable "NOT AVAILABLE" row. At a window that
+    cannot hold HD26-H's 365-day span (:func:`l09_span_rule`: W1, Y2023)
+    the L09 unit writes L10 only and L09 is a not_applicable row."""
     units = []
     lag = ("E0", "L01v") + LAG_UNITS
     for site in sites:
@@ -535,6 +574,20 @@ def design_lag(sites=LAG_SITES):
                         note = f"{note}; {regional_note(site, wid)}"
                     else:
                         status, note = "not_applicable", why
+                if meth == "L09":
+                    ok, why = l09_span_rule(wid)
+                    if not ok:
+                        units.append(Unit(design="lag", site=site, window=wid, setting=P0,
+                                          method=meth, variant=v, status=status,
+                                          note=f"{note}; L10 only ({wid} is shorter than "
+                                               "HD26-H's 365-day span)",
+                                          only_products=("L10",)))
+                        units.append(Unit(design="lag", site=site, window=wid, setting=P0,
+                                          method=meth,
+                                          variant=(f"{v}+" if v else "") + L09_SPAN_VARIANT,
+                                          status="not_applicable", note=why,
+                                          only_products=("L09",)))
+                        continue
                 units.append(Unit(design="lag", site=site, window=wid, setting=P0,
                                   method=meth, variant=v, status=status, note=note))
     return units
@@ -1091,14 +1144,49 @@ def summary(units):
             "read_gb": round(sum(u.est_read_gb for u in planned), 1)}
 
 
-def write_plan(design, root=V2_ROOT, sites=None, **kw):
+def _row_order_key(r):
+    return (str(r.get("unit_id")), str(r.get("site")), str(r.get("window")),
+            str(r.get("setting_id")), str(r.get("method")), str(r.get("variant")),
+            str(r.get("status")), str(r.get("products")))
+
+
+def merge_plan_rows(design, old_rows, new_rows, sites, **kw):
+    """The rows of a plan written for ``sites`` only, merged into the plan
+    already on disk: the other sites' rows are kept, ``sites``' rows replaced,
+    in the order of the full design (every site)."""
+    sites = set(sites)
+    keep = [r for r in old_rows if r.get("site") not in sites]
+    full = plan_rows(design, None, **kw)
+    pos = {}
+    for i, r in enumerate(full):
+        pos.setdefault(_row_order_key(r), i)
+    merged = list(new_rows) + keep
+    n = len(full)
+    order = sorted(range(len(merged)),
+                   key=lambda i: (pos.get(_row_order_key(merged[i]), n), i))
+    return [merged[i] for i in order]
+
+
+def write_plan(design, root=V2_ROOT, sites=None, replace=False, **kw):
     """Write ``<root>/plans/<design>.csv`` and update ``plans/index.json``
-    (the sha256 of each plan: FROZEN['design']). Returns ``(path, summary)``."""
+    (the sha256 of each plan: FROZEN['design']). Returns ``(path, summary)``.
+
+    With ``sites`` and an existing plan, the other sites' rows are kept (the
+    file never shrinks to the sites of one call) unless ``replace``."""
     rows = plan_rows(design, sites, **kw)
-    text = plan_csv(rows)
     d = os.path.join(root, "plans")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, f"{design}.csv")
+    plan_sites = list(sites) if sites else None
+    if sites and not replace and os.path.exists(path):
+        with open(path, encoding="utf-8", newline="") as f:
+            old = list(csv.DictReader(f))
+        if any(r.get("site") not in set(sites) for r in old):
+            rows = merge_plan_rows(design, old, rows, sites, **kw)
+            plan_sites = sorted({str(r["site"]) for r in rows},
+                                key=lambda s: (config.SITES.index(s)
+                                               if s in config.SITES else 99, s))
+    text = plan_csv(rows)
     tmp = f"{path}.tmp-{os.getpid()}"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
@@ -1112,10 +1200,10 @@ def write_plan(design, root=V2_ROOT, sites=None, **kw):
                 idx = json.load(f)
         except (OSError, ValueError):
             pass
-    units = build(design, sites, **kw)
+    units = build(design, plan_sites, **kw)
     summ = summary(units)
     idx.setdefault("plans", {})[design] = {"sha256": sha, "rows": len(rows),
-                                           "sites": list(sites) if sites else "all",
+                                           "sites": list(plan_sites) if plan_sites else "all",
                                            "summary": summ}
     tmp = f"{idx_path}.tmp-{os.getpid()}"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:

@@ -16,10 +16,17 @@ usage (from the repository root; on the server after ``source env.sh``):
   python -X utf8 -m experiments.validation_v2 prepare escalda [--years 2023-2025] [--step pass1,ocm,...] [--res 10|20] [--sensing-times FILE]
   python -X utf8 -m experiments.validation_v2 truth escalda [--part elev,lag] [--res 10|20] [--sensing-times FILE]
   python -X utf8 -m experiments.validation_v2 pilot crosstab|dom [--sites ...] [--freeze] [--res 10|20]
-  python -X utf8 -m experiments.validation_v2 plan --design <name>|tier1a|tier1b|all [--sites ...]
-  python -X utf8 -m experiments.validation_v2 status [--sites ...] [--res 10|20]
+  python -X utf8 -m experiments.validation_v2 plan --design <name>|tier1a|tier1b|all [--sites ... [--replace]] [--res 10|20]
+  python -X utf8 -m experiments.validation_v2 status [--sites ...] [--res 10|20] [--watch S]
   python -X utf8 -m experiments.validation_v2 diag time [--sites ...]          (OPTIONAL)
   python -X utf8 -m experiments.validation_v2 extract ferrol --out SCRATCH     (local checks)
+  python -X utf8 -m experiments.validation_v2 gate record|keep|marea|zarr|offset|level|ocm|lagtruth|all [--sites ...] [--no-build]
+  python -X utf8 -m experiments.validation_v2 control --kind lag [--world gating] [--scenario zero|profile|both] [--method L08]
+  python -X utf8 -m experiments.validation_v2 pilot reps|attain [--sites ...]
+  python -X utf8 -m experiments.validation_v2 lock --phase A|B [--dev-judges ...] [--allow-missing ...] [--amend-unblind REASON]
+  python -X utf8 -m experiments.validation_v2 run --plans lag[,base] --worker-id 1 [--threads 4] [--steal-stale] [--sites ...] [--windows ...] [--ram-margin-gb 6] [--threads-change] [--smoke] [--res 10|20]
+  python -X utf8 -m experiments.validation_v2 score [--part lag] [--pre-lock [--unblind W3]] [--show-unvalidated] [--sites ...] [--windows ...] [--res 10|20]
+  python -X utf8 -m experiments.validation_v2 timing [--sites wadden] [--products L01,L08]
 
 Scene instants (user decision of 2026-10-14)
 --------------------------------------------
@@ -62,9 +69,18 @@ laptop-only input, the repository-relative path to copy, with ``scp -p``).
 
 Milestone V1 delivers fetch, inputs, check-env, prepare, truth, pilot
 crosstab and pilot dom, plan and status (and the optional ``diag time``).
-The other commands of §13.3 (the gates, control, timing, lock, run, pilot
-reps/units/attain, score, report) are in the parser with their arguments and
-exit with "available from milestone V2/V3/..." (exit 2).
+Milestone V2 (the lag benchmark, Stage L) adds: ``run`` (the instance-major
+multi-plan queue, ``queue_v2``), ``status`` with the run state of every plan
+row (``status/<design>.csv``), ``score --part lag`` (``scoring.score_lag``;
+refused without LOCK.json phase A unless ``--pre-lock``, whose tables are
+descriptive), ``gate <name>|all`` (``gates.run_gate``), ``control --kind
+lag`` (the positive control on the synthetic store: world, package, the
+queue in-process, ``scoring.control_verdicts``), ``pilot reps`` and ``pilot
+attain``, ``timing`` (dedicated runs; refused unless the machine is quiet)
+and ``lock --phase A|B`` (``lock.write_lock``: code only, the user runs it).
+Still later (exit 2, "available from milestone V3/V4/V6"): the elevation
+gates, ``control --kind elev``, ``score --part elev|curves|timing|all`` and
+``--blocks``, ``pilot units`` and ``report``.
 ``experiments.v13_benchmark`` stays the v13 entry point; this CLI shares its
 thread and check helpers.
 
@@ -98,7 +114,29 @@ Pre-registered rules this file enforces (§13.3, §13.7, §13.8)
   and the refusal verdict; ``--freeze`` freezes dom (the user's approval).
 * ``plan`` writes ``plans/<design>.csv`` and prints the Tier 1A' projection
   against the 10-day cap with the pre-ordered cuts.
-* No command reads a truth before its lock (the scoring commands are V2+).
+* No command reads a truth before its lock: ``score --part lag`` refuses
+  without LOCK.json phase A unless ``--pre-lock`` (descriptive tables, with
+  the PRE-LOCK banner); the gates, the controls and the timing runs are
+  exempt (§9.9). Pre-lock at 10 m, the confirmatory window of L-P1 (W3)
+  stays blinded unless ``--unblind W3`` (the user's decision), and every
+  pre-lock score of real 10 m products is appended to
+  ``scores/prelock_ledger.json``, which lock-A copies into LOCK.json's
+  forking-paths disclosure (an unblinded W3 then needs ``lock
+  --amend-unblind``).
+* ``plan --sites`` and ``score --sites/--windows`` never shrink the full
+  files: plan merges the other sites' rows (``--replace`` writes the given
+  sites only); score writes a subset to ``scores/partial_<sites>__<windows>/``.
+* Every command writes through a pipe-safe stdout/stderr: a closed ``| tee``
+  never kills a worker between two units.
+* ``run --threads`` sets the BLAS threads of every unit and enters its
+  config key (§13.2): every worker of a queue must use the same value.
+* Partial-year sites: a site whose stores hold only some years is prepared
+  on them (``prepare ems --years 2023``); every later command on the site
+  defaults to the years its record was requested with, so ``truth ems
+  --windows Y2023``, ``status``, ``pilot`` and later ``prepare`` steps need
+  no --years. The queue records the units of a window whose years are not
+  all in the package as 'unavailable' (re-checked on every pass) and
+  ``score`` prints them NOT AVAILABLE (the window-year guard).
 """
 import argparse
 import glob
@@ -123,19 +161,20 @@ FETCH_WHATS = ("ioc", "judges", "stac-meta", "sensing", "cmems", "tides", "emodn
                "pnoa-meta", "vak-meta", "models")
 PILOT_WHATS = ("crosstab", "dom", "reps", "units", "attain")
 DIAG_WHATS = ("time",)
-#: the milestone of every command (or sub-command) not in V1 (spec §15)
+#: the milestone of every command (or sub-command) not in V1-V2 (spec §15)
 LATER = {
-    "gate": "V2 (G-zarr, G-offset, G-record, G-keep, G-marea, G-lagtruth, G-level, G-ocm); "
-            "V3 (G-nidem, G-nidem-code, G-dea, G-flood2topo, G-costa, G-frameview, G-score); "
+    "gate": "V3 (G-nidem, G-nidem-code, G-dea, G-flood2topo, G-costa, G-frameview, G-score); "
             "V4 (G-granadeiro, G-bijagos)",
-    "control": "V2 (lag worlds); V3 (elevation methods)",
-    "timing": "V2",
-    "lock": "V2",
-    "run": "V2 (lag plans); V3 (elevation plans); V4 (Granadeiro)",
-    "score": "V2 (--part lag); V3 (elev, curves, timing)",
+    "control": "V3 (elevation methods)",
+    "score": "V3 (--part elev, curves, timing, all; --blocks)",
     "report": "V6",
-    "pilot reps": "V2", "pilot attain": "V2", "pilot units": "V3",
+    "pilot units": "V3",
 }
+#: the positive-control worlds and scenarios of the lag control (spec §10.2)
+CONTROL_WORLDS = ("gating", "hysteresis", "mnar", "amplification")
+CONTROL_SCENARIOS = ("zero", "profile")
+#: the lag units of the positive control (every imagery lag unit, §6.5 item 7)
+CONTROL_METHODS = ("E0", "L01v", "L02", "L03", "L04", "L07", "L08", "L09", "L11", "L12")
 #: the package shards of Campaign 1 (W3) at the five sites (spec §14.4 and the
 #: server review of 2026-10-14: 17 B per stored observation, 110-160 GB), plus
 #: the pass-1 bits and the OCM bits; check-env warns below it
@@ -158,7 +197,51 @@ CROSSTAB_RULE = {"p_default": 20, "p_raised": 35, "median_cld_pct": 20.0,
 
 
 def log(msg):
-    print(msg, flush=True)
+    """Print a line; a closed pipe (``| tee`` killed, the pane closed) never
+    kills the command (the line is lost)."""
+    try:
+        print(msg, flush=True)
+    except (BrokenPipeError, ValueError):
+        pass
+    except OSError as e:
+        import errno
+        if e.errno not in (errno.EPIPE, errno.EINVAL):
+            raise
+
+
+class _PipeSafe:
+    """A stand-in for sys.stdout / sys.stderr that survives a closed pipe:
+    every print of every module (pyTMD, numpy warnings, the adapters) goes
+    through it, and after the first broken write the stream is silent instead
+    of raising BrokenPipeError between two units of a worker. Installed by
+    :func:`main` and removed when the command ends."""
+
+    def __init__(self, stream):
+        self._s = stream
+        self.broken = False
+
+    def write(self, s):
+        if not self.broken:
+            try:
+                self._s.write(s)
+            except (BrokenPipeError, ValueError):
+                self.broken = True
+            except OSError as e:
+                import errno
+                if e.errno not in (errno.EPIPE, errno.EINVAL):
+                    raise
+                self.broken = True
+        return len(s)
+
+    def flush(self):
+        if not self.broken:
+            try:
+                self._s.flush()
+            except (BrokenPipeError, ValueError, OSError):
+                self.broken = True
+
+    def __getattr__(self, name):                 # encoding, isatty, fileno, buffer, ...
+        return getattr(self._s, name)
 
 
 def _res(args):
@@ -271,12 +354,44 @@ def _site2(site, args, n_sites=1):
         kw["boundary"] = args.boundary
     if getattr(args, "allow_provisional_offsets", False):
         kw["allow_provisional_offsets"] = True
+    res = _res(args)
     yrs = _years(getattr(args, "years", None))
     if yrs:
         kw["years"] = tuple(yrs)
-    res = _res(args)
+    else:
+        rec_years = _record_years(site, res)
+        if rec_years:
+            kw["years"] = rec_years
     return package.v2_site(site, root=_root(res), cubes_root=getattr(args, "cubes_root", None),
                            res=res, **kw)
+
+
+def _record_years(site, res=10):
+    """The years the site's existing record was requested with
+    (``record.json`` ``years_requested``), or None without a record.
+
+    They are the default of every later command on the site: a site built on
+    the years its stores hold (``prepare ems --years 2023``) keeps them in
+    ``truth``, ``status``, ``pilot`` and later ``prepare`` steps without
+    repeating --years. Without it, ``package.prepare_v2`` read the default
+    2023-2025 of a command without --years as a request for the shard years
+    2024-2025 and refused ('years [2024, 2025] are not in the record'), so
+    ``truth`` (which runs the series step) failed at every partial-year
+    site. To extend a record to more years, pass them: ``prepare ems --years
+    2023-2025 --force --step record``."""
+    p = os.path.join(_root(res), "common", site, "record.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            rec = json.load(f) or {}
+    except (OSError, ValueError):
+        return None
+    ys = rec.get("years_requested") or rec.get("years")
+    try:
+        return tuple(sorted(int(y) for y in ys)) if ys else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _even_rows(text):
@@ -370,13 +485,38 @@ def _fetch_sensing(args):
     return st.main(argv)
 
 
+def _stac_meta_guard(args):
+    """The record check of ``fetch stac-meta``: a site whose 10 m package
+    record was built with PROVISIONAL per-scene offsets has the sidecar's
+    sha256 among its record inputs (``package.record_inputs``), so a new
+    cubes/<site>/scene_meta.json would make the record stale and rebuild the
+    whole package: refused (run it before prepare, or once the inputs report
+    holds the site's frozen offsets)."""
+    def guard(site):
+        from experiments.benchmark import package
+        try:
+            s2 = _site2(site, args)
+        except Exception as e:
+            return f"the site's package location could not be resolved ({type(e).__name__}: {e})"
+        if not os.path.exists(os.path.join(s2.dir, "record.json")):
+            return None                          # no package yet: nothing to make stale
+        offs, src = package._frozen_offsets_for(s2)
+        if offs is None:
+            return (f"the package record at {s2.dir} was built with provisional per-scene "
+                    f"offsets ({src}): a new scene_meta.json enters its record inputs and "
+                    "would rebuild the whole package")
+        return None
+    return guard
+
+
 def _fetch_stac_meta(args):
     m = _module("fetch.stac_meta")
     if m is None:
         log("[fetch stac-meta] the scene_meta.json sidecar builder (fetch/stac_meta.py) is "
             "not in this build; inputs.scene_meta_from_items converts raw STAC features")
         return 2
-    return m.run(_sites(args.sites), root=args.cubes_root, refresh=bool(args.refresh)) or 0
+    return m.run(_sites(args.sites), root=args.cubes_root, refresh=bool(args.refresh),
+                 years=_years(args.years), guard=_stac_meta_guard(args)) or 0
 
 
 def _cmems_windows(m, args):
@@ -489,7 +629,8 @@ def _fetch_emodnet(args):
         log("[fetch emodnet] the EMODnet bathymetry fetch (fetch/emodnet.py: channel anchors "
             "for the cross-tab, L18 depths) is not in this build")
         return 2
-    return m.run(_sites(args.sites)) or 0
+    return m.run(_sites(args.sites), root=_root(),
+                 cubes_root=getattr(args, "cubes_root", None)) or 0
 
 
 FETCHERS = {"ioc": _fetch_ioc, "judges": _fetch_judges, "stac-meta": _fetch_stac_meta,
@@ -1215,11 +1356,52 @@ def cmd_diag(args):
     return st.main(argv)
 
 
+def _gate_takes(gates, name, param):
+    """True when gate ``name``'s function has the keyword ``param``."""
+    import inspect
+    try:
+        fn = gates._resolve(name)
+        return param in inspect.signature(fn).parameters
+    except (AttributeError, ImportError, KeyError, TypeError, ValueError):
+        return False
+
+
 def cmd_gate(args):
+    """The V2 gates (``gates.run_gate``, spec §10.1): record, keep, marea,
+    zarr, offset, level, ocm, lagtruth, or all of them; exit 1 when one
+    FAILs. 'time' is only the alias of the optional ``diag time``.
+    ``--no-build``: G-record, G-keep and G-marea read an existing legacy
+    package under ``gates/_legacy`` and say NOT RUN without one, instead of
+    building it (a full prepare of the legacy 10 m netCDF cube)."""
     if args.name == "time":
         log(f"[gate time] {GATE_TIME_NOTE}")
         return cmd_diag(args)
-    return _later(f"gate {args.name}", LATER["gate"])
+    gates = _module("gates")
+    if gates is None:
+        return 2
+    names = list(gates.GATES) if args.name == "all" else [args.name]
+    unknown = [n for n in names if n not in gates.GATES]
+    if unknown:
+        return _later(f"gate {unknown[0]}", LATER["gate"])
+    root = _root()
+    failed = []
+    for site in _sites(args.sites):
+        for n in names:
+            kw = {}
+            if getattr(args, "no_build", False) and _gate_takes(gates, n, "build"):
+                kw["build"] = False              # read-only: no legacy package build
+            try:
+                v = gates.run_gate(n, site, root=root, cubes_root=args.cubes_root, **kw)
+            except Exception as e:
+                log(traceback.format_exc().rstrip())
+                log(f"[gate {n}] {site}: ERROR ({type(e).__name__}: {e})")
+                failed.append((site, n))
+                continue
+            verdict = (v or {}).get("verdict")
+            log(f"[gate {n}] {site}: {verdict} ({(v or {}).get('reason')})")
+            if verdict == "FAIL":
+                failed.append((site, n))
+    return 1 if failed else 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1366,7 +1548,28 @@ def cmd_status(args):
             hint = "  <- prepare --prune-stale-shards removes it" if tag == "SUPERSEDED" else ""
             log(f"[status] {site}: dom_version {dv} ({tag}): dom {e['dom_gb']:.2f} GB, "
                 f"shards {e['shards_gb']:.2f} GB{hint}")
-    log("[status] runs, claims and completeness per design: available from milestone V2")
+    rc = _run_status(args, sites)
+    while getattr(args, "watch", None):
+        time.sleep(float(args.watch))
+        rc = _run_status(args, sites)
+    return rc
+
+
+def _run_status(args, sites):
+    """The run state of every plan row (``queue_v2.write_status``):
+    status/<design>.csv and the counts per state."""
+    q = _module("queue_v2")
+    if q is None:
+        return 0
+    root = _root(_res(args))
+    res = q.write_status(root, sites=sites)
+    if not res:
+        log(f"[status] no plans under {root}/plans (plan --design lag)")
+        return 0
+    for d, e in res.items():
+        c = e["counts"]
+        log(f"[status] {d}: " + ", ".join(f"{k} {c[k]}" for k in q.STATES if c.get(k))
+            + f"; remaining {e['remaining_est_hours']} wh (plan estimate) -> {e['path']}")
     return 0
 
 
@@ -1463,11 +1666,49 @@ def crosstab_site(site2):
 
 
 def cmd_pilot(args):
-    if args.what in ("reps", "units", "attain"):
+    if args.what == "units":
         return _later(f"pilot {args.what}", LATER[f"pilot {args.what}"])
     if args.what == "crosstab":
         return pilot_crosstab(args)
+    if args.what == "reps":
+        return pilot_reps(args)
+    if args.what == "attain":
+        return pilot_attain(args)
     return pilot_dom(args)
+
+
+def pilot_reps(args):
+    """Truth-free computability of the curve points (``pilots.pilot_reps``)."""
+    pilots = _module("pilots")
+    if pilots is None:
+        return 2
+    sites = _sites(args.sites, _res(args))
+    s2s = [_site2(s, args, len(sites)) for s in sites]
+    try:
+        pilots.pilot_reps(s2s, design=getattr(args, "design", None) or "curves-k1",
+                          root=_root(_res(args)))
+    except Exception as e:
+        log(traceback.format_exc().rstrip())
+        log(f"[pilot reps] FAILED ({type(e).__name__}: {e})")
+        return 1
+    return 0
+
+
+def pilot_attain(args):
+    """The attainability check of §9.8 (``inference.attain_report`` ->
+    attain.json, which lock-A requires)."""
+    inference = _module("inference")
+    if inference is None:
+        return 2
+    try:
+        doc = inference.attain_report(_root(_res(args)), sites=_sites(args.sites, _res(args)))
+    except Exception as e:
+        log(traceback.format_exc().rstrip())
+        log(f"[pilot attain] FAILED ({type(e).__name__}: {e})")
+        return 1
+    log(f"[pilot attain] {_root(_res(args))}/attain.json written "
+        f"({len(doc or {})} entries)")
+    return 0
 
 
 def pilot_crosstab(args):
@@ -1612,9 +1853,13 @@ def cmd_plan(args):
         log(f"[plan] unknown design(s) {bad}; designs: {tuple(designs.DESIGNS)} or "
             f"tier1a, tier1b, all")
         return 2
-    sites = _sites(args.sites) if args.sites else None
+    sites = _sites(args.sites, _res(args)) if args.sites else None
+    if sites and not getattr(args, "replace", False):
+        log(f"[plan] --sites {','.join(sites)}: these sites' rows are (re)written; the other "
+            "sites' rows of an existing plan are kept (--replace writes these sites only)")
     for n in dict.fromkeys(todo):
-        path, s = designs.write_plan(n, root=_root(), sites=sites)
+        path, s = designs.write_plan(n, root=_root(_res(args)), sites=sites,
+                                     replace=bool(getattr(args, "replace", False)))
         log(f"[plan] {n}: {s['n_rows']} rows ({s['n_planned']} planned, {s['n_shared']} shared, "
             f"{s['n_not_applicable']} not applicable, {s['n_reuse']} reused); "
             f"{s['cheap_wh']} wh, Granadeiro {s['granadeiro_h']} h, max RAM "
@@ -1661,12 +1906,327 @@ def cmd_extract(args):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  run, score, control, timing, lock (milestone V2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_run(args):
+    """The instance-major multi-plan queue (``queue_v2.run``, spec §13.4)."""
+    q = _module("queue_v2")
+    if q is None:
+        return 2
+    res = _res(args)
+    root = _root(res)
+    plans = _split(args.plans)
+    missing = [d for d in plans if not os.path.exists(q.plan_path(root, d))]
+    if missing:
+        log(f"[run] no plan file for {missing} under {root}/plans: run 'plan --design "
+            f"{','.join(missing)}' first")
+        return 2
+    sites = tuple(_sites(args.sites, res)) if args.sites else None
+    windows = tuple(_split(args.windows)) or None
+    margin = getattr(args, "ram_margin_gb", None)
+    opts = q.QueueOptions(root=root, plans=tuple(plans), worker_id=str(args.worker_id),
+                          threads=int(args.threads or DEFAULT_THREADS),
+                          boot_threads=int(args.boot_threads or 1),
+                          steal_stale=bool(args.steal_stale), sites=sites, windows=windows,
+                          smoke=bool(args.smoke), passes=int(args.passes or 1),
+                          wall_cap=not args.no_wall_cap, cubes_root=args.cubes_root,
+                          methods=tuple(_split(args.methods)) or None,
+                          progress_timeout_s=60.0 * float(args.hang_timeout_min), res=res,
+                          ram_margin_gb=float(q.RAM_MARGIN_GB if margin is None else margin),
+                          threads_change=bool(getattr(args, "threads_change", False)),
+                          oom_score_adj=1000)
+    try:
+        counts = q.run(opts)
+    except q.QueueRefused as e:
+        log(f"[run] refused: {e}")
+        return 2
+    try:
+        # the status file always holds every site of the plans (a worker's
+        # --sites only narrows the counts it prints)
+        q.write_status(root, designs=plans, sites=list(sites) if sites else None)
+    except Exception as e:                       # status is a convenience
+        log(f"[run] status not written: {e}")
+    # unit errors, instance-level errors (domain, keys) that fail every unit of
+    # an instance before it runs, units left hung or over budget, and a claim
+    # taken over while a unit ran
+    bad = [k for k in ("status:error", "error", "status:hung", "status:budget", "claim_lost")
+           if counts.get(k)]
+    if bad:
+        log(f"[run] exit 1: {', '.join(f'{k} {counts[k]}' for k in bad)} (status --sites ... "
+            "lists the units)")
+    return 1 if bad else 0
+
+
+def cmd_score(args):
+    """``score --part lag`` (``scoring.score_lag``; the default part of this
+    milestone); refused without LOCK.json phase A unless ``--pre-lock``
+    (descriptive, PRE-LOCK banner). Pre-lock at 10 m the confirmatory window
+    of L-P1 (W3) stays BLINDED unless ``--unblind W3`` (the user's decision:
+    the look is recorded in scores/prelock_ledger.json, LOCK.json lists it
+    under forking_paths and lock-A then needs ``--amend-unblind``); every
+    pre-lock score of real 10 m products is recorded in the ledger (spec
+    §9.9). A call with --sites or --windows writes scores/partial_<...>/
+    instead of replacing the full tables."""
+    if args.blocks or args.part != "lag":
+        what = "score --blocks" if args.blocks else f"score --part {args.part}"
+        return _later(what, LATER["score"])
+    lock = _module("lock")
+    res_m = _res(args)
+    root = _root(res_m)
+    if not args.pre_lock and (lock is None or not lock.has_phase(root, "A")):
+        log(f"[score] refused: no LOCK.json phase A under {root} (spec §9.9); pass --pre-lock "
+            "for the descriptive PRE-LOCK tables")
+        return 2
+    scoring = _module("scoring")
+    if scoring is None:
+        return 2
+    sites = _sites(args.sites, res_m) if args.sites else None
+    windows = _split(args.windows) or None
+    unblind = list(_split(getattr(args, "unblind", None)) or [])
+    kw = {"res": res_m} if res_m != 10 else {}
+    if args.pre_lock and res_m == 10:
+        blind = [w for w in getattr(scoring, "PRELOCK_BLIND_WINDOWS", ()) if w not in unblind]
+        asked = [w for w in (windows or []) if w in blind]
+        if asked:
+            log(f"[score] refused: {', '.join(asked)} is the confirmatory window of L-P1 and "
+                "stays blinded before lock-A (spec §9.9). Score it pre-lock only as the user's "
+                f"decision: --unblind {','.join(asked)} (recorded in "
+                f"{root}/scores/prelock_ledger.json and disclosed in LOCK.json, where lock-A "
+                "then needs --amend-unblind '<reason>')")
+            return 2
+        if unblind:
+            log(f"[score] UNBLINDED before lock-A: {', '.join(unblind)} (the user's decision; "
+                "recorded in the pre-lock ledger)")
+        kw["unblind"] = tuple(unblind)
+        kw["invocation"] = " ".join(getattr(args, "_argv", None) or ["score"])
+    if getattr(args, "show_unvalidated", False):
+        # a development view: lag_table.md prints the numbers of the rows the
+        # printing rule withholds (no positive control or gate yet), marked
+        # 'not validated (shown)'; the CSVs always hold them (validated=False)
+        kw["show_unvalidated"] = True
+    try:
+        res = scoring.score_lag(root=root, sites=sites, windows=windows,
+                                pre_lock=bool(args.pre_lock), cubes_root=args.cubes_root, **kw)
+    except Exception as e:
+        log(traceback.format_exc().rstrip())
+        log(f"[score] FAILED ({type(e).__name__}: {e})")
+        return 1
+    for k in ("points", "summary", "family", "repro", "cost", "table_md", "ledger"):
+        if (res or {}).get(k):
+            log(f"[score] {k}: {res[k]}")
+    for w in (res or {}).get("warnings", []) or []:
+        log(f"[score] WARNING: {w}")
+    return 0
+
+
+def _control_domain(prod):
+    """The instance domain of a control product (planted_band_lags reads it)."""
+    import types
+    i = prod.get("instance") or {}
+    js = i.get("json") or {}
+    return types.SimpleNamespace(keep=i.get("keep"), pos=i.get("pos"), band_of=i.get("band_of"),
+                                 s_km=i.get("s_km"), centers=i.get("centers"),
+                                 edges=i.get("edges"), K=i.get("K"), status=i.get("status"),
+                                 n_keep=js.get("n_keep"))
+
+
+def cmd_control(args):
+    """The lag positive control (spec §10.2): for each world and scenario,
+    the synthetic store (``control.write_world``), its package
+    (``package.prepare_v2`` with the planted provider), every imagery lag
+    unit at P0, W2 through the queue in-process under
+    ``<root>/control/<world>/<scenario>``, and the verdicts
+    (``scoring.control_verdicts``) -> ``control/<world>_<scenario>.json`` and
+    ``control/<product>.json``."""
+    if (args.kind or "lag") != "lag":
+        return _later(f"control --kind {args.kind}", LATER["control"])
+    control = _module("control")
+    q = _module("queue_v2")
+    scoring = _module("scoring")
+    if control is None or q is None or scoring is None:
+        return 2
+    from experiments.benchmark import config
+    root = _root()
+    worlds = {"all": CONTROL_WORLDS, "misspec": CONTROL_WORLDS[1:]}.get(
+        args.world or "gating", (args.world or "gating",))
+    scenarios = CONTROL_SCENARIOS if (args.scenario or "both") == "both" else (args.scenario,)
+    methods = CONTROL_METHODS
+    if args.method:
+        from experiments.benchmark import lags
+        want = _split(args.method)
+        methods = tuple(m for m in CONTROL_METHODS
+                        if m in want or any(lags.PRODUCT_METHOD.get(w) == m for w in want))
+        if not methods:
+            log(f"[control] --method {args.method}: no imagery lag unit ({CONTROL_METHODS})")
+            return 2
+    tol = float(config.FROZEN["positive_control"]["tolerances"]["lag_max_min"])
+    errors = 0
+    try:
+        errors = _control_worlds(args, control, q, scoring, worlds, scenarios, methods, tol,
+                                 root)
+    except Exception as e:
+        log(traceback.format_exc().rstrip())
+        log(f"[control] FAILED ({type(e).__name__}: {e})")
+        return 1
+    return 1 if errors else 0
+
+
+def _control_overall(verdicts):
+    """A product's control verdict over the gating world's scenarios (§10.2):
+    PASS only when PASS in both 'zero' and 'profile'; 'FAIL (fault)' when one
+    was set by hand; 'pending' while a scenario has not run; else 'control
+    mismatch' (printable with that flag)."""
+    if any(str(v).startswith("FAIL") for v in verdicts if v):
+        return "FAIL (fault)"
+    if any(v is None for v in verdicts):
+        return "pending"
+    if all(v == "PASS" for v in verdicts):
+        return "PASS"
+    if all(v == "not applicable" for v in verdicts):
+        return "not applicable"
+    return "control mismatch"
+
+
+def _control_worlds(args, control, q, scoring, worlds, scenarios, methods, tol, root):
+    from experiments.benchmark import package, product, settings
+    errors = 0
+    for world in worlds:
+        for scen in scenarios:
+            out_root = f"{root}/control/{world}/{scen}"
+            log(f"[control] {world} / {scen} -> {out_root}")
+            wd = control.write_world(out_root, world=world, scenario=scen)
+            doc = wd["world_doc"]
+            site2 = control.control_site2(out_root, doc)
+            prov = control.planted_provider(doc)
+            package.prepare_v2(site2, provider=prov)
+            package.prepare_v2(site2, steps=("series",), provider=prov)
+            rows = [q.make_row("control", site2.site, "W2", settings.P0.id, m) for m in methods]
+            opts = q.QueueOptions(root=out_root, rows=rows, worker_id=f"control-{world}-{scen}",
+                                  threads=int(getattr(args, "threads", None) or DEFAULT_THREADS),
+                                  site2_for=lambda s, _s2=site2: _s2,
+                                  provider_for=lambda s, _p=prov: _p,
+                                  cubes_root=wd.get("cubes_root"))
+            counts = q.run(opts)
+            # unit errors and instance-level errors (a domain or key failure
+            # fails every unit of the instance before it runs)
+            errors += int(counts.get("status:error", 0)) + int(counts.get("error", 0))
+            prods = {}
+            for d, run in q.iter_lag_products(out_root):
+                prods[run["product"]] = q.load_lag_product(d)
+            if not prods:
+                log(f"[control] {world} / {scen}: no product (see the queue errors above)")
+                errors += 1
+                continue
+            dom = _control_domain(next(iter(prods.values())))
+            planted = control.planted_band_lags(wd["planted_path"], dom)
+            import inspect
+            kw = ({"domain": dom} if "domain" in
+                  inspect.signature(scoring.control_verdicts).parameters else {})
+            verdicts = scoring.control_verdicts(prods, planted, tol_min=tol, **kw)
+            rec = {"format": "v2-control-lag-1", "world": world, "scenario": scen,
+                   "out_root": out_root, "tol_min": tol, "planted": planted,
+                   "verdicts": verdicts,
+                   "products": {p: {"status": v.get("status"), "dir": v.get("dir")}
+                                for p, v in prods.items()},
+                   "utc": product.utc_stamp()}
+            _write_json(f"{root}/control/{world}_{scen}.json", rec)
+            for p, v in (verdicts or {}).items():
+                path = f"{root}/control/{p}.json"
+                old = product.read_json(path) if os.path.exists(path) else {"product": p,
+                                                                            "worlds": {}}
+                # the code of the adapter that made this verdict (the printing
+                # rule refuses a control made with other code than the scored row)
+                ck = ((prods.get(p) or {}).get("keys") or {}).get("code_files_key")
+                old.setdefault("worlds", {})[f"{world}_{scen}"] = dict(v, code_files_key=ck)
+                g = {x: (old["worlds"].get(f"gating_{x}") or {}).get("verdict")
+                     for x in CONTROL_SCENARIOS}
+                keys = {(old["worlds"].get(f"gating_{x}") or {}).get("code_files_key")
+                        for x in CONTROL_SCENARIOS}
+                old["scenarios"] = g
+                old["verdict"] = _control_overall(list(g.values()))
+                old["overall"] = {"verdict": old["verdict"]}
+                old["gating"] = old["verdict"]
+                # one code key over the gating scenarios, else None (stale)
+                old["code_files_key"] = next(iter(keys)) if len(keys) == 1 else None
+                old["utc"] = product.utc_stamp()
+                _write_json(path, old)
+                log(f"[control] {world} / {scen} {p}: {v.get('verdict')} (median |err| "
+                    f"{v.get('median_abs_err_min')} min over {v.get('n_bands')} bands)")
+    return errors
+
+
+def cmd_timing(args):
+    """Dedicated timing runs (``timing.run_dedicated``, spec §8.2); refused
+    while claims are active or the load average is >= 1.5."""
+    timing = _module("timing")
+    if timing is None:
+        return 2
+    from experiments.benchmark import lags
+    root = _root()
+    products = _split(args.products) or sorted(lags.all_cards())
+    if not products:
+        log("[timing] no lag product with a built adapter (--products)")
+        return 2
+    work = []
+    for w in _split(args.workloads) or ["45", "180", "all"]:
+        work.append("all" if w == "all" else int(w))
+    failed = 0
+    for site in _sites(args.sites):
+        try:
+            out = timing.run_dedicated(root, site, products, workloads=tuple(work),
+                                       repeats=int(args.repeats),
+                                       threads=int(args.threads or DEFAULT_THREADS))
+        except timing.TimingRefused as e:
+            log(f"[timing] {e}")
+            return 2
+        except timing.TimingUnavailable as e:    # a partial-year site: no W3 workloads
+            log(f"[timing] {site}: not timed ({e})")
+            failed += 1
+            continue
+        except Exception as e:                   # a site without its package, ...
+            log(traceback.format_exc().rstrip())
+            log(f"[timing] {site}: FAILED ({type(e).__name__}: {e})")
+            failed += 1
+            continue
+        for p, path in out.items():
+            log(f"[timing] {site} {p} -> {path}")
+    return 1 if failed else 0
+
+
+def cmd_lock(args):
+    """LOCK.json phase A or B (``lock.write_lock``, spec §9.9). The user
+    runs it; refused on a dirty tree, without attain.json or the gate
+    verdicts, and (phase A) while a Tier-1 elevation card is missing."""
+    lock = _module("lock")
+    if lock is None:
+        return 2
+    kw = {}
+    if getattr(args, "amend_unblind", None):
+        kw["unblind_amendment"] = str(args.amend_unblind)
+    try:
+        doc = lock.write_lock(args.phase, _root(), extra_dev_judges=_split(args.dev_judges),
+                              allow_missing=_split(args.allow_missing), **kw)
+    except lock.LockRefused as e:
+        for r in e.reasons:
+            log(f"[lock] refused: {r}")
+        return 2
+    except RuntimeError as e:                    # git unavailable
+        log(f"[lock] refused: {e}")
+        return 2
+    log(f"[lock] phase {args.phase} written to {lock.lock_path(_root())} "
+        f"({len(doc.get('amendments', []))} amendment(s))")
+    return 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  later milestones
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _later(what, ms):
-    log(f"validation_v2 {what}: available from milestone {ms}; this build is V1: fetch, "
-        f"inputs, check-env, prepare, truth, pilot crosstab|dom, plan, status (and the "
+    log(f"validation_v2 {what}: available from milestone {ms}; this build is V2: fetch, "
+        f"inputs, check-env, prepare, truth, pilot crosstab|dom|reps|attain, plan, status, "
+        f"run, score --part lag, gate (V2 gates), control --kind lag, timing, lock (and the "
         f"optional diag time)")
     return 2
 
@@ -1689,6 +2249,16 @@ def _common(sp, sites=True, res=True):
         sp.add_argument("--res", type=int, default=10, choices=RES_CHOICES,
                         help="10: Zarr stores (reported numbers); 20: legacy 20 m netCDF "
                              "cubes (local software checks; root results/validation_v2_20m)")
+
+
+def _res_arg(sp):
+    """``--res`` alone (plan, run, score: their own --sites/--cubes-root):
+    20 reads the local legacy 20 m packages under results/validation_v2_20m
+    (local software checks, never reported numbers)."""
+    sp.add_argument("--res", type=int, default=10, choices=RES_CHOICES,
+                    help="10: the Zarr packages (reported numbers); 20: the legacy 20 m "
+                         "netCDF packages (local software checks; root "
+                         "results/validation_v2_20m)")
 
 
 def _sensing_arg(sp):
@@ -1756,6 +2326,9 @@ def build_parser():
     sp.add_argument("name", help="zarr | offset | record | keep | marea | lagtruth | level | "
                                  "ocm | nidem | dea | ... | all (time: alias of diag time)")
     _common(sp, res=False)
+    sp.add_argument("--no-build", action="store_true",
+                    help="record/keep/marea: never build the legacy package under "
+                         "gates/_legacy (NOT RUN without it)")
     sp.add_argument("--no-fetch", action="store_true")
     sp.add_argument("--refresh", action="store_true")
     sp.add_argument("--all-rows", action="store_true")
@@ -1801,6 +2374,7 @@ def build_parser():
     sp = sub.add_parser("pilot", help="crosstab | dom (V1); reps | attain (V2); units (V3)")
     sp.add_argument("what", choices=PILOT_WHATS)
     _common(sp)
+    sp.add_argument("--design", default="curves-k1", help="reps: the curve design")
     sp.add_argument("--freeze", action="store_true", help="dom: freeze the current dom "
                                                           "(the user's approval, lock-A)")
     sp.add_argument("--force", action="store_true")
@@ -1808,16 +2382,24 @@ def build_parser():
 
     sp = sub.add_parser("plan", help="write plans/<design>.csv; the 10-day projection")
     sp.add_argument("--design", required=True, help="design name(s), tier1a, tier1b or all")
-    sp.add_argument("--sites", default=None)
+    sp.add_argument("--sites", default=None,
+                    help="(re)write these sites' rows; the other sites' rows of an existing "
+                         "plan are kept")
+    sp.add_argument("--replace", action="store_true",
+                    help="with --sites: write a plan of these sites only")
     sp.add_argument("--cap-days", type=float, default=10.0)
     sp.add_argument("--workers", type=int, default=4)
     sp.add_argument("--wh-per-day", type=float, default=None,
                     help="measured cheap throughput (pilot)")
     sp.add_argument("--blas-threads", type=int, default=None)
+    _res_arg(sp)
     sp.set_defaults(func=cmd_plan)
 
-    sp = sub.add_parser("status", help="package steps, dom and shard keys per site")
+    sp = sub.add_parser("status", help="package steps, dom and shard keys per site; the run "
+                                       "state of every plan row (status/<design>.csv)")
     _common(sp)
+    sp.add_argument("--watch", type=float, default=None, metavar="S",
+                    help="repeat every S seconds (Ctrl-C stops)")
     sp.set_defaults(func=cmd_status)
 
     sp = sub.add_parser("extract", help="a small Zarr extract of a legacy 10 m cube under a "
@@ -1834,26 +2416,87 @@ def build_parser():
     sp.add_argument("--blas-threads", type=int, default=None)
     sp.set_defaults(func=cmd_extract)
 
-    sp = sub.add_parser("control", help="positive control on the synthetic store (V2/V3)")
-    sp.add_argument("--method", default=None)
-    sp.add_argument("--world", default="gating", choices=("gating", "misspec"))
-    sp.add_argument("--kind", default=None, help="lag | elev")
-    sp.set_defaults(func=cmd_later)
-    sp = sub.add_parser("timing", help="dedicated timing runs on a quiet machine (V2)")
-    sp.set_defaults(func=cmd_later)
-    sp = sub.add_parser("lock", help="write LOCK.json (V2)")
+    sp = sub.add_parser("control", help="positive control on the synthetic store (lag: V2; "
+                                        "elev: V3)")
+    sp.add_argument("--method", default=None, help="method or product ids (default every "
+                                                   "imagery lag unit)")
+    sp.add_argument("--world", default="gating",
+                    choices=CONTROL_WORLDS + ("misspec", "all"))
+    sp.add_argument("--scenario", default="both", choices=CONTROL_SCENARIOS + ("both",))
+    sp.add_argument("--kind", default="lag", help="lag | elev (V3)")
+    sp.add_argument("--threads", type=int, default=None)
+    sp.set_defaults(func=cmd_control)
+    sp = sub.add_parser("timing", help="dedicated timing runs on a quiet machine (spec §8.2)")
+    sp.add_argument("--sites", "--site", dest="sites", default="wadden",
+                    help="sites whose stores cover 2023-2025 (default wadden; a partial-year "
+                         "site is 'not timed')")
+    sp.add_argument("--products", default=None, help="product ids (default every built lag "
+                                                     "product)")
+    sp.add_argument("--workloads", default="45,180,all")
+    sp.add_argument("--repeats", type=int, default=2)
+    sp.add_argument("--threads", type=int, default=None, help="production BLAS threads")
+    sp.add_argument("--cubes-root", default=None)
+    sp.set_defaults(func=cmd_timing)
+    sp = sub.add_parser("lock", help="write LOCK.json phase A or B (the user runs it)")
     sp.add_argument("--phase", required=True, choices=("A", "B"))
-    sp.set_defaults(func=cmd_later)
-    sp = sub.add_parser("run", help="the multi-plan, instance-major unit queue (V2+)")
+    sp.add_argument("--dev-judges", default=None, help="development judges added to Harlingen")
+    sp.add_argument("--allow-missing", default=None,
+                    help="items accepted as missing (attain, <gate>, <site>:<gate>, ...)")
+    sp.add_argument("--amend-unblind", default=None, metavar="REASON",
+                    help="lock-A after a pre-lock score of the confirmatory window "
+                         "(score --unblind W3): the reason, recorded as a §9.9 amendment")
+    sp.set_defaults(func=cmd_lock)
+    sp = sub.add_parser("run", help="the multi-plan, instance-major unit queue")
     sp.add_argument("--plans", required=True, help="d1,d2,... in priority order")
     sp.add_argument("--worker-id", default="1")
-    sp.add_argument("--threads", type=int, default=None)
+    sp.add_argument("--threads", type=int, default=None,
+                    help="BLAS threads of every unit (default 4); enters the config key: use "
+                         "the same value on every worker")
+    sp.add_argument("--boot-threads", type=int, default=1)
     sp.add_argument("--steal-stale", action="store_true")
-    sp.set_defaults(func=cmd_later)
-    sp = sub.add_parser("score", help="sufficient statistics and score tables (V2/V3)")
-    sp.add_argument("--part", default="all", choices=("lag", "elev", "curves", "timing", "all"))
+    sp.add_argument("--sites", default=None, help="site, comma list or all (default all)")
+    sp.add_argument("--windows", default=None, help="e.g. W3,Y2023")
+    sp.add_argument("--methods", default=None, help="only these methods (e.g. E0,L08)")
+    sp.add_argument("--smoke", action="store_true",
+                    help="adapters may shorten their work; products are marked smoke and "
+                         "never satisfy a real resume")
+    sp.add_argument("--passes", type=int, default=1)
+    sp.add_argument("--no-wall-cap", action="store_true",
+                    help="do not mark units running longer than 3 x est_hours (at least 6 h) "
+                         "as 'budget'")
+    sp.add_argument("--hang-timeout-min", type=float, default=30.0,
+                    help="a unit whose progress counter stalls this long is flagged hung "
+                         "(§13.5): its claim heartbeat stops; a unit that returns keeps its "
+                         "result with the flag recorded")
+    sp.add_argument("--ram-margin-gb", type=float, default=None,
+                    help="OS margin of the RAM ledger (default 6; use 16 while V1, OCM or "
+                         "the gates' legacy prepare run beside the workers)")
+    sp.add_argument("--threads-change", action="store_true",
+                    help="accept another --threads than the queue root's claims/queue.json "
+                         "(every finished unit then reruns)")
+    sp.add_argument("--cubes-root", default=None)
+    _res_arg(sp)
+    sp.set_defaults(func=cmd_run)
+    sp = sub.add_parser("score", help="lag score tables (V2); elev, curves, timing (V3)")
+    sp.add_argument("--part", default="lag", choices=("lag", "elev", "curves", "timing", "all"),
+                    help="lag (the default of milestone V2); the others arrive in V3")
     sp.add_argument("--blocks", action="store_true")
-    sp.set_defaults(func=cmd_later)
+    sp.add_argument("--pre-lock", action="store_true",
+                    help="descriptive tables before LOCK.json phase A (PRE-LOCK banner); at "
+                         "10 m the confirmatory window W3 stays blinded")
+    sp.add_argument("--unblind", default=None, metavar="W3",
+                    help="pre-lock: also score these confirmatory windows (the user's "
+                         "decision; recorded in scores/prelock_ledger.json, disclosed in "
+                         "LOCK.json, and lock-A then needs --amend-unblind)")
+    sp.add_argument("--show-unvalidated", action="store_true",
+                    help="development view: lag_table.md also prints the numbers of rows "
+                         "without their positive control or gates, marked 'not validated "
+                         "(shown)' (the CSVs always hold them)")
+    sp.add_argument("--sites", default=None)
+    sp.add_argument("--windows", default=None)
+    sp.add_argument("--cubes-root", default=None)
+    _res_arg(sp)
+    sp.set_defaults(func=cmd_score)
     sp = sub.add_parser("report", help="tables, figures, numbers.json, report.html (V6)")
     sp.set_defaults(func=cmd_later)
     return p
@@ -1908,36 +2551,48 @@ def main(argv=None):
     """Parse, set the BLAS threads (before numpy), chdir to the repository
     root and run the command. Returns the exit code."""
     args = build_parser().parse_args(argv)
+    args._argv = [str(a) for a in (sys.argv[1:] if argv is None else argv)]
     if ROOT not in sys.path:
         sys.path.insert(0, ROOT)
     os.chdir(ROOT)
-    v13 = _v13()
-    n = getattr(args, "blas_threads", None) or DEFAULT_THREADS
-    v13.set_thread_env(n, "--blas-threads" if getattr(args, "blas_threads", None)
-                       else "default")
+    saved_streams = (sys.stdout, sys.stderr)
+    sys.stdout, sys.stderr = _PipeSafe(sys.stdout), _PipeSafe(sys.stderr)
+    try:
+        v13 = _v13()
+        n = (getattr(args, "blas_threads", None) or getattr(args, "threads", None)
+             or DEFAULT_THREADS)
+        why = ("--blas-threads" if getattr(args, "blas_threads", None)
+               else ("--threads" if getattr(args, "threads", None) else "default"))
+        v13.set_thread_env(n, why)
+    except BaseException:
+        sys.stdout, sys.stderr = saved_streams
+        raise
     old = _interrupt_on_signals()
     t0 = time.time()
-    log(f"[v2] {args.command} on {socket.gethostname()} (pid {os.getpid()}), "
-        f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
-    _ignore_output_root(_root(_res(args)))
     try:
-        rc = args.func(args)
-    except KeyboardInterrupt as e:
-        log(f"[v2] {args.command} interrupted ({e or 'Ctrl-C'})")
-        rc = 130
-    except ValueError as e:
-        log(f"[v2] {args.command}: {e}")
-        rc = 2
+        log(f"[v2] {args.command} on {socket.gethostname()} (pid {os.getpid()}), "
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
+        _ignore_output_root(_root(_res(args)))
+        try:
+            rc = args.func(args)
+        except KeyboardInterrupt as e:
+            log(f"[v2] {args.command} interrupted ({e or 'Ctrl-C'})")
+            rc = 130
+        except ValueError as e:
+            log(f"[v2] {args.command}: {e}")
+            rc = 2
+        finally:
+            import signal
+            for sig, h in old.items():
+                try:
+                    signal.signal(sig, h)
+                except (ValueError, OSError):
+                    pass
+        if rc != 2:
+            _log_command(args, rc, time.time() - t0)
+        log(f"[v2] {args.command} finished in {time.time() - t0:.0f} s (exit {rc})")
     finally:
-        import signal
-        for sig, h in old.items():
-            try:
-                signal.signal(sig, h)
-            except (ValueError, OSError):
-                pass
-    if rc != 2:
-        _log_command(args, rc, time.time() - t0)
-    log(f"[v2] {args.command} finished in {time.time() - t0:.0f} s (exit {rc})")
+        sys.stdout, sys.stderr = saved_streams
     return rc
 
 
