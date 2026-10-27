@@ -5,9 +5,10 @@
 #   bash notebooks/validation/run_01_on_server.sh                 # escalda wadden ems
 #   bash notebooks/validation/run_01_on_server.sh escalda         # one site
 #
-# Passed through to the notebook when set: NB_NS, NB_METHODS, NB_EXTRA, MAREA_DEA_TMP, OMP_NUM_THREADS.
-# Executed copies (and HTML when nbconvert can) go to results/fixedcfg_nb/ (NB_OUT), logs and STATUS to
-# logs/v2/claude/nb01/ (NB_LOG); the notebooks are read from notebooks/validation/ (NB_DIR).
+# Passed through to the notebook when set: NB_NS, NB_METHODS, NB_VARIANTS, NB_EXTRA, NB_FIRST, MAREA_DEA_TMP,
+# OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to results/fixedcfg_nb_diag/ (NB_OUT; the
+# first run's results/fixedcfg_nb/ is kept, and the notebook checks its nine methods against it), logs and
+# STATUS to logs/v2/claude/nb01_diag/ (NB_LOG); the notebooks are read from notebooks/validation/ (NB_DIR).
 set -u
 REPO=/media/HDD/jalias/Intertidal_analysis
 cd "$REPO" || exit 1
@@ -15,8 +16,8 @@ source env.sh > /dev/null
 
 SITES=${*:-escalda wadden ems}
 NB=${NB_DIR:-notebooks/validation}
-OUT=${NB_OUT:-results/fixedcfg_nb}
-LOG=${NB_LOG:-logs/v2/claude/nb01}
+OUT=${NB_OUT:-results/fixedcfg_nb_diag}
+LOG=${NB_LOG:-logs/v2/claude/nb01_diag}
 export NB_OUT=$OUT                                                   # the notebooks write there
 mkdir -p "$OUT" "$LOG"
 export MAREA_DEA_TMP=${MAREA_DEA_TMP:-/media/HDD/jalias/v19_tmp}     # DEA refuses a temp root inside the repo
