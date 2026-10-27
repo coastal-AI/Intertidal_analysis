@@ -29,6 +29,7 @@ history dates it. Nothing here changes the published method; adoption is the fir
 | V7 | amplitude per band | the boundary level of each band scaled by the ratio of the EOT20 amplitude at the band's centroid to that at the boundary point, then delayed; never calibrated on validation gauges |
 | V8 | recency weights | V0 and sampled exceedance with weights exp(-dt/T), T = 1 year, dt the image's age before the window's last image (as notebook 04) |
 | V9 | sigma as uncertainty | not an estimator: for V0 and V1, the share of pixels with abs(p - t) <= sigma and <= 2 sigma, and the Spearman correlation of abs(p - t) with sigma |
+| V10 | MAREA-B with lapse rates | V2 with a contamination term: P(wet) = e + (1 - 2e) Phi((h - z)/sigma), e on the grid {0, 0.02, 0.05, 0.10} maximised with z and sigma (the psychometric lapse rate), so a few spurious wet looks at low tide or dry looks at high tide do not drag z; added 2026-10-27 after notebook 05's development gallery, before any confirmatory window |
 
 ## How they are judged
 
