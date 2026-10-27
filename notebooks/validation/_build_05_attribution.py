@@ -42,29 +42,33 @@ worst and best pixels look like (section 7).
 
 **The construction is notebook 01's**, its code unchanged: the production screening, boundary and extraction; the
 truth (Vaklodingen cells surveyed in 2023–2025, the most recent survey per cell, dated to the end of its year);
-the pixels F; the windows of the n most recent screened images on or before the truth date, here n = 60 and 50
-(Ems: 50 and 40) on the 2025 row. Every estimate that notebook 01 also computes must give its rows bit for bit
-(section 8).
+the pixels F; the windows of the n most recent screened images on or before the truth date, by default n = 60 and
+50 (Ems: 50 and 40) on the 2025 row, the development windows; `NB_NS=125,100,75` runs the confirmatory windows,
+which hold the pre-2023 images (their water level and NIDEM's frames as notebook 01 reads them). Every estimate that
+notebook 01 also computes must give its rows bit for bit (section 8).
 
 | id | estimate | |
 |---|---|---|
 | V0 | MAREA | as published, notebook 01's MAREA: the reference |
 | V1 | MAREA-0 | V0's fit read where it crosses NDWI = 0 (notebook 01's *MAREA, z at NDWI = 0*) |
 | V2 | MAREA-B | V0's delay; the probit likelihood of the wet/dry record (new here) |
+| V10 | MAREA-B with lapse rates | V2 with P(wet) = e + (1 − 2e)Φ((h − z)/σ), e ∈ {0, 0.02, 0.05, 0.10} (new here) |
 | V2d | MAREA-B, no delay | V2 with every delay 0 (new here) |
 | | MAREA, no delay | V0 with every delay 0 (notebook 01's diagnostic) |
 | | LogiTide2DEM, and + MAREA delay | E4, and E4 with each pixel's levels read MAREA's delay earlier (notebook 01's) |
 | | sampled exceedance, DEA Intertidal, NIDEM, Flood2Topo | E5c, DEA 2.5.3, NIDEM, E5a as notebook 01 runs them |
 
-V1, V2 and V2d are declared in `experiments/variants_preregistered_2026-10-27.md`. These are development windows:
-**everything after V0 that is not one of notebook 01's methods (V1, V2, V2d, MAREA no delay, LogiTide2DEM + MAREA
-delay) is exploratory, a diagnostic**, and never replaces a method. The notebook reports observations in tables and
-figures; it draws no conclusions.
+V1, V2, V2d, V9 (σ as an uncertainty, a table for V0 and V1 in section 3) and V10 are declared in
+`experiments/variants_preregistered_2026-10-27.md`. On the development windows **everything after V0 that is not
+one of notebook 01's methods (V1, V2, V10, V2d, MAREA no delay, LogiTide2DEM + MAREA delay) is exploratory, a
+diagnostic**, and never replaces a method; on the confirmatory windows the variants are judged as that file says.
+The notebook reports observations in tables and figures; it draws no conclusions.
 
 **Outputs** (`OUT`): `<site>_scores.csv` (every window and estimate: seconds and scores on F),
-`<site>_decomposition.csv`, `<site>_ladder.csv`, `<site>_ladder_steps.csv`, `<site>_ladder_cases.csv`,
-`<site>_rivals.csv`, `<site>_strata.csv`, `<site>_delay_summary.csv`, `<site>_delay_bins.csv`, `<site>_gallery.csv`,
-the per-pixel arrays `<site>_pixels.npz` and the figures (PNG, 200 dpi).
+`<site>_decomposition.csv`, `<site>_sigma.csv`, `<site>_ladder.csv`, `<site>_ladder_steps.csv`,
+`<site>_ladder_cases.csv`, `<site>_rivals.csv`, `<site>_strata.csv`, `<site>_delay_summary.csv`,
+`<site>_delay_bins.csv`, `<site>_gallery.csv`, the per-pixel arrays `<site>_pixels.npz` and the figures (PNG,
+200 dpi).
 """)
 
 md(r"""
@@ -72,15 +76,17 @@ md(r"""
 
 Everything that changes between runs lives in the next cell. The environment variables `NB_SITE`, `NB_NS`,
 `NB_METHODS`, `NB_EXTRA`, `NB_OUT`, `NB_NTABLES`, `NB_FIRST`, `NB_BED` and `NB_ROW_YEARS` override them (the server
-script sets `NB_SITE`). The constants of the last block are notebook 01's.
+script sets `NB_SITE`). The confirmatory windows: `NB_NS=125,100,75`, with `NB_OUT` a folder of their own and
+`NB_NTABLES` notebook 01's run of the same windows. The constants of the last block are notebook 01's.
 """)
 
 code(r'''
 import os
 
 SITE    = os.environ.get("NB_SITE", "escalda")       # escalda | wadden | ems
-NS      = os.environ.get("NB_NS")                    # the windows, e.g. "60,50"; unset: the site's pair (next cell)
-METHODS = os.environ.get("NB_METHODS", "MAREA,MAREA_ndwi0,MAREA_B,MAREA_B_nodelay,MAREA_nodelay,"
+NS      = os.environ.get("NB_NS")                    # the windows, e.g. "60,50" or "125,100,75"; unset: the site's
+                                                     # development pair (next cell)
+METHODS = os.environ.get("NB_METHODS", "MAREA,MAREA_ndwi0,MAREA_B,MAREA_BL,MAREA_B_nodelay,MAREA_nodelay,"
                                        "E4,E4_delay,E5c,DEA,NIDEM,E5a").split(",")
 EXTRA   = os.environ.get("NB_EXTRA", "auto")         # pre-2023 scenes, as notebook 01 reads them ("auto", "none", a path)
 OUT     = os.environ.get("NB_OUT", "results/attribution_nb")        # the CSVs, the npz and the figures go here
@@ -94,6 +100,7 @@ Q_BINS      = 5           # quantile bins of the strata (section 5); the positiv
 GALLERY     = (12, 4)     # the pixels where V0 errs most / least relative to LogiTide2DEM (section 7)
 B_MIN_LOOKS = 8           # MAREA-B: at least 8 clear looks, one wet and one dry (the variants file)
 B_TIE_TOL   = 1e-9        # MAREA-B: z levels whose profile log-likelihood is within this of the maximum are tied
+B_LAPSES    = (0.0, 0.02, 0.05, 0.10)   # V10: the lapse rates e, maximised with z and sigma (the variants file)
 
 # ── Fixed by notebook 01 ────────────────────────────────────────────────
 MAX_PX            = 200_000   # a larger F is v19's seeded random subsample
@@ -150,6 +157,7 @@ import yaml
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.special import log_ndtr, ndtr, ndtri      # log Φ, Φ and Φ⁻¹ of the standard normal
+from scipy.stats import spearmanr
 
 import pyintertidal as pit
 from pyintertidal import SentinelCube, marea
@@ -161,6 +169,8 @@ from experiments.fixedcfg import methods as fm
 from experiments.fixedcfg import dea_intertidal as dea
 from experiments.fixedcfg.elev_base import NotComputable
 from experiments.fixedcfg.level_series import LevelSeries
+from experiments import light_to_extraction as lte     # the production rule of the boundary before 2023
+from experiments import zarr_cubes as zc               # the band-subset Zarr stores of the pre-2023 years
 
 pit.net.use_system_certificates()
 os.makedirs(OUT, exist_ok=True)
@@ -170,22 +180,25 @@ print("repository", os.getcwd(), "· pyintertidal", pit.__version__, "· DEA tem
 
 code(r'''
 LABELS = {"MAREA": "V0 MAREA", "MAREA_ndwi0": "V1 MAREA-0", "MAREA_B": "V2 MAREA-B",
-          "MAREA_B_nodelay": "V2d MAREA-B, no delay", "MAREA_nodelay": "MAREA, no delay",
-          "E4": "LogiTide2DEM", "E4_delay": "LogiTide2DEM + MAREA delay", "E5c": "sampled exceedance",
-          "DEA": "DEA Intertidal", "NIDEM": "NIDEM", "E5a": "Flood2Topo"}
-SHORT = {"MAREA": "V0", "MAREA_ndwi0": "V1", "MAREA_B": "V2", "MAREA_B_nodelay": "V2d", "MAREA_nodelay": "V0 τ=0",
-         "E4": "LT2D", "E4_delay": "LT2D+τ", "E5c": "exceed.", "DEA": "DEA", "NIDEM": "NIDEM", "E5a": "F2T"}
-ROLE = {m: "diagnostic" for m in ("MAREA_ndwi0", "MAREA_B", "MAREA_B_nodelay", "MAREA_nodelay", "E4_delay")}
+          "MAREA_BL": "V10 MAREA-B, lapse rates", "MAREA_B_nodelay": "V2d MAREA-B, no delay",
+          "MAREA_nodelay": "MAREA, no delay", "E4": "LogiTide2DEM", "E4_delay": "LogiTide2DEM + MAREA delay",
+          "E5c": "sampled exceedance", "DEA": "DEA Intertidal", "NIDEM": "NIDEM", "E5a": "Flood2Topo"}
+SHORT = {"MAREA": "V0", "MAREA_ndwi0": "V1", "MAREA_B": "V2", "MAREA_BL": "V10", "MAREA_B_nodelay": "V2d",
+         "MAREA_nodelay": "V0 τ=0", "E4": "LT2D", "E4_delay": "LT2D+τ", "E5c": "exceed.", "DEA": "DEA", "NIDEM": "NIDEM",
+         "E5a": "F2T"}
+ROLE = {m: "diagnostic" for m in ("MAREA_ndwi0", "MAREA_B", "MAREA_BL", "MAREA_B_nodelay", "MAREA_nodelay",
+                                  "E4_delay")}
 ROLE.update({"MAREA": "reference", **{m: "method" for m in ("E4", "E5c", "DEA", "NIDEM", "E5a")}})
 ORDER = [m for m in LABELS if m in METHODS]
 
 PAL = dict(deep="#2F5D7C", shallow="#8DB3C7", sand="#C9A66B", dark_sand="#8C6D46", seagrass="#5B7F3A",
            grey="#B8B2A3", accent="#B5523B", ink="#2B2B2B", secondary="#6B6B6B")
 COLORS = {"MAREA": PAL["accent"], "MAREA_nodelay": PAL["accent"], "MAREA_ndwi0": PAL["sand"],
-          "MAREA_B": PAL["dark_sand"], "MAREA_B_nodelay": PAL["dark_sand"], "E4": PAL["deep"], "E4_delay": PAL["deep"],
-          "E5c": PAL["seagrass"], "DEA": PAL["shallow"], "NIDEM": PAL["grey"], "E5a": PAL["secondary"]}
-MARKERS = {"MAREA": "o", "MAREA_nodelay": "o", "MAREA_ndwi0": "D", "MAREA_B": "s", "MAREA_B_nodelay": "s",
-           "E4": "^", "E4_delay": "^", "E5c": "v", "DEA": "P", "NIDEM": "X", "E5a": "<"}
+          "MAREA_B": PAL["dark_sand"], "MAREA_BL": PAL["dark_sand"], "MAREA_B_nodelay": PAL["dark_sand"],
+          "E4": PAL["deep"], "E4_delay": PAL["deep"], "E5c": PAL["seagrass"], "DEA": PAL["shallow"], "NIDEM": PAL["grey"],
+          "E5a": PAL["secondary"]}
+MARKERS = {"MAREA": "o", "MAREA_nodelay": "o", "MAREA_ndwi0": "D", "MAREA_B": "s", "MAREA_BL": "h",
+           "MAREA_B_nodelay": "s", "E4": "^", "E4_delay": "^", "E5c": "v", "DEA": "P", "NIDEM": "X", "E5a": "<"}
 WSTYLE = [("-", "o", PAL["ink"]), ("--", "s", PAL["secondary"]), (":", "^", PAL["grey"])]   # one per window
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 8.5, "axes.titleweight": "bold", "axes.labelsize": 8,
                      "axes.edgecolor": PAL["secondary"], "axes.labelcolor": PAL["ink"], "text.color": PAL["ink"],
@@ -241,7 +254,10 @@ md(r"""
 
 The production screening (reference map voted by the clean scenes, then each scene's cloud share over the
 transition zone; usable at most 10 % cloudy), the production boundary, S (usable, with an overpass time and a finite
-level), and the optional pre-2023 scenes of `experiments/light_to_extraction.py`, put before S.
+level), and the optional pre-2023 scenes of `experiments/light_to_extraction.py`, put before S. With them, as in
+notebook 01, `boundary` becomes a `SplitBoundary`: before 2023-01-01 the production rule of those years,
+`pre2023_boundary` (production's object with its gauge members extended by the IOC records of those years, demeaned
+by production's constants), from then on production's object, chosen instant by instant; every level is read from it.
 """)
 
 code(r'''
@@ -273,11 +289,39 @@ print(f"S in 2023-2025 is the production MAREA record ({len(record)} scenes): {p
 ''')
 
 code(r'''
+class SplitBoundary:
+    """A boundary that reads `before` at the instants before `cut` and `after` from `cut` on, instant by instant.
+    Each is called once, on its own instants in the order given (sorted in, sorted out, as production's object
+    needs)."""
+
+    def __init__(self, before, after, cut):
+        self.before, self.after, self.cut = before, after, pd.Timestamp(cut)
+        self.name = f"{after.name} (before {self.cut.date()}: {before.name})"
+
+    def levels(self, times):
+        t = pd.DatetimeIndex(times)
+        if t.tz is not None:
+            t = t.tz_localize(None)
+        early = np.asarray(t < self.cut)
+        h = np.full(len(t), np.nan)
+        if (~early).any():
+            h[~early] = np.asarray(self.after.levels(t[~early]), float)
+        if early.any():
+            h[early] = np.asarray(self.before.levels(t[early]), float)
+        return h
+''')
+
+code(r'''
 found = sorted(glob.glob(f"results/fixedcfg/extra/{SITE}_extract_*.npz"))
 EXTRA_PATH = (found[-1] if found else None) if EXTRA == "auto" else (None if EXTRA == "none" else EXTRA)
 x_dates = np.array([], str)
+boundary_prod = getattr(boundary, "after", boundary)   # production's boundary object (also when the cell runs again)
 if EXTRA_PATH:
     side = json.load(open(EXTRA_PATH[:-4] + ".json", encoding="utf-8"))
+    boundary_pre, pre_info = lte.pre2023_boundary(SITE, boundary_prod, lte.PRODUCTION_GAUGE_CACHE,
+                                                  lte.PRE2023_GAUGE_CACHE)
+    boundary = SplitBoundary(boundary_pre, boundary_prod, P["period"][0])
+    print(f"boundary before {P['period'][0]}: {boundary_pre.name}; gauge weights {pre_info['weights']}")
     cloud_x = {d: p for d, p in side["cloud_pct"].items() if p is not None and d < P["period"][0]}
     cand_x = [d for d in pit.filter_dates(cloud_x, cloud_threshold=0.10) if side["overpass"].get(d)]
     t_x = pd.DatetimeIndex([pd.Timestamp(side["overpass"][d]) for d in cand_x]).tz_localize(None)
@@ -287,7 +331,7 @@ if EXTRA_PATH:
     print(f"{EXTRA_PATH}: {len(x_dates)} screened scenes before {P['period'][0]} put before S "
           f"-> {len(S_dates)} scenes {S_dates[0]} → {S_dates[-1]}")
 else:
-    print("no extra extraction: the windows hold the cube's scenes only")
+    print("no extra extraction: the windows hold the cube's scenes only; every level is production's boundary")
 ''')
 
 md(r"""
@@ -452,6 +496,54 @@ if reach and any("level_series" in fm.METHODS[m][2].get("needs", []) for m in ME
     last = pd.Timestamp(max(w["end"] for w in reach)) + pd.Timedelta(days=1)
     LS = LevelSeries.from_boundary(boundary, first, last)
     print(f"1-min level series {first.date()} → {last.date()}: {len(LS.h):,} levels  [{time.perf_counter() - t0:.0f} s]")
+''')
+
+md(r"""
+### The water level before 2023: the checks
+
+With pre-2023 scenes: (1) the levels of the 2023–2025 scenes, at every delay of the table, are those production's
+boundary gives in a run without pre-2023 scenes (one call over the same instants), bit for bit; (2) the levels of
+the pre-2023 scenes without delay are the extraction's record (`levels_pre2023`, written by
+`light_to_extraction.py build` with the same `pre2023_boundary`), bit for bit, and the record's boundary, tide
+member, gauge weights and demeaning constants are those built here; (3) the 1-min level series switches from
+`pre2023_boundary` to production's boundary at 2023-01-01 (the two days around it, bit for bit).
+""")
+
+code(r'''
+if len(x_dates):
+    cut = boundary.cut
+    post = np.flatnonzero(S_t >= cut)                  # the 2023-2025 scenes of S
+    sh = {tau: S_t[post] - pd.Timedelta(minutes=tau) for tau in range(-45, 181)}
+    inst_p = pd.DatetimeIndex(np.unique(np.concatenate([s.values for s in sh.values()])))
+    lev_p = np.asarray(boundary_prod.levels(inst_p), float)          # as a run without pre-2023 scenes reads them
+    assert all(np.array_equal(LEV[tau][post], lev_p[np.searchsorted(inst_p.values, s.values)])
+               for tau, s in sh.items()), "the 2023-2025 levels are not production's"
+    print(f"2023-2025: the levels of its {len(post)} scenes at tau = -45..180 min are production's, bit for bit")
+
+    rec = side["levels_pre2023"]
+    for k in ("boundary", "production_boundary", "tide_member", "weights"):
+        assert rec[k] == pre_info[k], f"the extraction's {k} is {rec[k]!r}, here {pre_info[k]!r}"
+    for g, v in pre_info["gauges"].items():
+        for k in ("production_median_m", "pre2023_median_m", "samples"):
+            assert rec["gauges"][g][k] == v[k], f"gauge {g}: the extraction's {k} is {rec['gauges'][g][k]}, here {v[k]}"
+    have = [i for i, d in enumerate(x_dates) if (rec["per_date"].get(d) or {}).get("h_B") is not None]
+    h_rec = np.array([rec["per_date"][x_dates[i]]["h_B"] for i in have], float)
+    assert np.array_equal(LEV[0][have], h_rec), \
+        f"the pre-2023 levels are not the extraction's record (max |diff| {np.max(np.abs(LEV[0][have] - h_rec)):.1e} m)"
+    kinds = Counter(rec["per_date"][x_dates[i]]["members"] for i in have)
+    print(f"before 2023: the levels of {len(have)} of {len(x_dates)} scenes are the extraction's record "
+          f"(levels_pre2023), bit for bit, with its boundary, tide member, gauge weights and demeaning constants; "
+          f"members at those scenes {dict(kinds)}")
+
+    if LS is not None and LS.t[0] < cut:
+        a, b = LS.t.searchsorted(cut - pd.Timedelta(days=1)), LS.t.searchsorted(cut + pd.Timedelta(days=1))
+        t = LS.t[a:b]
+        h = np.concatenate([boundary_pre.levels(t[t < cut]), boundary_prod.levels(t[t >= cut])])
+        assert np.array_equal(LS.h[a:b], h), "the 1-min series does not switch boundary at the cut"
+        print(f"1-min series: its {b - a:,} levels around {cut.date()} are pre2023_boundary's before it and "
+              "production's from it, bit for bit")
+else:
+    print("no pre-2023 scene: every level is production's boundary")
 ''')
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -662,8 +754,120 @@ print(f"invert_bernoulli = the brute-force maximum on 4 synthetic pixels: z = {n
 ''')
 
 md(r"""
+**V10 MAREA-B with lapse rates** (diagnostic, declared on 2026-10-27 before any confirmatory window): V2 with a
+contamination term, P(wet) = e + (1 − 2e)Φ((h − z)/σ), so a few spurious wet looks at low tide or dry looks at high
+tide (a missed cloud, a wet patch left on the flat) do not drag z. The lapse rate e is maximised with z and σ on the
+grid `B_LAPSES` = {0, 0.02, 0.05, 0.10}; the rest is V2's: V0's delay, `invert_series`' z and σ grids between the
+window's lowest and highest level, the median of the tied z levels (the profile now over σ and e), at least 8 clear
+looks with a wet and a dry one. With e = 0 the log-likelihood is V2's (log Φ), so `invert_bernoulli_lapse` with
+e = 0 alone is V2 bit for bit; the next cell checks that, and checks it against plain loops.
+""")
+
+code(r'''
+def invert_bernoulli_lapse(Y, C, h, lo, hi, lapses=B_LAPSES, min_looks=B_MIN_LOOKS, tie_tol=B_TIE_TOL, mu_points=50,
+                           chunk=4000):
+    """V10: per pixel, the likelihood of its wet/dry record on the clear looks with P(wet) = e + (1 - 2e)
+    Phi((h - z)/sigma), maximised on invert_series' grid (mu_points levels in [lo, hi], sigma in marea.SG_GRID) and
+    over the lapse rates e in `lapses` (e = 0: log Phi, invert_bernoulli's own terms). z = the median of the tied z
+    levels (profile over sigma and e within tie_tol of its maximum); sigma and e = the best pair at the tied level
+    nearest z. NaN with fewer than min_looks clear looks or without a wet and a dry one. Returns (z, sigma, e, the
+    number of tied levels)."""
+    grid, sgs, es = np.linspace(lo, hi, mu_points), np.asarray(marea.SG_GRID, float), np.asarray(lapses, float)
+    u = (np.asarray(h, float)[:, None, None] - grid[None, :, None]) / sgs[None, None, :]
+
+    def log_p(v):                                     # log(e + (1 - 2e) Phi(v)) for every e: (..., lapses)
+        return np.stack([log_ndtr(v) if e == 0 else np.log(e + (1 - 2 * e) * ndtr(v)) for e in es], axis=-1)
+
+    lw, ld = log_p(u).reshape(len(h), -1), log_p(-u).reshape(len(h), -1)   # (looks, levels x sigmas x lapses)
+    P, K = Y.shape[1], len(sgs) * len(es)
+    z, sg, lapse, n_tied = np.full(P, np.nan), np.full(P, np.nan), np.full(P, np.nan), np.zeros(P, int)
+    for j in range(0, P, chunk):
+        s = slice(j, min(j + chunk, P))
+        clear = np.asarray(C[:, s], bool)
+        with np.errstate(invalid="ignore"):
+            wet = clear & (np.asarray(Y[:, s]) > 0)     # an undefined NDWI is never wet
+        dry = clear & ~wet
+        ll = (wet.T.astype(float) @ lw + dry.T.astype(float) @ ld).reshape(-1, len(grid), K)
+        prof = ll.max(axis=2)                           # the profile over sigma and e: (pixels, levels)
+        tied = prof >= prof.max(axis=1, keepdims=True) - tie_tol
+        zb = np.nanmedian(np.where(tied, grid[None, :], np.nan), axis=1)
+        near = np.argmin(np.where(tied, np.abs(grid[None, :] - zb[:, None]), np.inf), axis=1)
+        best = ll[np.arange(len(near)), near].argmax(axis=1)   # sigma index * len(es) + e index
+        ok = (clear.sum(axis=0) >= min_looks) & wet.any(axis=0) & dry.any(axis=0)
+        z[s], n_tied[s] = np.where(ok, zb, np.nan), np.where(ok, tied.sum(1), 0)
+        sg[s] = np.where(ok, sgs[best // len(es)], np.nan)
+        lapse[s] = np.where(ok, es[best % len(es)], np.nan)
+    return z, sg, lapse, n_tied
+
+
+def run_marea_bl(win, px):
+    """V10: V2 (V0's delays, the same grid and guards) with the lapse rates B_LAPSES."""
+    w = win["scenes"]
+    tau_bands, tau_px = window_delays(win)
+    tau_px = tau_px[px]
+    h0 = LEV[0][w]
+    Y, C = Y_S[np.ix_(w, px)], C_S[np.ix_(w, px)]
+    z, sigma, lapse, tied = (np.full(len(px), np.nan), np.full(len(px), np.nan), np.full(len(px), np.nan),
+                             np.zeros(len(px), int))
+    for tau in np.unique(tau_px):
+        cols = np.flatnonzero(tau_px == tau)
+        z[cols], sigma[cols], lapse[cols], tied[cols] = invert_bernoulli_lapse(Y[:, cols], C[:, cols],
+                                                                               level_at(int(tau))[w], h0.min(), h0.max())
+    fin = np.isfinite(z)
+    share = ", ".join(f"{np.mean(lapse[fin] == e):.0%} e={e:g}" for e in B_LAPSES) if fin.any() else "no value"
+    note = f"{lags_text(tau_bands)}; {share}; {int((tied[fin] > 1).sum()):,} of {int(fin.sum()):,} px on a tied plateau"
+    return z, note, None, {"sigma": sigma, "lapse": lapse, "n_tied": tied}
+''')
+
+code(r'''
+def brute_force_bl(wet, clear, h, lo, hi, lapses=B_LAPSES, tie_tol=B_TIE_TOL):
+    """V10 of one pixel by plain loops over the grid and the lapse rates (the check of invert_bernoulli_lapse)."""
+    wet = wet & clear
+    if clear.sum() < B_MIN_LOOKS or not wet.any() or not (clear & ~wet).any():
+        return np.nan
+    grid, prof = np.linspace(lo, hi, 50), []
+    for zk in grid:
+        best = -np.inf
+        for sk in marea.SG_GRID:
+            for e in lapses:
+                ll = 0.0
+                for k in range(len(h)):
+                    if clear[k]:
+                        u = (h[k] - zk) / sk if wet[k] else -(h[k] - zk) / sk
+                        ll += float(log_ndtr(u)) if e == 0 else float(np.log(e + (1 - 2 * e) * ndtr(u)))
+                best = max(best, ll)
+        prof.append(best)
+    prof = np.array(prof)
+    return float(np.median(grid[prof >= prof.max() - tie_tol]))
+
+
+rng = np.random.default_rng(6)
+hl = rng.uniform(-2.0, 2.0, 60)                        # 60 looks
+low = np.argsort(hl)[:3]                               # the 3 lowest levels
+Yl = np.stack([np.where(rng.random(60) < ndtr((hl - 0.3) / 0.25), 0.4, -0.3),    # a noisy pixel, z = 0.3
+               np.where(hl > 0.5, 0.5, -0.2),                                   # complete separation at 0.5 ...
+               np.where(hl > 0.5, 0.5, -0.2),                                   # ... and with 3 wet looks at low tide
+               np.where(hl > 0.0, 0.5, -0.2)], axis=1)                          # 5 clear looks: no value
+Yl[low, 2] = 0.3
+Cl = rng.random((60, 4)) > 0.1
+Cl[low, 2] = True
+Cl[:, 3] = np.arange(60) < 5
+zl, sl, el, ntl = invert_bernoulli_lapse(Yl, Cl, hl, hl.min(), hl.max())
+with np.errstate(invalid="ignore"):
+    zbl = [brute_force_bl(Yl[:, j] > 0, Cl[:, j], hl, hl.min(), hl.max()) for j in range(4)]
+assert np.allclose(zl, zbl, rtol=0, atol=1e-12, equal_nan=True) and np.isnan(zl[3]), (zl, zbl)
+z2, s2, _ = invert_bernoulli(Yl, Cl, hl, hl.min(), hl.max())
+z0l, s0l, e0l, _ = invert_bernoulli_lapse(Yl, Cl, hl, hl.min(), hl.max(), lapses=(0.0,))
+assert np.array_equal(z0l, z2, equal_nan=True) and np.array_equal(s0l, s2, equal_nan=True), "e = 0 alone is not V2"
+print(f"invert_bernoulli_lapse = the brute-force maximum on 4 synthetic pixels: z = {np.round(zl, 3)}, "
+      f"e = {el.tolist()}; with e = 0 alone it is invert_bernoulli (V2) bit for bit. The pixel with 3 wet looks at "
+      f"low tide: V2 z = {z2[2]:.3f} m, V10 z = {zl[2]:.3f} m (e = {el[2]:g}); without them both give {zl[1]:.3f} m")
+''')
+
+md(r"""
 **The other estimates**, as notebook 01 runs them: *MAREA, no delay* (V0 with every delay 0, diagnostic); NIDEM
-(`waterline_contour`, whole frames read from the cube, not timed); DEA Intertidal 2.5.3 (DEA's own code in its side
+(`waterline_contour`, whole frames read from the cube, and before 2023 from the band-subset Zarr stores
+`cubes_light/<site>/<year>.zarr`, not timed); DEA Intertidal 2.5.3 (DEA's own code in its side
 interpreter, on every pixel of the extraction); LogiTide2DEM (E4), sampled exceedance (E5c) and Flood2Topo (E5a) of
 `experiments/fixedcfg/methods.py`, per pixel on F; *LogiTide2DEM + MAREA delay* (diagnostic: one E4 call per delay
 group, each with its levels read τ_px earlier). E4's per-pixel extras (its case: separated or fitted, its MSR) are
@@ -694,19 +898,54 @@ def run_delayed(mid, win, px):
 cube_pos = {d: i for i, d in enumerate(cube.dates)}
 
 
+STATIC = None       # the legacy cube's static no-data mask (H, W), set with the pre-2023 scenes (the frames checks)
+
+
 def read_frames(dates):
-    """NDWI and the common clear mask of whole scenes, (T, H, W), read one scene at a time."""
-    ds, bands, t_dim = pit.cube.open_cube(P["cache"])
+    """NDWI and the common clear mask of whole scenes, (T, H, W): a scene of the cube is read from the cube, one
+    scene at a time; a scene before the cube (pre-2023) from the band-subset Zarr store of its year (zarr_frames)."""
     ndwi, clear = np.empty((len(dates), H, W), np.float32), np.empty((len(dates), H, W), bool)
+    ds, bands, t_dim = pit.cube.open_cube(P["cache"])
     try:
         for k, d in enumerate(dates):
-            at = {t_dim: cube_pos[d]}
-            scl = bands["SCL"].isel(at).values
-            ndwi[k], _ = wc.scene_ndwi(bands["B03"].isel(at).values, bands["B08"].isel(at).values, scl)
-            clear[k] = np.isin(scl, wc.CLEAR)
+            if d in cube_pos:
+                at = {t_dim: cube_pos[d]}
+                scl = bands["SCL"].isel(at).values
+                ndwi[k], _ = wc.scene_ndwi(bands["B03"].isel(at).values, bands["B08"].isel(at).values, scl)
+                clear[k] = np.isin(scl, wc.CLEAR)
     finally:
         ds.close()
+    old = [k for k, d in enumerate(dates) if d not in cube_pos]
+    if old:
+        zarr_frames([dates[k] for k in old], ndwi, clear, old)
     return ndwi, clear
+
+
+def zarr_frames(dates, ndwi, clear, at, root=lte.LIGHT_ROOT):
+    """NDWI and the common clear mask of `dates` from the yearly Zarr stores <root>/<site>/<year>.zarr (B03, B08 and
+    SCL as the backend delivered them, int16, on the legacy cube's frame), written into ndwi[at[i]], clear[at[i]].
+    The fill -32768 is read as NaN, as xarray decodes the cube; then the cube's own scene_ndwi and clear mask. The
+    pixels of STATIC (no data on every scene of the cube, data in the stores) get no data, the converter's rule.
+    At most 16 scenes are read at a time (one chunk of the stores in time)."""
+    for year in sorted({d[:4] for d in dates}):
+        ks = [i for i, d in enumerate(dates) if d[:4] == year]
+        z = zc.open_store(zc.store_path(SITE, year, root), bands=["B03", "B08", "SCL"])
+        try:
+            assert (z.sizes["y"], z.sizes["x"]) == (H, W), f"{root}/{SITE}/{year}.zarr is not on the cube's frame"
+            zpos = {d: i for i, d in enumerate(zc.dates(z))}
+            for a in range(0, len(ks), 16):
+                part = ks[a:a + 16]
+                sel = {"t": [zpos[dates[i]] for i in part]}
+                b03, b08, scl = (np.asarray(z[b].isel(sel).values) for b in ("B03", "B08", "SCL"))
+                for j, i in enumerate(part):
+                    g, n = (np.where(v[j] == zc.FILL, np.float32(np.nan), v[j].astype(np.float32)) for v in (b03, b08))
+                    ndwi[at[i]], _ = wc.scene_ndwi(g, n, scl[j])
+                    clear[at[i]] = np.isin(scl[j], wc.CLEAR)
+                    if STATIC is not None:
+                        ndwi[at[i]][STATIC] = np.nan
+                        clear[at[i]][STATIC] = False
+        finally:
+            z.close()
 
 
 def run_nidem(win, px, frames):
@@ -743,6 +982,8 @@ def run_method(mid, win, px, frames=None):
         return run_marea_ndwi0(win, px)
     if mid == "MAREA_B":
         return run_marea_b(win, px)
+    if mid == "MAREA_BL":
+        return run_marea_bl(win, px)
     if mid == "MAREA_B_nodelay":
         return run_marea_b(win, px, delay=False)
     if mid == "MAREA_nodelay":
@@ -754,6 +995,66 @@ def run_method(mid, win, px, frames=None):
     if mid == "DEA":
         return run_dea(win, px) + ({},)
     return run_competitor(mid, win, px)
+''')
+
+md(r"""
+**The pre-2023 frames: the checks.** The legacy cube has a static no-data block (no data on every one of its
+scenes; `static_nodata` of the production reference map the extraction's JSON names, never a keep pixel) where the
+Zarr stores have data: as the converter's screening does (its pre-registered rule), the Zarr frames get no data
+there (`STATIC`), so NIDEM sees no observation the cube could not have. Then every Zarr store a window reads is on
+the cube's frame (its x and y are the cube's, so the pixels come in the same order), and the reader gives the
+cube's own arrays where both exist: on the screened scenes of 2023, the 2023 store (`cubes_light/<site>/2023.zarr`,
+else the store the extraction's 2023 gate compared, `gate_2023` of its JSON) must give the clear mask of whole
+frames, and their NDWI (NaN included) outside the static block, bit for bit as read from the cube, as that gate
+found at the keep pixels on every 2023 scene. A difference stops the notebook unless the first author accepted the
+2023 gate's differences (then it is reported).
+""")
+
+code(r'''
+if len(x_dates):
+    ref = side["reference_map"]                        # the production reference map and the static no-data mask
+    assert lte.sha256_file(ref["path"]) == ref["sha256"], f"{ref['path']} is not the extraction's reference"
+    with np.load(ref["path"]) as z:
+        STATIC = z["static_nodata"].astype(bool)
+    assert STATIC.shape == (H, W) and not STATIC.ravel()[keep].any()
+    print(f"the legacy cube's static no-data ({ref['path']}): {int(STATIC.sum()):,} px, no keep pixel among them; "
+          "the Zarr frames get no data there")
+    with xr.open_dataset(P["cache"]) as ds:
+        cube_x, cube_y = ds["x"].values, ds["y"].values
+    gate = side["gate_2023"]
+    light23 = zc.store_path(SITE, 2023, lte.LIGHT_ROOT)
+    root23 = lte.LIGHT_ROOT if zc.is_complete(light23) else os.path.dirname(os.path.dirname(gate["store"]["path"]))
+    years = sorted({d[:4] for d in x_dates})
+    for year, root in [(y, lte.LIGHT_ROOT) for y in years] + [("2023", root23)]:
+        with zc.open_store(zc.store_path(SITE, year, root), bands=["SCL"]) as z:
+            assert np.array_equal(z["x"].values, cube_x) and np.array_equal(z["y"].values, cube_y), \
+                f"{root}/{SITE}/{year}.zarr is not on the cube's frame"
+    print(f"{lte.LIGHT_ROOT}/{SITE}/<year>.zarr of {years} and {root23}/{SITE}/2023.zarr: the cube's x and y")
+
+    d23 = [d for d in S_dates if d[:4] == "2023"]      # the screened 2023 scenes: in the cube and in the store
+    diff = Counter()
+    for a in range(0, len(d23), 8):
+        block = d23[a:a + 8]
+        n_cube, c_cube = read_frames(block)            # from the cube
+        n_zarr, c_zarr = np.empty_like(n_cube), np.empty_like(c_cube)
+        zarr_frames(block, n_zarr, c_zarr, list(range(len(block))), root=root23)
+        nan_cube, nan_zarr, out = np.isnan(n_cube), np.isnan(n_zarr), ~STATIC[None]   # NDWI: outside the static block
+        diff["pixel-scenes"] += n_cube.size
+        diff["NaN differs"] += int(((nan_cube != nan_zarr) & out).sum())
+        diff["NDWI differs"] += int((~nan_cube & ~nan_zarr & out & (n_cube.view(np.uint32) != n_zarr.view(np.uint32)))
+                                    .sum())
+        diff["clear differs"] += int((c_cube != c_zarr).sum())                        # clear: the whole frame
+    same = diff["NaN differs"] + diff["NDWI differs"] + diff["clear differs"] == 0
+    print(f"{len(d23)} screened 2023 scenes, whole frames, {root23}/{SITE}/2023.zarr against the cube: "
+          + ("the clear mask, and the NDWI (NaN included) outside the static block, bit for bit" if same
+             else f"DIFFERENT {dict(diff)}"))
+    print(f"the extraction's 2023 gate ({gate['store']['path']}, every 2023 scene at the keep pixels): "
+          + ("passed" if gate.get("strict_ok") else f"differences accepted by {(gate.get('accepted') or {}).get('by')}"))
+    if not same:
+        assert gate.get("accepted"), "the Zarr frames are not the cube's, and no 2023 gate difference was accepted"
+        print("  the 2023 gate's differences were accepted by the first author: NIDEM reads these frames (reported)")
+else:
+    print("no pre-2023 scene: NIDEM reads the cube only")
 ''')
 
 md(r"""
@@ -798,9 +1099,7 @@ def run_window(win):
         try:
             frames = None
             if mid == "NIDEM":
-                if any(d not in cube_pos for d in dates):
-                    raise NotComputable("pre-2023 images: the extra extraction holds no whole frames")
-                frames = read_frames(dates)            # the cube read, not timed
+                frames = read_frames(dates)            # the cube (before 2023 the Zarr stores) read, not timed
             t0 = time.perf_counter()
             z, note, own, more = run_method(mid, win, win["px"], frames)
             r.update(seconds=time.perf_counter() - t0, reason=note, seconds_own=np.nan if own is None else own)
@@ -923,6 +1222,46 @@ for ax, key in zip(axes[0], KEYS):
 fig.tight_layout(rect=(0, 0, 1, 0.9))
 fig.legend(*axes[0][0].get_legend_handles_labels(), loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.0))
 fig.savefig(f"{OUT}/{SITE}_decomposition.png")
+''')
+
+md(r"""
+### V9 · σ as an uncertainty (exploratory)
+
+Not an estimator (the variants file): for V0 and V1, whose fit gives every pixel a σ (the width of its NDWI
+transition, `invert_series`' σ), on each one's own pixels of F with a value, the share of pixels whose error
+|p − t| is at most σ and at most 2σ, and Spearman's correlation of |p − t| with σ (σ takes the 8 values of
+`marea.SG_GRID`, so the ranks are tied). A σ that were a standard error of a normal error would give about 68 % and
+95 %. `<site>_sigma.csv`.
+""")
+
+code(r'''
+def sigma_check(p, t, sigma):
+    """V9 on the pixels where p, t and sigma are finite: the share with |p - t| <= sigma and <= 2 sigma, Spearman's
+    correlation of |p - t| with sigma (and its p-value), the median sigma and the median |p - t|."""
+    p, t, sigma = np.asarray(p, float), np.asarray(t, float), np.asarray(sigma, float)
+    ok = np.isfinite(p) & np.isfinite(t) & np.isfinite(sigma)
+    out = dict(n_px=int(ok.sum()), within_1sigma=np.nan, within_2sigma=np.nan, spearman_rho=np.nan,
+               spearman_p=np.nan, median_sigma=np.nan, median_abs_error=np.nan)
+    if ok.sum() >= 30:
+        e, s = np.abs(p[ok] - t[ok]), sigma[ok]
+        rho, pval = spearmanr(e, s)
+        out.update(within_1sigma=float(np.mean(e <= s)), within_2sigma=float(np.mean(e <= 2 * s)),
+                   spearman_rho=float(rho), spearman_p=float(pval), median_sigma=float(np.median(s)),
+                   median_abs_error=float(np.median(e)))
+    return out
+
+
+rows = []
+for key in KEYS:
+    t = truth[window_of(key)["px"]]
+    for mid in ("MAREA", "MAREA_ndwi0"):
+        if mid in EST[key] and "sigma" in EXTRA_PX[key].get(mid, {}):
+            rows.append(dict(site=key[0], n=key[1], method=mid, label=LABELS[mid],
+                             **sigma_check(EST[key][mid], t, EXTRA_PX[key][mid]["sigma"])))
+sigma_tab = pd.DataFrame(rows)
+sigma_tab.to_csv(f"{OUT}/{SITE}_sigma.csv", index=False)
+if len(sigma_tab):
+    display(sigma_tab.set_index(["site", "n", "label"]).round(3))
 ''')
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1348,10 +1687,11 @@ md(r"""
 
 The per-pixel arrays: for every analysed row its pixels of F (`<row>_keep`, flat indices in the frame), their truth
 and mouth distance; for every window (`<row>_n<n>_`) every estimate, the extras (V0's fit a, b, σ and z as `fit_*`,
-V2's σ and tied levels, LogiTide2DEM's MSR, case and valid looks, sampled exceedance's frequency), τ_px and the clear
-and wet looks. Then the provenance, and the check: every row this notebook shares with notebook 01 (its run with
-the variants, `NTABLES`, else its first run, `FIRST`) must be that row bit for bit: the status, the note (MAREA's
-band lags among them), the window's dates, F and the scores on F.
+V2's σ and tied levels, V10's σ, lapse rate and tied levels, LogiTide2DEM's MSR, case and valid looks, sampled
+exceedance's frequency), τ_px and the clear and wet looks. Then the provenance, and the check: every row this notebook
+shares with notebook 01 (its run of the same windows, `NTABLES`, else its first run, `FIRST`) must be that row bit for
+bit: the status, the note (MAREA's band lags among them), the window's dates, F and the scores on F. A window that
+notebook 01's run could not reach (it had no pre-2023 scenes) is not compared.
 """)
 
 code(r'''
@@ -1394,10 +1734,11 @@ new = pd.read_csv(f"{OUT}/{SITE}_scores.csv", float_precision="round_trip")
 key, same = ["site", "n", "method"], ["status", "reason", "first_date", "last_date", "n_F", "n_px", "coverage",
                                       "rmse", "bias", "crmse", "slope", "r"]
 rows_here = {w["site"] for w in windows}
-a = first[first.method.isin(METHODS) & first.n.isin(NS) & first.site.isin(rows_here)][key + same].set_index(key)
-b = new[new.method.isin(set(first.method))][key + same].set_index(key)
+done = first.method.isin(METHODS) & first.n.isin(NS) & first.site.isin(rows_here) & (first.status != "not reachable")
+a = first[done].reindex(columns=key + same).set_index(key)            # the windows notebook 01's run computed
+b = new[new.method.isin(set(first.method))].reindex(columns=key + same).set_index(key)
 both = a.index.intersection(b.index)
-assert len(both), f"no row shared with {ref}"
+assert len(both), f"no window of n = {NS} computed in {ref}: run notebook 01 on these windows (NB_NTABLES)"
 pd.testing.assert_frame_equal(a.loc[both].sort_index(), b.loc[both].sort_index(), check_exact=True, check_dtype=False)
 print(f"{len(both)} rows bit for bit those of {ref}: " +
       ", ".join(f"{m} ×{k}" for m, k in Counter(i[2] for i in both).items()))

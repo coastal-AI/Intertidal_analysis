@@ -5,11 +5,16 @@
 #   bash notebooks/validation/run_05_on_server.sh                 # escalda wadden ems
 #   bash notebooks/validation/run_05_on_server.sh escalda         # one site
 #
+# The confirmatory windows (n = 125, 100, 75), after notebook 01's run of the same windows (its rows are the check):
+#   NB_NS=125,100,75 NB_OUT=results/attribution_nb_conf NB_NTABLES=results/fixedcfg_nb_conf NB_LOG=logs/v2/claude/nb05_conf \
+#     bash notebooks/validation/run_05_on_server.sh escalda wadden
+#
 # Passed through to the notebook when set: NB_NS, NB_METHODS, NB_EXTRA, NB_NTABLES, NB_FIRST, NB_BED, NB_ROW_YEARS,
 # MAREA_DEA_TMP, OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to results/attribution_nb/ (NB_OUT),
 # with the CSVs, the per-pixel npz and the figures; logs and STATUS to logs/v2/claude/nb05/ (NB_LOG); the notebook is
 # read from notebooks/validation/ (NB_DIR). Its last cell checks the rows it shares with notebook 01 against
-# results/fixedcfg_nb_diag/<site>.csv (else results/fixedcfg_nb/<site>.csv), bit for bit.
+# NB_NTABLES/<site>.csv (default results/fixedcfg_nb_diag; else results/fixedcfg_nb/<site>.csv), bit for bit, on the
+# windows notebook 01's run computed.
 set -u
 REPO=/media/HDD/jalias/Intertidal_analysis
 cd "$REPO" || exit 1

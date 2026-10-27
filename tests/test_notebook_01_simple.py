@@ -6,14 +6,23 @@
 * the scoring function of the site notebook gives the right numbers on tiny synthetic cases;
 * the diagnostic variants: z at NDWI = 0 is MAREA's own fit (its midpoint is marea.invert_series' z, bit for
   bit) read where the fitted curve crosses 0; the variants are scored but never enter the common pixels; every
-  default variant has a run function.
+  default variant has a run function;
+* the pre-2023 scenes: SplitBoundary reads the pre-2023 boundary before 2023-01-01 and production's from then on,
+  instant by instant; NIDEM reads their whole frames from the Zarr stores into the cube's own NDWI and clear mask
+  (a tiny synthetic cube and stores), and the frames check stops on a difference the 2023 gate did not accept;
+* the last cell compares the rows of the windows the earlier run computed (the seconds and `available` aside).
 
 Run:  python -m pytest tests/test_notebook_01_simple.py   (or python tests/test_notebook_01_simple.py)
 """
 import os
+import sys
+import tempfile
+import types
+from collections import Counter
 
 import nbformat
 import numpy as np
+import pandas as pd
 from scipy.special import ndtr, ndtri
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -165,6 +174,259 @@ def test_every_default_variant_has_a_run_function():
     assert default == ["MAREA_nodelay", "MAREA_ndwi0", "E4_delay", "E5c_delay", "DEA_delay"]
     for v in default:
         assert f'"{v}":' in dispatch, f"{v} has no run function"
+
+
+# ── the pre-2023 scenes: the boundary ─────────────────────────────────────────
+
+class FakeBoundary:
+    """levels = a constant plus the minutes since 2022-12-31 00:00, recording every call."""
+
+    def __init__(self, name, offset):
+        self.name, self.offset, self.calls = name, offset, []
+
+    def levels(self, times):
+        t = pd.DatetimeIndex(times)
+        self.calls.append(t)
+        return self.offset + (t - pd.Timestamp("2022-12-31")) / pd.Timedelta(minutes=1)
+
+
+def split_boundary_class():
+    ns = {"np": np, "pd": pd}
+    exec(cell_with("class SplitBoundary"), ns)
+    return ns["SplitBoundary"]
+
+
+def test_split_boundary_reads_each_side_of_the_cut():
+    pre, prod = FakeBoundary("pre", 1000.0), FakeBoundary("prod", 0.0)
+    b = split_boundary_class()(pre, prod, "2023-01-01")
+    assert b.name == "prod (before 2023-01-01: pre)"
+    t = pd.DatetimeIndex(["2022-12-31 22:00", "2022-12-31 23:59", "2023-01-01 00:00", "2023-01-01 03:00"])
+    h = b.levels(t)
+    assert np.array_equal(h, [1000 + 1320, 1000 + 1439, 1440, 1620]), h
+    assert len(pre.calls) == 1 and pre.calls[0].equals(t[:2]), "the pre-2023 boundary is read once, before the cut"
+    assert len(prod.calls) == 1 and prod.calls[0].equals(t[2:]), "production's is read once, from the cut on"
+    # an instant shifted across the cut is read from the boundary of its own instant
+    shifted = pd.DatetimeIndex(["2023-01-01 01:00"]) - pd.Timedelta(minutes=90)
+    assert b.levels(shifted)[0] == 1000 + 1410
+    pre.calls.clear(), prod.calls.clear()
+    assert np.array_equal(b.levels(t[2:]), prod.levels(t[2:])) and not pre.calls, "after the cut: production alone"
+
+
+def test_every_level_is_read_through_one_boundary_object():
+    """The pre-2023 cell replaces `boundary`, and the levels table, level_at, the bank and the 1-min series read it."""
+    found = cell_with("found = sorted(glob.glob(")
+    assert "lte.pre2023_boundary(SITE, boundary_prod, lte.PRODUCTION_GAUGE_CACHE," in found
+    assert "boundary = SplitBoundary(boundary_pre, boundary_prod, P[\"period\"][0])" in found
+    assert "boundary.levels(inst)" in cell_with("shifted = {tau:")
+    assert "LevelSeries.from_boundary(boundary," in cell_with("LS = None")
+    assert "LEV[int(tau)][w]" in cell_with("M2 = yaml.safe_load(")
+    check = cell_with("if len(x_dates):\n    cut = boundary.cut")
+    for text in ('side["levels_pre2023"]', "boundary_prod.levels(inst_p)", "np.array_equal(LEV[0][have], h_rec)",
+                 "np.array_equal(LS.h[a:b], h)"):
+        assert text in check, text
+
+
+# ── the pre-2023 scenes: NIDEM's frames from the Zarr stores ─────────────────
+
+FILL = -32768
+
+
+def synthetic_scene(rng, H, W):
+    """B03, B08, SCL as int16 digital numbers with fills, a zero sum and every SCL class."""
+    g = rng.integers(1, 3000, (H, W)).astype(np.int16)
+    n = rng.integers(1, 3000, (H, W)).astype(np.int16)
+    s = rng.integers(0, 12, (H, W)).astype(np.int16)
+    g[0, :3], n[1, :2], s[2, :4] = FILL, FILL, FILL
+    g[3, 3], n[3, 3] = 0, 0                              # B03 + B08 = 0: NaN NDWI
+    return g, n, s
+
+
+def write_synthetic_cubes(tmp, H=12, W=17):
+    """A legacy netCDF cube of 2023 (4 scenes) and Zarr stores of 2022 (3 scenes) and 2023 (the cube's scenes, the
+    same digital numbers), on the same x / y. The legacy cube has a static no-data block (every band filled on every
+    scene) where the stores have data; a reference npz holds it as `static_nodata`, as light_to_extraction writes it.
+    Returns (cube, store root, {date: (B03, B08, SCL) as stored}, H, W, the static mask, the reference record)."""
+    import xarray as xr
+    sys.path.insert(0, ROOT)
+    from experiments import light_to_extraction as lte
+    from experiments import zarr_cubes as zc
+
+    rng = np.random.default_rng(11)
+    x = 500000.0 + 10.0 * np.arange(W) + 5.0
+    y = 5700000.0 - 10.0 * np.arange(H) - 5.0
+    scenes = {d: synthetic_scene(rng, H, W) for d in ("2022-03-01", "2022-07-15", "2022-12-31",
+                                                       "2023-01-05", "2023-02-14", "2023-05-20", "2023-09-09")}
+    static = np.zeros((H, W), bool)
+    static[9:11, :6] = True                              # no data on every scene of the legacy cube
+
+    def dataset(dates, legacy):
+        t = pd.DatetimeIndex(dates)
+        bands = {}
+        for k, b in enumerate(("B03", "B08", "SCL")):
+            v = np.stack([scenes[d][k] for d in dates])
+            if legacy:
+                v[:, static] = FILL
+            bands[b] = (("t", "y", "x"), v)
+        return xr.Dataset(bands, coords={"t": t, "y": y, "x": x})
+
+    enc = {b: {"_FillValue": np.int16(FILL)} for b in ("B03", "B08", "SCL")}
+    cube = os.path.join(tmp, "legacy_cube.nc")
+    d23 = [d for d in scenes if d >= "2023"]
+    dataset(d23, legacy=True).to_netcdf(cube, encoding=enc)
+    root = os.path.join(tmp, "cubes_light")
+    for year, dates in (("2022", [d for d in scenes if d < "2023"]), ("2023", d23)):
+        ds = dataset(dates, legacy=False)
+        ds.attrs = {"format": zc.FORMAT_ID, "complete": 1}
+        ds.to_zarr(str(zc.store_path("site", year, root)), consolidated=True, zarr_format=2, encoding=enc)
+    ref = os.path.join(tmp, "site_reference.npz")
+    np.savez_compressed(ref, static_nodata=static)
+    return cube, root, scenes, H, W, static, {"path": ref, "sha256": lte.sha256_file(ref)}
+
+
+def same_bits(a, b):
+    """The same NaN positions and, elsewhere, the same float32 bits (the frames check's rule)."""
+    na, nb = np.isnan(a), np.isnan(b)
+    return np.array_equal(na, nb) and np.array_equal(a[~na].view(np.uint32), b[~nb].view(np.uint32))
+
+
+def expected_frame(g, n, s, static):
+    """The NDWI and clear mask of a store's scene with the static block set to no data (the converter's rule)."""
+    gf = np.where(g == FILL, np.nan, g).astype(np.float32)
+    nf = np.where(n == FILL, np.nan, n).astype(np.float32)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ndwi = np.where(gf + nf != 0, (gf - nf) / (gf + nf), np.nan).astype(np.float32)
+    clear = np.isin(s, (4, 5, 6, 7))
+    ndwi[static], clear[static] = np.nan, False
+    return ndwi, clear
+
+
+def frames_namespace(cube, root, H, W, cube_dates, static=None):
+    import xarray as xr
+    sys.path.insert(0, ROOT)
+    import pyintertidal as pit
+    from pyintertidal import waterline_contour as wc
+    from experiments import light_to_extraction as lte
+    from experiments import zarr_cubes as zc
+
+    ns = dict(np=np, pit=pit, wc=wc, zc=zc, xr=xr, os=os, Counter=Counter, SITE="site", H=H, W=W,
+              P={"cache": cube}, cube=types.SimpleNamespace(dates=list(cube_dates)),
+              lte=types.SimpleNamespace(LIGHT_ROOT=root, sha256_file=lte.sha256_file),
+              keep=np.arange(40))                        # keep pixels: the first rows, outside the static block
+    exec(cell_with("cube_pos = {d: i for i, d in enumerate(cube.dates)}"), ns)
+    assert ns["STATIC"] is None, "no static mask before the pre-2023 scenes are read"
+    ns["STATIC"] = static
+    return ns
+
+
+def test_nidem_frames_before_2023_come_from_the_zarr_stores():
+    with tempfile.TemporaryDirectory() as tmp:
+        cube, root, scenes, H, W, static, _ = write_synthetic_cubes(tmp)
+        d23 = [d for d in scenes if d >= "2023"]
+        ns = frames_namespace(cube, root, H, W, d23, static)
+        dates = ["2022-07-15", "2022-12-31", "2023-01-05", "2022-03-01", "2023-09-09"]   # mixed, any order
+        ndwi, clear = ns["read_frames"](dates)
+        for k, d in enumerate(dates):
+            e_ndwi, e_clear = expected_frame(*scenes[d], static)   # a cube scene has no data in the block anyway
+            assert same_bits(ndwi[k], e_ndwi), d
+            assert np.array_equal(clear[k], e_clear), d
+        # the reader of the stores gives the cube's own arrays on the cube's scenes (here: the 2023 store)
+        n2, c2 = np.empty((len(d23), H, W), np.float32), np.empty((len(d23), H, W), bool)
+        ns["zarr_frames"](d23, n2, c2, list(range(len(d23))))
+        n1, c1 = ns["read_frames"](d23)
+        assert same_bits(n1, n2) and np.array_equal(c1, c2)
+        # without the static rule the stores would add observations the cube never has
+        ns["STATIC"] = None
+        ns["zarr_frames"](d23, n2, c2, list(range(len(d23))))
+        assert c2[:, static].any() and not c1[:, static].any()
+
+
+def run_frames_check(ns, x_dates, s_dates, gate, reference):
+    ns.update(x_dates=np.array(x_dates), S_dates=np.array(s_dates), side={"gate_2023": gate, "reference_map": reference})
+    exec(cell_with('if len(x_dates):\n    ref = side["reference_map"]'), ns)
+
+
+def test_frames_check_passes_on_identical_stores_and_stops_on_a_difference():
+    import io
+    from contextlib import redirect_stdout
+    import zarr
+    sys.path.insert(0, ROOT)
+    from experiments import light_to_extraction as lte
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cube, root, scenes, H, W, static, reference = write_synthetic_cubes(tmp)
+        d23 = [d for d in scenes if d >= "2023"]
+        ns = frames_namespace(cube, root, H, W, d23)
+        gate = {"ok": True, "strict_ok": True, "store": {"path": "cubes_light/site/2023.zarr"}}
+        out = io.StringIO()
+        with redirect_stdout(out):
+            run_frames_check(ns, ["2022-03-01", "2022-12-31"], ["2022-03-01", "2022-12-31"] + d23[1:], gate, reference)
+        assert "bit for bit" in out.getvalue() and np.array_equal(ns["STATIC"], static), out.getvalue()
+        # a reference without the static block: the stores' observations there are caught
+        empty = os.path.join(tmp, "empty_reference.npz")
+        np.savez_compressed(empty, static_nodata=np.zeros_like(static))
+        try:
+            with redirect_stdout(io.StringIO()):
+                run_frames_check(ns, ["2022-03-01"], ["2022-03-01"] + d23, gate,
+                                 {"path": empty, "sha256": lte.sha256_file(empty)})
+            raise AssertionError("observations in the static block passed the check")
+        except AssertionError as e:
+            assert "no 2023 gate difference was accepted" in str(e), e
+        try:                                             # a reference that is not the extraction's
+            run_frames_check(ns, ["2022-03-01"], ["2022-03-01"] + d23, gate, dict(reference, sha256="0" * 64))
+            raise AssertionError("another reference passed")
+        except AssertionError as e:
+            assert "is not the extraction's reference" in str(e), e
+        # one B08 digital number changed in the 2023 store: the check stops, unless the gate's differences were accepted
+        z = zarr.open_group(os.path.join(root, "site", "2023.zarr"), mode="r+")
+        z["B08"][1, 5, 5] = int(z["B08"][1, 5, 5]) + 7
+        zarr.consolidate_metadata(os.path.join(root, "site", "2023.zarr"))
+        try:
+            with redirect_stdout(io.StringIO()):
+                run_frames_check(ns, ["2022-03-01"], ["2022-03-01"] + d23, gate, reference)
+            raise AssertionError("a different frame passed the check")
+        except AssertionError as e:
+            assert "no 2023 gate difference was accepted" in str(e), e
+        accepted = dict(gate, ok=True, strict_ok=False, accepted={"by": "the first author"})
+        out = io.StringIO()
+        with redirect_stdout(out):
+            run_frames_check(ns, ["2022-03-01"], ["2022-03-01"] + d23, accepted, reference)
+        assert "DIFFERENT" in out.getvalue() and "accepted" in out.getvalue(), out.getvalue()
+
+
+def test_nidem_is_computed_on_every_window():
+    src = cell_with("def run_window(")
+    assert "holds no whole frames" not in src and "frames = read_frames(dates)" in src
+
+
+# ── the last cell: the windows the earlier run computed ─────────────────────
+
+def run_last_cell(first_rows, new_rows, ns_=(125, 100, 75, 60)):
+    with tempfile.TemporaryDirectory() as tmp:
+        first, out = os.path.join(tmp, "first"), os.path.join(tmp, "out")
+        os.makedirs(first), os.makedirs(out)
+        pd.DataFrame(first_rows).to_csv(os.path.join(first, "s.csv"), index=False)
+        pd.DataFrame(new_rows).to_csv(os.path.join(out, "s.csv"), index=False)
+        ns = dict(pd=pd, np=np, FIRST=first, OUT=out, SITE="s", METHODS=["MAREA", "E4"], NS=list(ns_))
+        exec(code_cells(SITE_NB)[-1], ns)
+
+
+def nb_row(n, method, status="ok", available=68, rmse=0.2, reason="band lags 0/1 min"):
+    return dict(site="s", n=n, method=method, status=status, available=available, reason=reason, rmse=rmse,
+                seconds=1.0, seconds_own=np.nan)
+
+
+def test_last_cell_compares_only_the_windows_the_earlier_run_computed():
+    first = [nb_row(75, m, "not reachable", reason="68 screened images", rmse=np.nan) for m in ("MAREA", "E4")] + \
+            [nb_row(60, m) for m in ("MAREA", "E4")]
+    new = [nb_row(75, m, available=142) for m in ("MAREA", "E4")] + [nb_row(60, m, available=142) for m in ("MAREA", "E4")]
+    run_last_cell(first, new)                          # n = 75 is new; n = 60 is the same but for `available`
+    bad = [dict(r, rmse=0.25) if r["n"] == 60 and r["method"] == "E4" else r for r in new]
+    try:
+        run_last_cell(first, bad)
+        raise AssertionError("a changed score of a window the earlier run computed passed")
+    except AssertionError as e:
+        assert "rmse" in str(e) or "values are different" in str(e), e
+    run_last_cell(first, new[:2], ns_=(125, 100, 75))  # the confirmatory windows only: nothing to compare
 
 
 if __name__ == "__main__":

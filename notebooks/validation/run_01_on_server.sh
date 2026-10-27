@@ -5,6 +5,11 @@
 #   bash notebooks/validation/run_01_on_server.sh                 # escalda wadden ems
 #   bash notebooks/validation/run_01_on_server.sh escalda         # one site
 #
+# The confirmatory windows (n = 125, 100, 75, with the pre-2023 images) in a folder of their own, checked against
+# the diagnostic run on the windows that run computed:
+#   NB_NS=125,100,75 NB_OUT=results/fixedcfg_nb_conf NB_FIRST=results/fixedcfg_nb_diag NB_LOG=logs/v2/claude/nb01_conf \
+#     bash notebooks/validation/run_01_on_server.sh escalda wadden
+#
 # Passed through to the notebook when set: NB_NS, NB_METHODS, NB_VARIANTS, NB_EXTRA, NB_FIRST, MAREA_DEA_TMP,
 # OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to results/fixedcfg_nb_diag/ (NB_OUT; the
 # first run's results/fixedcfg_nb/ is kept, and the notebook checks its nine methods against it), logs and

@@ -10,6 +10,10 @@
   invert_ndwi0, bit for bit;
 * MAREA-B (invert_bernoulli) is the brute-force maximum of the probit likelihood on its grid, takes the median of the
   plateau under complete separation, and keeps its guards (8 clear looks, one wet and one dry);
+* V10, MAREA-B with lapse rates (invert_bernoulli_lapse), is the brute-force maximum over z, sigma and e; with e = 0
+  alone it is V2 bit for bit; a few spurious wet looks at low tide do not drag its z; V2's guards;
+* V9 (sigma_check): the shares within sigma and 2 sigma and Spearman's correlation of |p - t| with sigma;
+* NB_NS runs the confirmatory windows; the last check compares the windows notebook 01's run computed;
 * the error decomposition and the strata's MSE shares add up; the gallery picks the extremes;
 * every default estimate has a run path.
 
@@ -116,11 +120,14 @@ def test_parameters_and_sections():
     assert ns["SITE"] == "escalda" and ns["NS"] == [60, 50] and ns["ROW_YEARS"] == [2025]
     assert ns["OUT"] == "results/attribution_nb"
     assert ns["NTABLES"] == "results/fixedcfg_nb_diag" and ns["FIRST"] == "results/fixedcfg_nb"
-    assert ns["METHODS"] == ["MAREA", "MAREA_ndwi0", "MAREA_B", "MAREA_B_nodelay", "MAREA_nodelay", "E4", "E4_delay",
-                             "E5c", "DEA", "NIDEM", "E5a"]
+    assert ns["METHODS"] == ["MAREA", "MAREA_ndwi0", "MAREA_B", "MAREA_BL", "MAREA_B_nodelay", "MAREA_nodelay", "E4",
+                             "E4_delay", "E5c", "DEA", "NIDEM", "E5a"]
+    assert ns["B_LAPSES"] == (0.0, 0.02, 0.05, 0.10)
     assert parameters({"NB_SITE": "wadden"})["NS"] == [60, 50]
     assert parameters({"NB_SITE": "ems"})["NS"] == [50, 40], "60 images are not reachable at the Ems"
     assert parameters({"NB_SITE": "ems", "NB_NS": "40"})["NS"] == [40]
+    for site in ("escalda", "wadden", "ems"):                # the confirmatory windows
+        assert parameters({"NB_SITE": site, "NB_NS": "125,100,75"})["NS"] == [125, 100, 75]
     assert ns["MAX_PX"] == 200_000 and ns["SEED"] == 20261019 and ns["RANGE_PAD_M"] == 0.25
     assert ns["MAREA_MIN_BRACKET"] == 0
     headings = [c.source.splitlines()[0] for c in cells() if c.cell_type == "markdown" and c.source.startswith("## ")]
@@ -131,14 +138,16 @@ def test_parameters_and_sections():
 def test_notebook_01_construction_is_reused_verbatim():
     mine = code_cells()
     for start in ("aoi = pit.sites.get(SITE)", "cube = SentinelCube(", "t0 = time.perf_counter()\nreference_map",
-                  "boundary = make_boundary(", "found = sorted(glob.glob(", "ex = np.load(P[\"extract\"])",
-                  "seeds = pit.geometry.mouth_seeds(", "import pyproj", "path, key = P[\"nodelay\"]",
-                  "shifted = {tau:", "LS = None"):
+                  "boundary = make_boundary(", "class SplitBoundary", "found = sorted(glob.glob(",
+                  "ex = np.load(P[\"extract\"])", "seeds = pit.geometry.mouth_seeds(", "import pyproj",
+                  "path, key = P[\"nodelay\"]", "shifted = {tau:", "LS = None",
+                  "if len(x_dates):\n    cut = boundary.cut", "if len(x_dates):\n    ref = side[\"reference_map\"]"):
         theirs = next(s for s in code_cells(NB01) if s.startswith(start))
         assert theirs in mine, f"notebook 01's cell '{start[:30]}' is not in notebook 05 verbatim"
     for name in ("marea_delays", "lags_text", "level_at", "make_obs", "scores", "vaklodingen", "run_marea_nodelay",
-                 "read_frames", "run_nidem", "run_dea"):
+                 "read_frames", "zarr_frames", "run_nidem", "run_dea"):
         assert function_source(name) == function_source(name, NB01), f"{name} differs from notebook 01's"
+    assert "holds no whole frames" not in function_source("run_window"), "NIDEM must run on the pre-2023 windows"
 
 
 def test_calls_the_method_functions_directly():
@@ -245,6 +254,143 @@ def test_marea_b_guards():
     z, sg, nt = inv(Y, C, h, h.min(), h.max())
     assert np.isfinite(z[0]) and np.isnan(z[1]) and np.isnan(z[2]) and np.isnan(z[3]) and np.isfinite(z[4])
     assert np.all(nt[1:4] == 0) and np.all(np.isnan(sg[1:4]))
+
+
+def bernoulli_lapse():
+    marea, _ = marea_module()
+    return notebook_function("invert_bernoulli_lapse", marea=marea, log_ndtr=log_ndtr, ndtr=ndtr, B_MIN_LOOKS=8,
+                             B_TIE_TOL=1e-9, B_LAPSES=(0.0, 0.02, 0.05, 0.10))
+
+
+def brute_force_lapse(wet, clear, h, lo, hi, sg_grid, lapses=(0.0, 0.02, 0.05, 0.10), tie_tol=1e-9, min_looks=8):
+    """(z, sigma, e) of V10 for one pixel, by loops (independent of the notebook's code)."""
+    wet = wet & clear
+    if clear.sum() < min_looks or not wet.any() or not (clear & ~wet).any():
+        return np.nan, np.nan, np.nan
+
+    def log_p(u, e):
+        return float(log_ndtr(u)) if e == 0 else float(np.log(e + (1 - 2 * e) * ndtr(u)))
+
+    grid = np.linspace(lo, hi, 50)
+    pairs = [(sk, e) for sk in sg_grid for e in lapses]
+    ll = np.array([[sum(log_p((h[k] - zk) / sk if wet[k] else -(h[k] - zk) / sk, e) for k in range(len(h)) if clear[k])
+                    for sk, e in pairs] for zk in grid])
+    prof = ll.max(axis=1)
+    tied = np.flatnonzero(prof >= prof.max() - tie_tol)
+    z = float(np.median(grid[tied]))
+    near = tied[np.argmin(np.abs(grid[tied] - z))]
+    sk, e = pairs[int(np.argmax(ll[near]))]
+    return z, float(sk), float(e)
+
+
+def test_marea_bl_is_the_brute_force_maximum():
+    marea, _ = marea_module()
+    inv = bernoulli_lapse()
+    rng = np.random.default_rng(8)
+    T, P = 36, 9
+    h = rng.uniform(-1.8, 1.8, T)
+    z_true, s_true = rng.uniform(-1, 1, P), rng.uniform(0.05, 0.5, P)
+    p_wet = 0.05 + 0.9 * ndtr((h[:, None] - z_true) / s_true)        # a 5 % lapse
+    Y = np.where(rng.random((T, P)) < p_wet, 0.3, -0.25).astype(np.float32)
+    Y[rng.random((T, P)) < 0.05] = np.nan
+    C = rng.random((T, P)) > 0.2
+    z, sg, e, nt = inv(Y, C, h, h.min(), h.max(), chunk=4)
+    for j in range(P):
+        with np.errstate(invalid="ignore"):
+            zb, sb, eb = brute_force_lapse(Y[:, j] > 0, C[:, j], h, h.min(), h.max(), marea.SG_GRID)
+        assert np.isclose(z[j], zb, rtol=0, atol=1e-12, equal_nan=True), (j, z[j], zb)
+        assert np.isclose(sg[j], sb, rtol=0, atol=0, equal_nan=True) and np.isclose(e[j], eb, rtol=0, atol=0,
+                                                                                     equal_nan=True), (j, sg[j], sb, e[j], eb)
+
+
+def test_marea_bl_with_no_lapse_is_v2_bit_for_bit():
+    inv, inv_bl = bernoulli(), bernoulli_lapse()
+    rng = np.random.default_rng(12)
+    T, P = 50, 9000                                      # several chunks of 4,000 pixels
+    h = rng.uniform(-2, 2, T)
+    Y = np.where(rng.random((T, P)) < ndtr((h[:, None] - rng.uniform(-1, 1, P)) / 0.3), 0.3, -0.2)
+    C = rng.random((T, P)) > 0.15
+    z2, s2, n2 = inv(Y, C, h, h.min(), h.max())
+    z0, s0, e0, n0 = inv_bl(Y, C, h, h.min(), h.max(), lapses=(0.0,))
+    assert np.array_equal(z0, z2, equal_nan=True) and np.array_equal(s0, s2, equal_nan=True)
+    assert np.array_equal(n0, n2) and np.all(e0[np.isfinite(z0)] == 0)
+
+
+def test_marea_bl_is_not_dragged_by_spurious_looks():
+    """A pixel that floods at 0.4 m, with 3 wet looks at the lowest tides: V2 needs a wide sigma or a lower z to
+    explain them, V10 puts them on its lapse rate and keeps z where the record switches."""
+    inv, inv_bl = bernoulli(), bernoulli_lapse()
+    h = np.linspace(-1.8, 1.8, 60)
+    Y = np.where(h > 0.4, 0.4, -0.3)[:, None]
+    Y[[0, 1, 2], 0] = 0.4                                 # spurious wet looks at the lowest levels
+    C = np.ones_like(Y, bool)
+    z2 = inv(Y, C, h, h.min(), h.max())[0][0]
+    zl, sl, el, _ = (v[0] for v in inv_bl(Y, C, h, h.min(), h.max()))
+    step = (h.max() - h.min()) / 49
+    assert el > 0 and abs(zl - 0.4) <= step, (zl, el)
+    assert abs(z2 - 0.4) > abs(zl - 0.4), (z2, zl)
+
+
+def test_marea_bl_guards():
+    inv_bl = bernoulli_lapse()
+    h = np.linspace(-1.5, 1.5, 30)
+    Y = np.where(h > 0, 0.4, -0.3)[:, None].repeat(4, axis=1)
+    C = np.ones_like(Y, bool)
+    C[:, 0] = np.arange(30) % 4 == 0                     # 8 clear looks: a value
+    C[:, 1] = np.arange(30) % 5 == 0                     # 6 clear looks: none
+    Y[:, 2], Y[:, 3] = 0.4, -0.3                         # every look wet / dry: none
+    z, sg, e, nt = inv_bl(Y, C, h, h.min(), h.max())
+    assert np.isfinite(z[0]) and np.isfinite(sg[0]) and np.isfinite(e[0])
+    assert np.all(np.isnan(z[1:])) and np.all(np.isnan(e[1:])) and np.all(nt[1:] == 0)
+
+
+def test_sigma_check_v9():
+    from scipy.stats import spearmanr
+    check = notebook_function("sigma_check", spearmanr=spearmanr)
+    rng = np.random.default_rng(3)
+    t = rng.uniform(-1, 1, 400)
+    sigma = rng.choice([0.03, 0.1, 0.22, 0.45], 400)
+    p = t + rng.normal(0, 1, 400) * sigma                # errors that scale with sigma
+    p[:10] = np.nan
+    sigma[10:15] = np.nan
+    out = check(p, t, sigma)
+    ok = np.isfinite(p) & np.isfinite(sigma)
+    e = np.abs(p[ok] - t[ok])
+    assert out["n_px"] == 385
+    assert np.isclose(out["within_1sigma"], np.mean(e <= sigma[ok])) and np.isclose(out["within_2sigma"],
+                                                                                   np.mean(e <= 2 * sigma[ok]))
+    assert 0.55 < out["within_1sigma"] < 0.8 and 0.9 < out["within_2sigma"] <= 1.0
+    assert out["spearman_rho"] > 0.4 and np.isclose(out["spearman_rho"], spearmanr(e, sigma[ok])[0])
+    assert np.isnan(check(p[:20], t[:20], sigma[:20])["within_1sigma"]), "below 30 pixels: counts only"
+
+
+def test_last_check_compares_the_windows_notebook_01_computed():
+    import tempfile
+    from collections import Counter
+
+    def row(site, n, m, status="ok", rmse=0.2):
+        return dict(site=site, n=n, method=m, status=status, reason="band lags 0/3 min", first_date="2021-03-01",
+                    last_date="2025-12-30", n_F=500, n_px=480, coverage=0.96, rmse=rmse, bias=0.1, crmse=0.15, slope=0.9,
+                    r=0.95, available=142)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        nt, first, out = (os.path.join(tmp, d) for d in ("nt", "first", "out"))
+        for d in (nt, first, out):
+            os.makedirs(d)
+        ref = [row("s", 125, m) for m in ("MAREA", "E4")] + [row("s", 100, m, "not reachable") for m in ("MAREA", "E4")]
+        pd.DataFrame(ref).to_csv(os.path.join(nt, "s.csv"), index=False)
+        new = [row("s", n, m) for n in (125, 100) for m in ("MAREA", "MAREA_BL", "E4")]
+        pd.DataFrame(new).to_csv(os.path.join(out, "s_scores.csv"), index=False)
+        ns = dict(pd=pd, np=np, os=os, Counter=Counter, NTABLES=nt, FIRST=first, OUT=out, SITE="s", NS=[125, 100],
+                  METHODS=["MAREA", "MAREA_BL", "E4"], windows=[{"site": "s"}])
+        exec(code_cells()[-1], ns)                       # n = 100 was not reachable in notebook 01's run: not compared
+        pd.DataFrame([dict(r, rmse=0.3) if r["method"] == "E4" else r for r in new]).to_csv(
+            os.path.join(out, "s_scores.csv"), index=False)
+        try:
+            exec(code_cells()[-1], ns)
+            raise AssertionError("a changed score passed")
+        except AssertionError as e:
+            assert "rmse" in str(e), e
 
 
 def test_marea_b_delay_shifts_the_levels():
