@@ -10,7 +10,13 @@
 * the pre-2023 scenes: SplitBoundary reads the pre-2023 boundary before 2023-01-01 and production's from then on,
   instant by instant; NIDEM reads their whole frames from the Zarr stores into the cube's own NDWI and clear mask
   (a tiny synthetic cube and stores), and the frames check stops on a difference the 2023 gate did not accept;
-* the last cell compares the rows of the windows the earlier run computed (the seconds and `available` aside).
+* the last cell compares the rows of the windows the earlier run computed (the seconds and `available` aside),
+  and a site without an earlier run has nothing to compare;
+* the sites: the Dutch ones and Villaviciosa as before the Spanish sites were generalised, Ferrol as its
+  production notebook (tide_boundary_comparison_ferrol.ipynb) runs it;
+* the Spanish sites' truth: NB_LIDAR / NB_LIDAR_DATE (the earlier NB_VVA_LIDAR / NB_VVA_LIDAR_DATE still work),
+  the date by default the gridding JSON's truth_date, pending truth without the LiDAR; the flight period of the
+  tiles under F.
 
 Run:  python -m pytest tests/test_notebook_01_simple.py   (or python tests/test_notebook_01_simple.py)
 """
@@ -406,7 +412,7 @@ def run_last_cell(first_rows, new_rows, ns_=(125, 100, 75, 60)):
         os.makedirs(first), os.makedirs(out)
         pd.DataFrame(first_rows).to_csv(os.path.join(first, "s.csv"), index=False)
         pd.DataFrame(new_rows).to_csv(os.path.join(out, "s.csv"), index=False)
-        ns = dict(pd=pd, np=np, FIRST=first, OUT=out, SITE="s", METHODS=["MAREA", "E4"], NS=list(ns_))
+        ns = dict(os=os, pd=pd, np=np, FIRST=first, OUT=out, SITE="s", METHODS=["MAREA", "E4"], NS=list(ns_))
         exec(code_cells(SITE_NB)[-1], ns)
 
 
@@ -427,6 +433,161 @@ def test_last_cell_compares_only_the_windows_the_earlier_run_computed():
     except AssertionError as e:
         assert "rmse" in str(e) or "values are different" in str(e), e
     run_last_cell(first, new[:2], ns_=(125, 100, 75))  # the confirmatory windows only: nothing to compare
+
+
+def test_last_cell_without_an_earlier_run():
+    import io
+    from contextlib import redirect_stdout
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "out")
+        os.makedirs(out)
+        pd.DataFrame([nb_row(60, m) for m in ("MAREA", "E4")]).to_csv(os.path.join(out, "s.csv"), index=False)
+        ns = dict(os=os, pd=pd, np=np, FIRST=os.path.join(tmp, "none"), OUT=out, SITE="s", METHODS=["MAREA", "E4"],
+                  NS=[60])
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exec(code_cells(SITE_NB)[-1], ns)
+        assert "nothing to compare" in buf.getvalue() and "refitted MAREA's band lags" in buf.getvalue()
+
+
+# ── the sites: the Dutch ones unchanged, Ferrol as its production notebook runs it ──────────────────────────
+
+FERROL_NB = os.path.join(ROOT, "tide_boundary_comparison_ferrol.ipynb")
+DUTCH_AND_VVA = {       # SITES of commit b5c9b26, before the Spanish sites were generalised: must not change
+    "escalda": {"cache": "ndwi_cube_escalda_2023-2025_10m.nc", "extract": "products_escalda_10m/marea_extract.npz",
+                "overpass": "products_escalda_10m/overpass_times.json", "marea": "products_escalda_10m/marea_eot20_g2",
+                "nodelay": ("products_escalda_10m/comparison_eot20_g2/products.npz", "z_plain"),
+                "period": ("2023-01-01", "2025-12-31"), "n_gauges": 2, "judges": ["trnz"], "mouth_side": "west",
+                "truth_years": [2025]},
+    "wadden": {"cache": "ndwi_cube_wadden_2023-2025_10m.nc", "extract": "products_wadden_10m/marea_extract.npz",
+               "overpass": "products_wadden_10m/overpass_times.json", "marea": "products_wadden_10m/marea_eot20_g1",
+               "nodelay": ("products_wadden_10m/comparison_eot20_g1/products.npz", "z_plain"),
+               "period": ("2023-01-01", "2025-12-31"), "n_gauges": 1, "judges": ["harl"], "mouth_side": "north+west",
+               "truth_years": [2025, 2024, 2023]},
+    "ems": {"cache": "ndwi_cube_ems_2023-2025_10m.nc", "extract": "products_ems_10m/marea_extract.npz",
+            "overpass": "products_ems_10m/overpass_times.json", "marea": "products_ems_10m/marea_eot20_g1",
+            "nodelay": ("products_ems_10m/comparison_eot20_g1/products.npz", "z_plain"),
+            "period": ("2023-01-01", "2025-12-31"), "n_gauges": 1, "judges": ["delf"], "mouth_side": "north+west",
+            "truth_years": [2025]},
+    "villaviciosa": {"cache": "ndwi_cube_villaviciosa_grande_10y.nc", "extract": "products_marea/marea_extract.npz",
+                     "overpass": "products_marea/overpass_times.json", "marea": "products_marea/marea_eot20_g0_2023-2025",
+                     "nodelay": ("products_marea/external_products.npz", "no_delay"),
+                     "period": ("2016-01-01", "2025-12-31"), "n_gauges": None, "judges": [], "mouth_side": "any",
+                     "truth_years": None},
+}
+
+
+def parameters(env=None, site="escalda"):
+    """The namespace of the Parameters and SITES cells, run with the environment `env` (NB_* only)."""
+    import io
+    from contextlib import redirect_stdout
+    saved = {k: v for k, v in os.environ.items() if k.startswith("NB_")}
+    for k in saved:
+        del os.environ[k]
+    os.environ.update({"NB_SITE": site, **(env or {})})
+    try:
+        ns = {}
+        with redirect_stdout(io.StringIO()):
+            exec(code_cells(SITE_NB)[0], ns)
+            exec(code_cells(SITE_NB)[1], ns)
+        return ns
+    finally:
+        for k in [k for k in os.environ if k.startswith("NB_")]:
+            del os.environ[k]
+        os.environ.update(saved)
+
+
+def test_the_other_sites_are_unchanged():
+    ns = parameters()
+    for site, p in DUTCH_AND_VVA.items():
+        assert ns["SITES"][site] == p, site
+    assert set(ns["SITES"]) == set(DUTCH_AND_VVA) | {"ferrol"}
+    assert ns["SPANISH"] == ("villaviciosa", "ferrol")
+
+
+def test_ferrol_is_its_production_notebook():
+    """Ferrol's entry is tide_boundary_comparison_ferrol.ipynb's Parameters cell and its outputs."""
+    import io
+    from contextlib import redirect_stdout
+    prod = {}
+    with redirect_stdout(io.StringIO()):
+        exec(code_cells(FERROL_NB)[0], prod)
+    f = parameters(site="ferrol")["SITES"]["ferrol"]
+    d, tag = prod["OUT_DIR"], prod["BOUNDARY_TAG"]
+    assert prod["SITE"] == "ferrol" and prod["TIDE_MODEL"] == "EOT20" and prod["RESOLUTION_M"] == 10
+    assert f == dict(cache=prod["CACHE"], extract=f"{d}/marea_extract.npz", overpass=f"{d}/overpass_times.json",
+                     marea=f"{d}/marea_{tag}", nodelay=(f"{d}/comparison_{tag}/products.npz", "z_plain"),
+                     period=tuple(prod["TIME_EXTENT"]), n_gauges=prod["N_GAUGES"], judges=prod["JUDGE_GAUGES"],
+                     mouth_side=prod["MOUTH_SIDE"], truth_years=None)
+
+
+def test_lidar_parameters_and_the_earlier_names():
+    ns = parameters()
+    assert ns["LIDAR"] is None and ns["LIDAR_DATE"] is None
+    ns = parameters({"NB_VVA_LIDAR": "a.tif", "NB_VVA_LIDAR_DATE": "2017-01-01"}, "villaviciosa")
+    assert (ns["LIDAR"], ns["LIDAR_DATE"]) == ("a.tif", "2017-01-01")      # the earlier names still work
+    ns = parameters({"NB_LIDAR": "b.tif", "NB_VVA_LIDAR": "a.tif", "NB_LIDAR_DATE": "2024-06-10"}, "ferrol")
+    assert (ns["LIDAR"], ns["LIDAR_DATE"]) == ("b.tif", "2024-06-10")       # the new names win
+
+
+def rows_cell(site, lidar=None, date=None, out=None):
+    import io
+    import json
+    from contextlib import redirect_stdout
+    ns = dict(os=os, json=json, pd=pd, SITE=site, SPANISH=("villaviciosa", "ferrol"), LIDAR=lidar, LIDAR_DATE=date,
+              NS=[60, 50], METHODS=["MAREA", "E4"], OUT=out, ONE_ROW=True,
+              P={"truth_years": DUTCH_AND_VVA.get(site, {}).get("truth_years")})
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        exec(cell_with("LIDAR_META = None\nif SITE in SPANISH:"), ns)
+    return ns, buf.getvalue()
+
+
+def test_the_truth_date_of_the_spanish_sites():
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        tif = os.path.join(tmp, "ferrol_pnoa3_10m.tif")
+        open(tif, "wb").close()
+        meta = {"truth_date": "2024-06-21", "truth_date_rule": "the last flight day under F",
+                "source": {"product": "PNOA-LiDAR 3rd coverage"}, "datum": {"vertical": "orthometric"}}
+        json.dump(meta, open(tif[:-4] + ".json", "w"))
+        ns, out = rows_cell("ferrol", tif)
+        assert ns["ROWS"] == [dict(site="ferrol", year=0, end="2024-06-21")] and "from" in out
+        assert ns["LIDAR_META"]["truth_date"] == "2024-06-21"
+        ns, _ = rows_cell("ferrol", tif, "2024-07-01")                     # a date given explicitly wins
+        assert ns["ROWS"][0]["end"] == "2024-07-01"
+        try:                                                               # no LiDAR: pending truth, nothing scored
+            rows_cell("villaviciosa", None, None, tmp)
+            raise AssertionError("no SystemExit without the LiDAR")
+        except SystemExit:
+            pending = pd.read_csv(os.path.join(tmp, "villaviciosa.csv"))
+            assert set(pending.status) == {"pending truth"} and len(pending) == 4
+        ns, _ = rows_cell("wadden")                                        # a Dutch site: its own rule, no LiDAR
+        assert ns["LIDAR_META"] is None and ns["ROWS"] == [dict(site="wadden", year=2025, end="2025-12-31")]
+
+
+def test_the_flight_period_of_the_tiles_under_F():
+    import io
+    from contextlib import redirect_stdout
+    from rasterio.transform import from_origin
+    W_ = 915
+    transform = from_origin(301020.0, 4824840.0, 10.0, 10.0)
+    # two pixels in tile 303-4820 (x 303000-304000, y 4819000-4820000), one in 304-4820
+    rc = [(500, 200), (583, 297), (500, 300)]
+    keep = np.array([r * W_ + c for r, c in rc])
+    tiles = [dict(key="303-4820", first_utc="2024-06-10T10:00:00Z", last_utc="2024-06-11T09:00:00Z"),
+             dict(key="304-4820", first_utc="2024-06-10T10:00:00Z", last_utc="2024-07-02T10:00:00Z"),
+             dict(key="310-4825", first_utc="2025-01-01T10:00:00Z", last_utc="2025-01-01T10:00:00Z")]
+    meta = dict(tiles=tiles, intertidal=dict(with_value=2, pixels=3, share_with_value=2 / 3, in_missing_tiles=0))
+    for F, end, last, verdict in (([0, 1], "2024-06-11", "2024-06-11", " is the last"),
+                                  ([0, 1, 2], "2024-06-11", "2024-07-02", "is NOT")):
+        ns = dict(LIDAR_META=meta, transform=transform, keep=keep, F=np.array(F), W=W_,
+                  ROWS=[dict(site="s", year=0, end=end)])
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exec(cell_with("if LIDAR_META:   # the Spanish sites"), ns)
+        assert f"flown 2024-06-10 → {last}" in buf.getvalue() and verdict in buf.getvalue(), buf.getvalue()
+        assert ns["under"] == ({"303-4820"} if len(F) == 2 else {"303-4820", "304-4820"})
 
 
 if __name__ == "__main__":

@@ -10,9 +10,13 @@
 #   NB_NS=125,100,75 NB_OUT=results/fixedcfg_nb_conf NB_FIRST=results/fixedcfg_nb_diag NB_LOG=logs/v2/claude/nb01_conf \
 #     bash notebooks/validation/run_01_on_server.sh escalda wadden
 #
-# Passed through to the notebook when set: NB_NS, NB_METHODS, NB_VARIANTS, NB_EXTRA, NB_FIRST, MAREA_DEA_TMP,
-# OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to results/fixedcfg_nb_diag/ (NB_OUT; the
-# first run's results/fixedcfg_nb/ is kept, and the notebook checks its nine methods against it), logs and
+# The Spanish sites, with their PNOA-LiDAR truth (experiments/pnoa3_truth.py; the date defaults to the truth_date of
+# the GeoTIFF's JSON), one site per call since each has its own GeoTIFF:
+#   NB_LIDAR=data_v4/truth/pnoa/ferrol_pnoa3_10m.tif bash notebooks/validation/run_01_on_server.sh ferrol
+#
+# Passed through to the notebook when set: NB_NS, NB_METHODS, NB_VARIANTS, NB_EXTRA, NB_FIRST, NB_LIDAR,
+# NB_LIDAR_DATE, MAREA_DEA_TMP, OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to
+# results/fixedcfg_nb_diag/ (NB_OUT; the first run's results/fixedcfg_nb/ is kept, and the notebook checks its nine methods against it), logs and
 # STATUS to logs/v2/claude/nb01_diag/ (NB_LOG); the notebooks are read from notebooks/validation/ (NB_DIR).
 set -u
 REPO=/media/HDD/jalias/Intertidal_analysis
