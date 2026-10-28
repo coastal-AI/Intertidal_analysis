@@ -417,7 +417,8 @@ for year in (2025, 2024, 2023):                        # the most recent survey 
     truth[new], group[new] = v[new], year
 survey = group.copy()                                  # the year of each cell's survey
 if ONE_ROW:
-    group[group > 0] = ROWS[0]["year"]                 # every surveyed cell in the site's one row
+    group[np.isin(group, P["truth_years"])] = ROWS[0]["year"]   # the site's truth years in its one row; a cell
+                                                       # surveyed in another year stays out, as per year
 ''')
 
 code(r'''

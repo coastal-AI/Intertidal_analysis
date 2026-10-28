@@ -566,6 +566,39 @@ def test_the_truth_date_of_the_spanish_sites():
         assert ns["LIDAR_META"] is None and ns["ROWS"] == [dict(site="wadden", year=2025, end="2025-12-31")]
 
 
+def test_one_row_merges_only_the_sites_truth_years():
+    """NB_ONE_ROW puts the site's truth years in its one row: the Wadden's 2023-2025 cells together, Westerschelde's
+    2023 and 2024 cells (truth years [2025]) left out as with one row per year; `survey` keeps each cell's year."""
+    class Dataset(dict):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    W_ = 4
+    cube = Dataset(x=types.SimpleNamespace(values=np.arange(W_, dtype=float)),
+                   y=types.SimpleNamespace(values=np.arange(3, dtype=float)))
+    identity = types.SimpleNamespace(transform=lambda x, y: (x, y))
+    pyproj_ = types.SimpleNamespace(Transformer=types.SimpleNamespace(from_crs=lambda *a, **k: identity))
+    surveyed = {2025: [1, 0, 0, 0, 1], 2024: [0, 1, 0, 0, 1], 2023: [0, 0, 1, 0, 0]}   # pixel k surveyed that year
+
+    def sample_truth(year, xq, yq):
+        return np.where(np.array(surveyed[year]) == 1, float(year) / 1000, np.nan), None
+
+    for site, years, one_row, group in (("escalda", [2025], True, [2025, 2024, 2023, 0, 2025]),
+                                        ("escalda", [2025], False, [2025, 2024, 2023, 0, 2025]),
+                                        ("wadden", [2025, 2024, 2023], True, [2025, 2025, 2025, 0, 2025])):
+        ns = dict(np=np, xr=types.SimpleNamespace(open_dataset=lambda path: cube), pyproj=pyproj_, SITE=site,
+                  SPANISH=("villaviciosa", "ferrol"), ONE_ROW=one_row, P={"cache": "c.nc", "truth_years": years},
+                  ROWS=[dict(site=site, year=2025, end="2025-12-31")], keep=np.array([0, 1, 2, 3, 5]), W=W_,
+                  crs="EPSG:25831", vaklodingen=lambda year: year, sample_truth=sample_truth)
+        exec(cell_with("truth, group = np.full(len(keep), np.nan), np.zeros(len(keep), int)"), ns)
+        assert ns["group"].tolist() == group, (site, one_row, ns["group"].tolist())
+        assert ns["survey"].tolist() == [2025, 2024, 2023, 0, 2025]          # the most recent survey wins
+        assert np.allclose(ns["truth"], [2.025, 2.024, 2.023, np.nan, 2.025], equal_nan=True)
+
+
 def test_the_flight_period_of_the_tiles_under_F():
     import io
     from contextlib import redirect_stdout
