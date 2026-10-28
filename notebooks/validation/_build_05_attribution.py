@@ -94,6 +94,7 @@ NTABLES = os.environ.get("NB_NTABLES", "results/fixedcfg_nb_diag")  # notebook 0
 FIRST   = os.environ.get("NB_FIRST", "results/fixedcfg_nb")         # ... else notebook 01's first run (nine methods)
 BED     = os.environ.get("NB_BED", "results/bed_change_nb")         # notebook 04's change class per pixel (optional)
 ROW_YEARS = [int(v) for v in os.environ.get("NB_ROW_YEARS", "2025").split(",")]   # the survey-year rows analysed
+ONE_ROW = os.environ.get("NB_ONE_ROW", "1") == "1"   # 1: one row per site (the Wadden's 2023-2025 surveys together)
 
 # ── The analysis ────────────────────────────────────────────────────────
 Q_BINS      = 5           # quantile bins of the strata (section 5); the positive delays get 4 (section 6)
@@ -235,7 +236,10 @@ for code, name, km in near:
 
 code(r'''
 years = P["truth_years"]
-ROWS = [dict(site=f"{SITE}-{y}" if len(years) > 1 else SITE, year=y, end=f"{y}-12-31") for y in years]
+if ONE_ROW:      # one row per site: every cell with its most recent survey of these years, one window to the last
+    ROWS = [dict(site=SITE, year=years[0], end=f"{years[0]}-12-31")]
+else:
+    ROWS = [dict(site=f"{SITE}-{y}" if len(years) > 1 else SITE, year=y, end=f"{y}-12-31") for y in years]
 for row in ROWS:
     print(f"row {row['site']:12s} truth dated {row['end']}: its windows end there"
           + ("" if row["year"] in ROW_YEARS else " (not analysed here)"))
@@ -411,6 +415,9 @@ for year in (2025, 2024, 2023):                        # the most recent survey 
     v, _ = sample_truth(vaklodingen(year), xq, yq)
     new = np.isfinite(v) & (group == 0)
     truth[new], group[new] = v[new], year
+survey = group.copy()                                  # the year of each cell's survey
+if ONE_ROW:
+    group[group > 0] = ROWS[0]["year"]                 # every surveyed cell in the site's one row
 ''')
 
 code(r'''
