@@ -66,3 +66,8 @@ them, with the site's production configuration (screening, clear mask SCL 4-7, N
 
 Descriptive, per site and n, against the best of the eight other methods; the variants against MAREA (V0) with the
 rule of the variants files. Santander and Santoña get elevation maps without scores.
+
+## Amendments
+
+- 2026-10-29, before any computation: the water-patch rule is an area, the one the MDT02 rule implies: 4-connected
+  patches of at least 200 m2 whose values round to the same mm (50 cells at 2 m, 800 cells at 0.5 m for MDT50CM).
