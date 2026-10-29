@@ -25,6 +25,7 @@ import ast
 import importlib.util
 import os
 import sys
+import types
 
 import nbformat
 import numpy as np
@@ -132,7 +133,7 @@ def test_parameters_and_sections():
     assert ns["MAREA_MIN_BRACKET"] == 0
     headings = [c.source.splitlines()[0] for c in cells() if c.cell_type == "markdown" and c.source.startswith("## ")]
     numbers = [h.split("·")[0].strip("# ").strip() for h in headings if "·" in h]
-    assert numbers == [str(k) for k in range(9)], f"sections not numbered 0..8: {numbers}"
+    assert numbers == [str(k) for k in range(10)], f"sections not numbered 0..9: {numbers}"
 
 
 def test_notebook_01_construction_is_reused_verbatim():
@@ -155,6 +156,30 @@ def test_calls_the_method_functions_directly():
     for call in ("marea.invert_series(", "te.m2a_rasch(", "fm.METHODS[mid][1](", "dea.run(", "wc.nidem(",
                  "make_boundary(", "pit.reference_and_clouds(", "sample_truth(", "_fit_block("):
         assert call in src, call
+
+
+ADDENDUM = ("MAREA_M", "MAREA_M_nodelay", "MAREA_M_otsu", "MAREA_P", "MAREA_H", "MAREA_H0", "MAREA_B_abst",
+            "MAREA_B_otsu", "MAREA_BL_otsu", "E4_otsu", "E5c_otsu", "E12_otsu")
+
+
+def test_the_addendums_estimates_have_run_paths_and_names():
+    """Every estimate of the addendum of 2026-10-28 is dispatched and has its label, short name, role, colour and
+    marker; the competitors of the error-coverage curves (E5b, E7, E12) are named; the default run is unchanged."""
+    dispatch = function_source("run_method")
+    for mid in ADDENDUM:
+        assert f'"{mid}"' in dispatch, f"{mid} has no run path"
+    src = next(s for s in code_cells() if s.startswith("LABELS = {"))
+    ns = dict(METHODS=list(ADDENDUM) + ["MAREA", "E5b", "E7", "E12"], plt=types.SimpleNamespace(
+        rcParams=types.SimpleNamespace(update=lambda d: None)))
+    exec(compile(src, "labels", "exec"), ns)
+    for mid in ADDENDUM + ("E5b", "E7", "E12"):
+        for table in ("LABELS", "SHORT", "ROLE", "COLORS", "MARKERS"):
+            assert mid in ns[table], f"{mid} missing from {table}"
+    assert all(ns["ROLE"][m] == "diagnostic" for m in ADDENDUM)
+    assert ns["NOT_COMMON"] == {"MAREA_B_abst"}
+    assert not set(ADDENDUM) & set(parameters()["METHODS"]), "the default estimates are those of the earlier runs"
+    for name in ("make_obs", "run_competitor"):            # V14 wraps notebook 01's functions, never edits them
+        assert "otsu" not in function_source(name)
 
 
 def test_every_default_estimate_has_a_run_path():

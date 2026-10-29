@@ -45,7 +45,7 @@ truth (Vaklodingen cells surveyed in 2023–2025, the most recent survey per cel
 the pixels F; the windows of the n most recent screened images on or before the truth date, by default n = 60 and
 50 (Ems: 50 and 40) on the 2025 row, the development windows; `NB_NS=125,100,75` runs the confirmatory windows,
 which hold the pre-2023 images (their water level and NIDEM's frames as notebook 01 reads them). Every estimate that
-notebook 01 also computes must give its rows bit for bit (section 8).
+notebook 01 also computes must give its rows bit for bit (section 9).
 
 | id | estimate | |
 |---|---|---|
@@ -57,18 +57,27 @@ notebook 01 also computes must give its rows bit for bit (section 8).
 | | MAREA, no delay | V0 with every delay 0 (notebook 01's diagnostic) |
 | | LogiTide2DEM, and + MAREA delay | E4, and E4 with each pixel's levels read MAREA's delay earlier (notebook 01's) |
 | | sampled exceedance, DEA Intertidal, NIDEM, Flood2Topo | E5c, DEA 2.5.3, NIDEM, E5a as notebook 01 runs them |
+| V11, V11d | MAREA-M | V0's delay (V11d: none); the isotonic wet-probability read-off, no curve shape (addendum) |
+| V12 | MAREA-P | V0's delay and inputs; NDWI = a + Φ(u)(b + c(h − z)), the rise with depth c ≥ 0 (addendum) |
+| V4, V4-0 | MAREA-H | V0 and V1 with a Huber loss (δ = 0.10) and weight 0.5 for SCL 7 (declared 2026-10-27) |
+| V13a | MAREA-B, abstaining | V2 with no value where its 95 % likelihood interval is not bracketed (addendum) |
+| V14 | + Otsu | wet = NDWI > the scene's Otsu threshold, on MAREA-B, MAREA-BL, MAREA-M, E4, E5c, E12 (addendum) |
+| | Tseng, Coast X-Ray, wet/dry bracket | E5b, E7, E12 as notebook 01 runs them (for the error-coverage curves) |
 
 V1, V2, V2d, V9 (σ as an uncertainty, a table for V0 and V1 in section 3) and V10 are declared in
-`experiments/variants_preregistered_2026-10-27.md`. On the development windows **everything after V0 that is not
-one of notebook 01's methods (V1, V2, V10, V2d, MAREA no delay, LogiTide2DEM + MAREA delay) is exploratory, a
-diagnostic**, and never replaces a method; on the confirmatory windows the variants are judged as that file says.
-The notebook reports observations in tables and figures; it draws no conclusions.
+`experiments/variants_preregistered_2026-10-27.md`, V4 too; V11-V14 in `experiments/variants_addendum_2026-10-28.md`,
+before any window was computed with them (they run when `NB_METHODS` names them). On the development windows
+**everything after V0 that is not one of notebook 01's methods (V1, V2, V10, V2d, V4, V11-V14, MAREA no delay,
+LogiTide2DEM + MAREA delay) is exploratory, a diagnostic**, and never replaces a method; on the confirmatory windows
+the variants are judged as those files say. The notebook reports observations in tables and figures; it draws no
+conclusions.
 
 **Outputs** (`OUT`): `<site>_scores.csv` (every window and estimate: seconds and scores on F),
 `<site>_decomposition.csv`, `<site>_sigma.csv`, `<site>_ladder.csv`, `<site>_ladder_steps.csv`,
 `<site>_ladder_cases.csv`, `<site>_rivals.csv`, `<site>_strata.csv`, `<site>_delay_summary.csv`,
-`<site>_delay_bins.csv`, `<site>_gallery.csv`, the per-pixel arrays `<site>_pixels.npz` and the figures (PNG,
-200 dpi).
+`<site>_delay_bins.csv`, `<site>_gallery.csv`, with the addendum's estimates `<site>_interval.csv`,
+`<site>_coverage.csv` and `<site>_bootstrap.csv` (section 8), the per-pixel arrays `<site>_pixels.npz` and the
+figures (PNG, 200 dpi).
 """)
 
 md(r"""
@@ -183,23 +192,42 @@ code(r'''
 LABELS = {"MAREA": "V0 MAREA", "MAREA_ndwi0": "V1 MAREA-0", "MAREA_B": "V2 MAREA-B",
           "MAREA_BL": "V10 MAREA-B, lapse rates", "MAREA_B_nodelay": "V2d MAREA-B, no delay",
           "MAREA_nodelay": "MAREA, no delay", "E4": "LogiTide2DEM", "E4_delay": "LogiTide2DEM + MAREA delay",
-          "E5c": "sampled exceedance", "DEA": "DEA Intertidal", "NIDEM": "NIDEM", "E5a": "Flood2Topo"}
+          "E5c": "sampled exceedance", "DEA": "DEA Intertidal", "NIDEM": "NIDEM", "E5a": "Flood2Topo",
+          # the addendum of 2026-10-28 (run when NB_METHODS names them) and the competitors its curves need
+          "MAREA_M": "V11 MAREA-M", "MAREA_M_nodelay": "V11d MAREA-M, no delay", "MAREA_P": "V12 MAREA-P",
+          "MAREA_H": "V4 MAREA-H (Huber)", "MAREA_H0": "V4-0 MAREA-H, NDWI = 0",
+          "MAREA_B_abst": "V13a MAREA-B, abstaining", "MAREA_B_otsu": "V2 MAREA-B + Otsu",
+          "MAREA_BL_otsu": "V10 MAREA-BL + Otsu", "MAREA_M_otsu": "V11 MAREA-M + Otsu",
+          "E4_otsu": "LogiTide2DEM + Otsu", "E5c_otsu": "sampled exceedance + Otsu", "E12_otsu": "wet/dry bracket + Otsu",
+          "E5b": "Tseng linear scaling", "E7": "Coast X-Ray", "E12": "wet/dry bracket"}
 SHORT = {"MAREA": "V0", "MAREA_ndwi0": "V1", "MAREA_B": "V2", "MAREA_BL": "V10", "MAREA_B_nodelay": "V2d",
          "MAREA_nodelay": "V0 τ=0", "E4": "LT2D", "E4_delay": "LT2D+τ", "E5c": "exceed.", "DEA": "DEA", "NIDEM": "NIDEM",
-         "E5a": "F2T"}
+         "E5a": "F2T", "MAREA_M": "V11", "MAREA_M_nodelay": "V11d", "MAREA_P": "V12", "MAREA_H": "V4", "MAREA_H0": "V4-0",
+         "MAREA_B_abst": "V13a", "MAREA_B_otsu": "V2+O", "MAREA_BL_otsu": "V10+O", "MAREA_M_otsu": "V11+O",
+         "E4_otsu": "LT2D+O", "E5c_otsu": "exceed.+O", "E12_otsu": "WDB+O", "E5b": "Tseng", "E7": "CXR", "E12": "WDB"}
 ROLE = {m: "diagnostic" for m in ("MAREA_ndwi0", "MAREA_B", "MAREA_BL", "MAREA_B_nodelay", "MAREA_nodelay",
-                                  "E4_delay")}
-ROLE.update({"MAREA": "reference", **{m: "method" for m in ("E4", "E5c", "DEA", "NIDEM", "E5a")}})
+                                  "E4_delay", "MAREA_M", "MAREA_M_nodelay", "MAREA_P", "MAREA_H", "MAREA_H0",
+                                  "MAREA_B_abst", "MAREA_B_otsu", "MAREA_BL_otsu", "MAREA_M_otsu", "E4_otsu",
+                                  "E5c_otsu", "E12_otsu")}
+ROLE.update({"MAREA": "reference", **{m: "method" for m in ("E4", "E5c", "DEA", "NIDEM", "E5a", "E5b", "E7", "E12")}})
 ORDER = [m for m in LABELS if m in METHODS]
+NOT_COMMON = {"MAREA_B_abst"}      # an abstaining estimate never narrows the common pixels of the others
 
 PAL = dict(deep="#2F5D7C", shallow="#8DB3C7", sand="#C9A66B", dark_sand="#8C6D46", seagrass="#5B7F3A",
            grey="#B8B2A3", accent="#B5523B", ink="#2B2B2B", secondary="#6B6B6B")
 COLORS = {"MAREA": PAL["accent"], "MAREA_nodelay": PAL["accent"], "MAREA_ndwi0": PAL["sand"],
           "MAREA_B": PAL["dark_sand"], "MAREA_BL": PAL["dark_sand"], "MAREA_B_nodelay": PAL["dark_sand"],
           "E4": PAL["deep"], "E4_delay": PAL["deep"], "E5c": PAL["seagrass"], "DEA": PAL["shallow"], "NIDEM": PAL["grey"],
-          "E5a": PAL["secondary"]}
+          "E5a": PAL["secondary"], "MAREA_M": PAL["accent"], "MAREA_M_nodelay": PAL["accent"], "MAREA_P": PAL["accent"],
+          "MAREA_H": PAL["sand"], "MAREA_H0": PAL["sand"], "MAREA_B_abst": PAL["dark_sand"],
+          "MAREA_B_otsu": PAL["dark_sand"], "MAREA_BL_otsu": PAL["dark_sand"], "MAREA_M_otsu": PAL["accent"],
+          "E4_otsu": PAL["deep"], "E5c_otsu": PAL["seagrass"], "E12_otsu": PAL["ink"], "E5b": PAL["grey"],
+          "E7": PAL["secondary"], "E12": PAL["ink"]}
 MARKERS = {"MAREA": "o", "MAREA_nodelay": "o", "MAREA_ndwi0": "D", "MAREA_B": "s", "MAREA_BL": "h",
-           "MAREA_B_nodelay": "s", "E4": "^", "E4_delay": "^", "E5c": "v", "DEA": "P", "NIDEM": "X", "E5a": "<"}
+           "MAREA_B_nodelay": "s", "E4": "^", "E4_delay": "^", "E5c": "v", "DEA": "P", "NIDEM": "X", "E5a": "<",
+           "MAREA_M": "*", "MAREA_M_nodelay": "*", "MAREA_P": "p", "MAREA_H": "d", "MAREA_H0": "d", "MAREA_B_abst": "s",
+           "MAREA_B_otsu": "s", "MAREA_BL_otsu": "h", "MAREA_M_otsu": "*", "E4_otsu": "^", "E5c_otsu": "v",
+           "E12_otsu": "x", "E5b": ">", "E7": "8", "E12": "x"}
 WSTYLE = [("-", "o", PAL["ink"]), ("--", "s", PAL["secondary"]), (":", "^", PAL["grey"])]   # one per window
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 8.5, "axes.titleweight": "bold", "axes.labelsize": 8,
                      "axes.edgecolor": PAL["secondary"], "axes.labelcolor": PAL["ink"], "text.color": PAL["ink"],
@@ -873,6 +901,185 @@ print(f"invert_bernoulli_lapse = the brute-force maximum on 4 synthetic pixels: 
 ''')
 
 md(r"""
+**The addendum's estimates** (`experiments/variants_addendum_2026-10-28.md`, declared before any window was computed
+with them; diagnostics, run when `NB_METHODS` names them), each on V0's delay unless said otherwise:
+**V11 MAREA-M**, the isotonic wet-probability read-off, no curve shape (`experiments/variants/monotone.py`), and
+**V11d** with every delay 0; **V12 MAREA-P**, the depth-aware model NDWI = a + Φ(u)(b + c(h − z)), c ≥ 0, on V0's
+inputs (`depth_model.py`); **V4 MAREA-H** and **V4-0**, the Huber fit (δ = 0.10) with weight 0.5 for the looks of SCL
+class 7, its midpoint and its NDWI = 0 crossing (`huber.py`; SCL read once at the keep pixels of every scene of S, the
+cube's for its scenes and the band-subset stores' before 2023); **V13a**, MAREA-B with no value where its 95 %
+profile-likelihood interval is not bracketed by the grid (`interval.py`; its z is V2's, asserted bit for bit every
+window); **V14**, the per-scene Otsu water threshold (`otsu.py`) as a factor on every wet/dry estimator: MAREA-B,
+MAREA-BL and MAREA-M read NDWI − t_s, and LogiTide2DEM, sampled exceedance and the wet/dry bracket get it through
+their inputs (`make_obs_otsu`), so that their own rule wet = NDWI > 0 is wet = NDWI > t_s. Section 8 has V13's interval
+checks, the error-coverage curves of every estimate and the bootstrap of the judging rule.
+""")
+
+code(r'''
+from experiments.variants import depth_model as v12, huber as v4, interval as v13, monotone as v11, otsu as v14
+
+ADD = {}            # the site's Otsu thresholds and shifted NDWI, and its SCL 7 looks: computed on first use
+
+
+def otsu_ndwi():
+    """V14: (Y_S - t_s per scene, t_s, the scenes that fell back to 0), once per site."""
+    if "otsu" not in ADD:
+        t, fell = v14.scene_thresholds(Y_S, C_S)
+        ADD["otsu"] = (v14.shift_for_threshold(Y_S, t), np.asarray(t, float), np.asarray(fell, bool))
+        print(f"V14: Otsu thresholds of the {len(t)} scenes of S: median {np.median(t):+.3f}, range "
+              f"[{np.min(t):+.3f}, {np.max(t):+.3f}], {int(np.sum(fell))} fell back to 0", flush=True)
+    return ADD["otsu"]
+
+
+def scl7_at_keep():
+    """V4: SCL == 7 at the keep pixels of every scene of S (scenes x keep, bool): the cube's SCL for its scenes, the
+    band-subset stores' before 2023 (read as zarr_frames reads them)."""
+    if "scl7" not in ADD:
+        out = np.zeros((len(S_dates), len(keep)), bool)
+        ds, bands, t_dim = pit.cube.open_cube(P["cache"])
+        try:
+            for k, d in enumerate(S_dates):
+                if d in cube_pos:
+                    out[k] = np.asarray(bands["SCL"].isel({t_dim: cube_pos[d]}).values).ravel()[keep] == 7
+        finally:
+            ds.close()
+        old = [k for k, d in enumerate(S_dates) if d not in cube_pos]
+        for year in sorted({S_dates[k][:4] for k in old}):
+            ks = [k for k in old if S_dates[k][:4] == year]
+            z = zc.open_store(zc.store_path(SITE, year, lte.LIGHT_ROOT), bands=["SCL"])
+            try:
+                zpos = {d: i for i, d in enumerate(zc.dates(z))}
+                for a in range(0, len(ks), 16):
+                    part = ks[a:a + 16]
+                    scl = np.asarray(z["SCL"].isel({"t": [zpos[S_dates[k]] for k in part]}).values)
+                    for j, k in enumerate(part):
+                        out[k] = scl[j].ravel()[keep] == 7
+            finally:
+                z.close()
+        ADD["scl7"] = out
+        print(f"V4: SCL 7 on {np.mean(out[C_S]):.2%} of the clear looks of S at the keep pixels", flush=True)
+    return ADD["scl7"]
+
+
+def delay_groups(win, px, delay=True):
+    """(the window's scenes, its band lags or None, the delay of each pixel of px, the window's lowest and highest
+    level without delay)."""
+    w = win["scenes"]
+    tau_bands, tau_px = window_delays(win) if delay else (None, np.zeros(len(keep)))
+    h0 = LEV[0][w]
+    return w, tau_bands, tau_px[px], h0.min(), h0.max()
+
+
+def run_marea_m(win, px, delay=True, Ysrc=None):
+    """V11 (V0's delays), V11d (every delay 0) and, with the shifted NDWI, V11 + Otsu."""
+    w, tau_bands, tau_px, lo, hi = delay_groups(win, px, delay)
+    Y, C = (Y_S if Ysrc is None else Ysrc)[np.ix_(w, px)], C_S[np.ix_(w, px)]
+    z, cens = np.full(len(px), np.nan), np.zeros(len(px), int)
+    for tau in np.unique(tau_px):
+        cols = np.flatnonzero(tau_px == tau)
+        z[cols], cens[cols], _, _ = v11.invert_monotone(Y[:, cols], C[:, cols], level_at(int(tau))[w])
+    fin = np.isfinite(z)
+    note = (f"{lags_text(tau_bands)}; " if delay else "every delay 0; ") + \
+        f"{int((cens[fin] != 0).sum()):,} of {int(fin.sum()):,} px censored"
+    return z, note, None, {"censored": cens}
+
+
+def run_marea_p(win, px):
+    """V12 on V0's delays and inputs."""
+    w, tau_bands, tau_px, lo, hi = delay_groups(win, px)
+    Y0, C0 = np.nan_to_num(Y_S[np.ix_(w, px)], nan=0.0), C_S[np.ix_(w, px)]
+    z, c = np.full(len(px), np.nan), np.full(len(px), np.nan)
+    for tau in np.unique(tau_px):
+        cols = np.flatnonzero(tau_px == tau)
+        z[cols], _, c[cols] = v12.invert_depth(Y0[:, cols], C0[:, cols], level_at(int(tau))[w], lo, hi)
+    fin = np.isfinite(z) & np.isfinite(c)
+    note = (f"{lags_text(tau_bands)}; depth slope c: median {np.median(c[fin]):.3f} per m, "
+            f"{np.mean(c[fin] > 0):.0%} of px > 0" if fin.any() else f"{lags_text(tau_bands)}; no value")
+    return z, note, None, {"c": c}
+
+
+HUBER = {}
+
+
+def huber_fit(win, px):
+    """V4's fit of the window at px, computed once: (midpoint z, NDWI = 0 crossing z0, iterations, note)."""
+    key = (win["site"], win["n"])
+    if key not in HUBER:
+        w, tau_bands, tau_px, lo, hi = delay_groups(win, px)
+        Y0, C0 = np.nan_to_num(Y_S[np.ix_(w, px)], nan=0.0), C_S[np.ix_(w, px)]
+        s7 = scl7_at_keep()[np.ix_(w, px)]
+        z, z0, it = np.full(len(px), np.nan), np.full(len(px), np.nan), np.zeros(len(px), int)
+        for tau in np.unique(tau_px):
+            cols = np.flatnonzero(tau_px == tau)
+            z[cols], z0[cols], _, _, _, it[cols] = v4.invert_huber(Y0[:, cols], C0[:, cols], level_at(int(tau))[w],
+                                                                    lo, hi, scl7=s7[:, cols])
+        fin = np.isfinite(z)
+        HUBER[key] = (z, z0, it, f"{lags_text(tau_bands)}; iterations median "
+                                 f"{int(np.median(it[fin])) if fin.any() else 0}, max {int(it.max()) if len(it) else 0}; "
+                                 f"SCL 7 on {np.mean(s7[C0]):.1%} of the clear looks")
+    return HUBER[key]
+
+
+def run_marea_h(win, px, crossing=False):
+    """V4 (the Huber fit's midpoint) and V4-0 (its NDWI = 0 crossing)."""
+    z, z0, it, note = huber_fit(win, px)
+    return (z0 if crossing else z), note, None, {"n_iter": it}
+
+
+BINT = {}           # per window: MAREA-B's z and its 95 % interval at F (section 8)
+
+
+def run_marea_b_abst(win, px):
+    """V13a: MAREA-B with no value where its 95 % profile-likelihood interval is not bracketed by the grid."""
+    w, tau_bands, tau_px, lo, hi = delay_groups(win, px)
+    Y, C = Y_S[np.ix_(w, px)], C_S[np.ix_(w, px)]
+    b = {k: np.full(len(px), np.nan) for k in ("z", "z_lo", "z_hi")}
+    br = np.zeros(len(px), bool)
+    for tau in np.unique(tau_px):
+        cols = np.flatnonzero(tau_px == tau)
+        z, _, zl, zh, ok = v13.bernoulli_interval(Y[:, cols], C[:, cols], level_at(int(tau))[w], lo, hi)
+        b["z"][cols], b["z_lo"][cols], b["z_hi"][cols], br[cols] = z, zl, zh, ok
+    BINT[(win["site"], win["n"])] = dict(b, bracketed=br)
+    fin = np.isfinite(b["z"])
+    note = f"{lags_text(tau_bands)}; {int((fin & br).sum()):,} of {int(fin.sum()):,} px with a bracketed interval"
+    return (np.where(br, b["z"], np.nan), note, None,
+            {"z_all": b["z"], "z_lo": b["z_lo"], "z_hi": b["z_hi"], "bracketed": br.astype(np.int8)})
+
+
+def run_marea_b_otsu(win, px, lapse=False):
+    """V14 on V2 (and on V10): their likelihoods on the wet/dry record wet = NDWI > t_s."""
+    w, tau_bands, tau_px, lo, hi = delay_groups(win, px)
+    Y, C = otsu_ndwi()[0][np.ix_(w, px)], C_S[np.ix_(w, px)]
+    z = np.full(len(px), np.nan)
+    fit = invert_bernoulli_lapse if lapse else invert_bernoulli
+    for tau in np.unique(tau_px):
+        cols = np.flatnonzero(tau_px == tau)
+        z[cols] = fit(Y[:, cols], C[:, cols], level_at(int(tau))[w], lo, hi)[0]
+    return z, f"{lags_text(tau_bands)}; wet = NDWI > t_s (Otsu per scene)", None, {}
+
+
+def make_obs_otsu(win, px, tau=0):
+    """make_obs with the shifted NDWI (V14): wet = C & (Y - t_s > 0), NDWI > t_s, by the competitors' own rule."""
+    w = win["scenes"]
+    Y, C = otsu_ndwi()[0][np.ix_(w, px)], C_S[np.ix_(w, px)]
+    with np.errstate(invalid="ignore"):
+        wet = C & (Y > 0)
+    return types.SimpleNamespace(Y=Y, C=C, W=wet, h=level_at(tau)[w], t=S_t[w], keep=keep[px],
+                                 shape=(H, W), pixel_m=10.0, site=SITE)
+
+
+def run_competitor_otsu(mid, win, px):
+    """V14 on a wet/dry competitor (E4, E5c, E12): run_competitor's call with make_obs_otsu."""
+    label, run, card = fm.METHODS[mid]
+    cfg = {}
+    if "level_series" in card.get("needs", []):
+        start = S_t[win["scenes"][0]].normalize()
+        cfg["level_series"] = LS.slice(start, pd.Timestamp(win["end"]) + pd.Timedelta(days=1))
+    out = run(make_obs_otsu(win, px), cfg)
+    return out["z"], (out["meta"].get("reason", "") + "; wet = NDWI > t_s (Otsu per scene)").lstrip("; "), None, {}
+''')
+
+md(r"""
 **The other estimates**, as notebook 01 runs them: *MAREA, no delay* (V0 with every delay 0, diagnostic); NIDEM
 (`waterline_contour`, whole frames read from the cube, and before 2023 from the band-subset Zarr stores
 `cubes_light/<site>/<year>.zarr`, not timed); DEA Intertidal 2.5.3 (DEA's own code in its side
@@ -1002,6 +1209,23 @@ def run_method(mid, win, px, frames=None):
         return run_nidem(win, px, frames) + ({},)
     if mid == "DEA":
         return run_dea(win, px) + ({},)
+    if mid == "MAREA_M":                               # the addendum of 2026-10-28
+        return run_marea_m(win, px)
+    if mid == "MAREA_M_nodelay":
+        return run_marea_m(win, px, delay=False)
+    if mid == "MAREA_M_otsu":
+        z, note, own, more = run_marea_m(win, px, Ysrc=otsu_ndwi()[0])
+        return z, note + "; wet = NDWI > t_s (Otsu per scene)", own, more
+    if mid == "MAREA_P":
+        return run_marea_p(win, px)
+    if mid in ("MAREA_H", "MAREA_H0"):
+        return run_marea_h(win, px, crossing=mid == "MAREA_H0")
+    if mid == "MAREA_B_abst":
+        return run_marea_b_abst(win, px)
+    if mid in ("MAREA_B_otsu", "MAREA_BL_otsu"):
+        return run_marea_b_otsu(win, px, lapse=mid == "MAREA_BL_otsu")
+    if mid in ("E4_otsu", "E5c_otsu", "E12_otsu"):
+        return run_competitor_otsu(mid.removesuffix("_otsu"), win, px)
     return run_competitor(mid, win, px)
 ''')
 
@@ -1125,6 +1349,8 @@ def run_window(win):
         rows.append(r)
     if "MAREA" in est and "MAREA_ndwi0" in est:
         assert np.array_equal(extra["MAREA_ndwi0"]["z_mid"], est["MAREA"], equal_nan=True), "V1's fit is not V0's"
+    if "MAREA_B" in est and "MAREA_B_abst" in est:
+        assert np.array_equal(extra["MAREA_B_abst"]["z_all"], est["MAREA_B"], equal_nan=True), "V13's z is not V2's"
     return rows, est, extra
 ''')
 
@@ -1195,8 +1421,9 @@ rows = []
 for key in KEYS:
     t, est = truth[window_of(key)["px"]], EST[key]
     common = np.isfinite(t)
-    for z in est.values():
-        common &= np.isfinite(z)
+    for mid, z in est.items():
+        if mid not in NOT_COMMON:
+            common &= np.isfinite(z)
     for mid in ORDER:
         if mid in est:
             for pixels, m in (("own", np.ones(len(t), bool)), ("common", common)):
@@ -1691,7 +1918,72 @@ if len(gal):
 
 # ─────────────────────────────────────────────────────────────────────────────
 md(r"""
-## 8 · Outputs, provenance and the check against notebook 01
+## 8 · The addendum: V13's interval, the error-coverage curves and the bootstrap (exploratory)
+
+Computed for the windows where the estimates exist (`NB_METHODS` names them). **V13's interval:** the share of the
+pixels of F whose 95 % interval for MAREA-B is bracketed by the grid (V13a's coverage) and the share whose error
+|MAREA-B − t| lies within the interval's half-width (nominal 0.95, on all pixels and on the bracketed ones).
+**Error-coverage curves:** every estimate (V13a aside, which abstains by itself), on a reliability common to all and
+blind to every method, r = min(wet looks, dry looks) of the window's clear looks (wet = NDWI > 0): at 100, 95, 90, 85
+and 80 % of F, the pixels of largest r (ties by pixel index), the scores on each estimate's pixels with a value and on
+the pixels common to all (`v13.error_coverage`). **Bootstrap:** every diagnostic against V0 on the pixels both have,
+the paired difference of RMSE and centred RMSE with its 95 % interval, blocks of 32 × 32 pixels of the frame, 1,000
+resamples, seed 20261028 (`v13.block_bootstrap`). The judging rule needs the three sites and is applied in the report.
+""")
+
+code(r'''
+cal, cov, boot = [], [], []
+for key in KEYS:
+    win, est = window_of(key), EST[key]
+    t = truth[win["px"]]
+    if key in BINT:
+        b = BINT[key]
+        fin = np.isfinite(b["z"]) & np.isfinite(t)
+        half, err = (b["z_hi"] - b["z_lo"]) / 2, np.abs(b["z"] - t)
+        inb = fin & b["bracketed"]
+        cal.append(dict(site=key[0], n=key[1], n_px=int(fin.sum()), bracketed=float(b["bracketed"][fin].mean()),
+                        within_halfwidth=float((err[fin] <= half[fin]).mean()),
+                        within_halfwidth_bracketed=float((err[inb] <= half[inb]).mean()) if inb.any() else np.nan,
+                        median_halfwidth_m=float(np.median(half[fin]))))
+    looks = LOOKS[key]
+    r = np.minimum(looks["n_wet"], looks["n_clear"] - looks["n_wet"])
+    ec = v13.error_coverage(t, {m: est[m] for m in ORDER if m in est and m not in NOT_COMMON}, r)
+    cov.append(ec.assign(site=key[0], n=key[1]))
+    rows_px, cols_px = np.divmod(keep[win["px"]], W)
+    if "MAREA" in est:
+        for m in ORDER:
+            if m in est and ROLE.get(m) == "diagnostic":
+                boot.append(dict(site=key[0], n=key[1], method=m, label=LABELS[m],
+                                 **v13.block_bootstrap(t, est[m], est["MAREA"], rows_px, cols_px)))
+cal, cov, boot = pd.DataFrame(cal), (pd.concat(cov, ignore_index=True) if cov else pd.DataFrame()), pd.DataFrame(boot)
+for name, df in (("interval", cal), ("coverage", cov), ("bootstrap", boot)):
+    df.to_csv(f"{OUT}/{SITE}_{name}.csv", index=False)
+    print(f"-> {OUT}/{SITE}_{name}.csv ({len(df)} rows)")
+if len(cal):
+    display(cal.round(3))
+if len(boot):
+    display(boot.round(4))
+
+if len(cov):                                           # RMSE on the common pixels against the coverage of F
+    mine = [m for m in ORDER if m.startswith("MAREA")]
+    fig, axes = plt.subplots(1, len(KEYS), figsize=(3.4 * len(KEYS), 3.4), squeeze=False)
+    for ax, key in zip(axes[0], KEYS):
+        d = cov[(cov.site == key[0]) & (cov.n == key[1])]
+        for m in d.method.unique():
+            e = d[d.method == m].sort_values("coverage")
+            ax.plot(100 * e.coverage, e.rmse_common, marker=MARKERS.get(m, "o"), ms=3.5 if m in mine else 2.5,
+                    lw=1.8 if m in mine else 0.8, color=COLORS.get(m, PAL["grey"]) if m in mine else PAL["grey"],
+                    alpha=1.0 if m in mine else 0.8, zorder=3 if m in mine else 2, label=SHORT.get(m, m))
+        ax.invert_xaxis()
+        ax.set(title=f"{key[0]} n={key[1]}", xlabel="coverage of F (%), most reliable pixels kept",
+               ylabel="RMSE on the common pixels (m)")
+    axes[0, -1].legend(loc="center left", bbox_to_anchor=(1.02, 0.5), ncol=2)
+    fig.savefig(f"{OUT}/{SITE}_coverage.png")
+    plt.show()
+''')
+
+md(r"""
+## 9 · Outputs, provenance and the check against notebook 01
 
 The per-pixel arrays: for every analysed row its pixels of F (`<row>_keep`, flat indices in the frame), their truth
 and mouth distance; for every window (`<row>_n<n>_`) every estimate, the extras (V0's fit a, b, σ and z as `fit_*`,
