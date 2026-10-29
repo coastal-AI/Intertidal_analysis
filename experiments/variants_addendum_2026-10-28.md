@@ -67,3 +67,16 @@ windows showed no gain at Westerschelde) stay declared and are computed later.
 ## Amendments
 
 - 2026-10-28, before any computation: V12 and V4 take V0's inputs (an undefined NDWI on a clear look enters as 0, as in `run_marea`), so that V12 with c = 0 and V4 with an infinite delta are V0 bit for bit.
+- 2026-10-29, before V15 is computed on any window (the development run of V4 and V11-V14 was running; none of its
+  numbers had been read): **V15 MAREA-S, one model and one search.** MAREA fits its delay by the profiled Bernoulli
+  likelihood of the wet/dry record, computing every pixel's (z, sigma) inside, and then discards those z and fits the
+  elevation again by least squares on the NDWI. V15 keeps the delay fit's own z: for the window's band lags tau_k (V0's,
+  as fitted), every pixel of a band reads the delay fit's levels at its band's lag (the bank of shifted levels
+  interpolated at tau_k, as `te.m2a_rasch` reads them; no smoothed per-pixel profile), and (z, sigma) maximise the
+  delay fit's likelihood: wet = clear and NDWI > 0, p = Phi((h - z)/sigma) clipped to [1e-4, 1 - 1e-4], z on the delay
+  fit's grid (`configs/m2.yaml`: 60 levels from the window's lowest level without delay - 0.3 m to its highest + 0.3 m)
+  and sigma on its atoms (0.06, 0.10, 0.15, 0.22, 0.32, 0.45 m), computed for every pixel (not the fit's subsample).
+  Ties (complete separation): the median of the z levels whose profiled log-likelihood is within 1e-9 of the maximum
+  (V2's rule). Guards: at least 6 clear looks (the delay fit's rule) with at least one wet and one dry. No second fit,
+  no other loss, no smoothing of the delay. Judged as the others, on the development and the confirmatory windows,
+  against V0, MAREA-B and the best of the eight other methods, on each method's pixels and on the common pixels.
