@@ -80,3 +80,10 @@ windows showed no gain at Westerschelde) stay declared and are computed later.
   (V2's rule). Guards: at least 6 clear looks (the delay fit's rule) with at least one wet and one dry. No second fit,
   no other loss, no smoothing of the delay. Judged as the others, on the development and the confirmatory windows,
   against V0, MAREA-B and the best of the eight other methods, on each method's pixels and on the common pixels.
+- 2026-10-29, before V15 or V15s is computed on any window: **V15s MAREA-S, smoothed delay.** The band lags make
+  the levels jump at the 3-km band limits, so V15's elevation can jump there; MAREA avoids it by smoothing the lags
+  into a per-pixel profile, not by its second fit. V15s is V15 with every pixel's levels read at V0's smoothed
+  per-pixel delay tau_px (the boundary level at t - tau_px, to the minute, as V0 reads it) instead of the bank at its
+  band's lag; everything else is V15's (the delay fit's likelihood, clipping, grid, atoms, tie rule and guards).
+  Also reported: the elevation jump across the band limits, the median abs(z) difference of the 8-neighbour pixel
+  pairs of F that straddle a band limit against the pairs that do not, for V15, V15s, V0 and MAREA-B.
