@@ -62,6 +62,7 @@ notebook 01 also computes must give its rows bit for bit (section 9).
 | V4, V4-0 | MAREA-H | V0 and V1 with a Huber loss (δ = 0.10) and weight 0.5 for SCL 7 (declared 2026-10-27) |
 | V13a | MAREA-B, abstaining | V2 with no value where its 95 % likelihood interval is not bracketed (addendum) |
 | V14 | + Otsu | wet = NDWI > the scene's Otsu threshold, on MAREA-B, MAREA-BL, MAREA-M, E4, E5c, E12 (addendum) |
+| V15, V15s | MAREA-S | the delay fit's own Bernoulli z, at the band lags (V15) or the smoothed delays (V15s) (addendum) |
 | | Tseng, Coast X-Ray, wet/dry bracket | E5b, E7, E12 as notebook 01 runs them (for the error-coverage curves) |
 
 V1, V2, V2d, V9 (σ as an uncertainty, a table for V0 and V1 in section 3) and V10 are declared in
@@ -199,16 +200,18 @@ LABELS = {"MAREA": "V0 MAREA", "MAREA_ndwi0": "V1 MAREA-0", "MAREA_B": "V2 MAREA
           "MAREA_B_abst": "V13a MAREA-B, abstaining", "MAREA_B_otsu": "V2 MAREA-B + Otsu",
           "MAREA_BL_otsu": "V10 MAREA-BL + Otsu", "MAREA_M_otsu": "V11 MAREA-M + Otsu",
           "E4_otsu": "LogiTide2DEM + Otsu", "E5c_otsu": "sampled exceedance + Otsu", "E12_otsu": "wet/dry bracket + Otsu",
-          "E5b": "Tseng linear scaling", "E7": "Coast X-Ray", "E12": "wet/dry bracket"}
+          "E5b": "Tseng linear scaling", "E7": "Coast X-Ray", "E12": "wet/dry bracket",
+          "MAREA_S": "V15 MAREA-S (one model, band lags)", "MAREA_Ss": "V15s MAREA-S, smoothed delay"}
 SHORT = {"MAREA": "V0", "MAREA_ndwi0": "V1", "MAREA_B": "V2", "MAREA_BL": "V10", "MAREA_B_nodelay": "V2d",
          "MAREA_nodelay": "V0 τ=0", "E4": "LT2D", "E4_delay": "LT2D+τ", "E5c": "exceed.", "DEA": "DEA", "NIDEM": "NIDEM",
          "E5a": "F2T", "MAREA_M": "V11", "MAREA_M_nodelay": "V11d", "MAREA_P": "V12", "MAREA_H": "V4", "MAREA_H0": "V4-0",
          "MAREA_B_abst": "V13a", "MAREA_B_otsu": "V2+O", "MAREA_BL_otsu": "V10+O", "MAREA_M_otsu": "V11+O",
-         "E4_otsu": "LT2D+O", "E5c_otsu": "exceed.+O", "E12_otsu": "WDB+O", "E5b": "Tseng", "E7": "CXR", "E12": "WDB"}
+         "E4_otsu": "LT2D+O", "E5c_otsu": "exceed.+O", "E12_otsu": "WDB+O", "E5b": "Tseng", "E7": "CXR", "E12": "WDB",
+         "MAREA_S": "V15", "MAREA_Ss": "V15s"}
 ROLE = {m: "diagnostic" for m in ("MAREA_ndwi0", "MAREA_B", "MAREA_BL", "MAREA_B_nodelay", "MAREA_nodelay",
                                   "E4_delay", "MAREA_M", "MAREA_M_nodelay", "MAREA_P", "MAREA_H", "MAREA_H0",
                                   "MAREA_B_abst", "MAREA_B_otsu", "MAREA_BL_otsu", "MAREA_M_otsu", "E4_otsu",
-                                  "E5c_otsu", "E12_otsu")}
+                                  "E5c_otsu", "E12_otsu", "MAREA_S", "MAREA_Ss")}
 ROLE.update({"MAREA": "reference", **{m: "method" for m in ("E4", "E5c", "DEA", "NIDEM", "E5a", "E5b", "E7", "E12")}})
 ORDER = [m for m in LABELS if m in METHODS]
 NOT_COMMON = {"MAREA_B_abst"}      # an abstaining estimate never narrows the common pixels of the others
@@ -222,12 +225,12 @@ COLORS = {"MAREA": PAL["accent"], "MAREA_nodelay": PAL["accent"], "MAREA_ndwi0":
           "MAREA_H": PAL["sand"], "MAREA_H0": PAL["sand"], "MAREA_B_abst": PAL["dark_sand"],
           "MAREA_B_otsu": PAL["dark_sand"], "MAREA_BL_otsu": PAL["dark_sand"], "MAREA_M_otsu": PAL["accent"],
           "E4_otsu": PAL["deep"], "E5c_otsu": PAL["seagrass"], "E12_otsu": PAL["ink"], "E5b": PAL["grey"],
-          "E7": PAL["secondary"], "E12": PAL["ink"]}
+          "E7": PAL["secondary"], "E12": PAL["ink"], "MAREA_S": PAL["accent"], "MAREA_Ss": PAL["accent"]}
 MARKERS = {"MAREA": "o", "MAREA_nodelay": "o", "MAREA_ndwi0": "D", "MAREA_B": "s", "MAREA_BL": "h",
            "MAREA_B_nodelay": "s", "E4": "^", "E4_delay": "^", "E5c": "v", "DEA": "P", "NIDEM": "X", "E5a": "<",
            "MAREA_M": "*", "MAREA_M_nodelay": "*", "MAREA_P": "p", "MAREA_H": "d", "MAREA_H0": "d", "MAREA_B_abst": "s",
            "MAREA_B_otsu": "s", "MAREA_BL_otsu": "h", "MAREA_M_otsu": "*", "E4_otsu": "^", "E5c_otsu": "v",
-           "E12_otsu": "x", "E5b": ">", "E7": "8", "E12": "x"}
+           "E12_otsu": "x", "E5b": ">", "E7": "8", "E12": "x", "MAREA_S": "H", "MAREA_Ss": "H"}
 WSTYLE = [("-", "o", PAL["ink"]), ("--", "s", PAL["secondary"]), (":", "^", PAL["grey"])]   # one per window
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 8.5, "axes.titleweight": "bold", "axes.labelsize": 8,
                      "axes.edgecolor": PAL["secondary"], "axes.labelcolor": PAL["ink"], "text.color": PAL["ink"],
@@ -911,12 +914,15 @@ cube's for its scenes and the band-subset stores' before 2023); **V13a**, MAREA-
 profile-likelihood interval is not bracketed by the grid (`interval.py`; its z is V2's, asserted bit for bit every
 window); **V14**, the per-scene Otsu water threshold (`otsu.py`) as a factor on every wet/dry estimator: MAREA-B,
 MAREA-BL and MAREA-M read NDWI − t_s, and LogiTide2DEM, sampled exceedance and the wet/dry bracket get it through
-their inputs (`make_obs_otsu`), so that their own rule wet = NDWI > 0 is wet = NDWI > t_s. Section 8 has V13's interval
-checks, the error-coverage curves of every estimate and the bootstrap of the judging rule.
+their inputs (`make_obs_otsu`), so that their own rule wet = NDWI > 0 is wet = NDWI > t_s; **V15 MAREA-S**, one
+model and one search: the delay fit's own profiled z (its likelihood, clipping, grid and atoms; `single_pass.py`) at
+its band lags, and **V15s** at V0's smoothed per-pixel delays. Section 8 has V13's interval checks, the error-coverage
+curves of every estimate, the bootstrap of the judging rule and the elevation jump at the band limits (V15, V15s).
 """)
 
 code(r'''
-from experiments.variants import depth_model as v12, huber as v4, interval as v13, monotone as v11, otsu as v14
+from experiments.variants import (depth_model as v12, huber as v4, interval as v13, monotone as v11, otsu as v14,
+                                  single_pass as v15)
 
 ADD = {}            # the site's Otsu thresholds and shifted NDWI, and its SCL 7 looks: computed on first use
 
@@ -1077,6 +1083,32 @@ def run_competitor_otsu(mid, win, px):
         cfg["level_series"] = LS.slice(start, pd.Timestamp(win["end"]) + pd.Timedelta(days=1))
     out = run(make_obs_otsu(win, px), cfg)
     return out["z"], (out["meta"].get("reason", "") + "; wet = NDWI > t_s (Otsu per scene)").lstrip("; "), None, {}
+
+
+def run_marea_s(win, px, smooth=False):
+    """V15 (the delay fit's own profiled z at its band lags, the bank read as te.m2a_rasch reads it) and V15s (the
+    same at V0's smoothed per-pixel delays, the boundary level to the minute): the delay fit's likelihood, clipping,
+    grid (z_puntos levels over the window's range +- 0.3 m) and atoms (sigma_perfil_m), every pixel."""
+    w = win["scenes"]
+    tau_bands, tau_px = window_delays(win)
+    h0 = LEV[0][w]
+    grid = np.linspace(h0.min() - 0.3, h0.max() + 0.3, M2["z_puntos"])
+    Y, C = Y_S[np.ix_(w, px)], C_S[np.ix_(w, px)]
+    z = np.full(len(px), np.nan)
+    if smooth:
+        tp = tau_px[px]
+        for tau in np.unique(tp):
+            cols = np.flatnonzero(tp == tau)
+            z[cols] = v15.invert_single(Y[:, cols], C[:, cols], level_at(int(tau))[w], grid, M2["sigma_perfil_m"])[0]
+    else:
+        bank = te.ShiftBank(marea.BANK_TAUS, [LEV[int(t)][w] for t in marea.BANK_TAUS])
+        bands = band_of[px]
+        for k in np.unique(bands[bands >= 0]):
+            cols = np.flatnonzero(bands == k)
+            z[cols] = v15.invert_single(Y[:, cols], C[:, cols], bank.at(tau_bands[k]), grid,
+                                        M2["sigma_perfil_m"])[0]
+    note = f"{lags_text(tau_bands)}; " + ("smoothed per-pixel delays" if smooth else "band lags")
+    return z, note + "; the delay fit's likelihood and grid", None, {}
 ''')
 
 md(r"""
@@ -1226,6 +1258,8 @@ def run_method(mid, win, px, frames=None):
         return run_marea_b_otsu(win, px, lapse=mid == "MAREA_BL_otsu")
     if mid in ("E4_otsu", "E5c_otsu", "E12_otsu"):
         return run_competitor_otsu(mid.removesuffix("_otsu"), win, px)
+    if mid in ("MAREA_S", "MAREA_Ss"):
+        return run_marea_s(win, px, smooth=mid == "MAREA_Ss")
     return run_competitor(mid, win, px)
 ''')
 
@@ -1928,7 +1962,9 @@ blind to every method, r = min(wet looks, dry looks) of the window's clear looks
 and 80 % of F, the pixels of largest r (ties by pixel index), the scores on each estimate's pixels with a value and on
 the pixels common to all (`v13.error_coverage`). **Bootstrap:** every diagnostic against V0 on the pixels both have,
 the paired difference of RMSE and centred RMSE with its 95 % interval, blocks of 32 × 32 pixels of the frame, 1,000
-resamples, seed 20261028 (`v13.block_bootstrap`). The judging rule needs the three sites and is applied in the report.
+resamples, seed 20261028 (`v13.block_bootstrap`). **Band-limit jumps** (V15, V15s): the median |z| difference of the
+8-neighbour pixel pairs of F across a 3-km band limit and within a band, for V0, MAREA-B, V15, V15s and the truth. The
+judging rule needs the three sites and is applied in the report.
 """)
 
 code(r'''
@@ -1955,6 +1991,38 @@ for key in KEYS:
             if m in est and ROLE.get(m) == "diagnostic":
                 boot.append(dict(site=key[0], n=key[1], method=m, label=LABELS[m],
                                  **v13.block_bootstrap(t, est[m], est["MAREA"], rows_px, cols_px)))
+jumps = []                                             # V15s's report: the elevation jump at the band limits
+for key in KEYS:
+    est = EST[key]
+    if not {"MAREA_S", "MAREA_Ss"} & set(est):
+        continue
+    px = window_of(key)["px"]
+    pos, t = keep[px], truth[px]
+    order = np.argsort(pos)
+    spos, bands = pos[order], band_of[px]
+    r0, c0 = np.divmod(pos, W)
+    pairs = []
+    for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):  # every 8-neighbour pair of F once
+        r1, c1 = r0 + dr, c0 + dc
+        inside = (r1 < H) & (c1 >= 0) & (c1 < W)
+        nb = r1 * W + c1
+        k = np.clip(np.searchsorted(spos, nb), 0, len(spos) - 1)
+        hit = inside & (spos[k] == nb)
+        pairs.append(np.column_stack([np.flatnonzero(hit), order[k[hit]]]))
+    pairs = np.concatenate(pairs)
+    straddle = bands[pairs[:, 0]] != bands[pairs[:, 1]]
+    for m in [m for m in ("MAREA", "MAREA_B", "MAREA_S", "MAREA_Ss") if m in est] + ["truth"]:
+        v = t if m == "truth" else est[m]
+        d = np.abs(v[pairs[:, 0]] - v[pairs[:, 1]])
+        fin = np.isfinite(d)
+        jumps.append(dict(site=key[0], n=key[1], method=m, pairs_across=int((fin & straddle).sum()),
+                          median_jump_across=float(np.median(d[fin & straddle])) if (fin & straddle).any() else np.nan,
+                          pairs_within=int((fin & ~straddle).sum()),
+                          median_jump_within=float(np.median(d[fin & ~straddle])) if (fin & ~straddle).any() else np.nan))
+jumps = pd.DataFrame(jumps)
+jumps.to_csv(f"{OUT}/{SITE}_bandjumps.csv", index=False)
+if len(jumps):
+    display(jumps.round(4))
 cal, cov, boot = pd.DataFrame(cal), (pd.concat(cov, ignore_index=True) if cov else pd.DataFrame()), pd.DataFrame(boot)
 for name, df in (("interval", cal), ("coverage", cov), ("bootstrap", boot)):
     df.to_csv(f"{OUT}/{SITE}_{name}.csv", index=False)

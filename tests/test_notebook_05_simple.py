@@ -159,7 +159,7 @@ def test_calls_the_method_functions_directly():
 
 
 ADDENDUM = ("MAREA_M", "MAREA_M_nodelay", "MAREA_M_otsu", "MAREA_P", "MAREA_H", "MAREA_H0", "MAREA_B_abst",
-            "MAREA_B_otsu", "MAREA_BL_otsu", "E4_otsu", "E5c_otsu", "E12_otsu")
+            "MAREA_B_otsu", "MAREA_BL_otsu", "E4_otsu", "E5c_otsu", "E12_otsu", "MAREA_S", "MAREA_Ss")
 
 
 def test_the_addendums_estimates_have_run_paths_and_names():
@@ -481,3 +481,36 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
             print("OK ", name)
+
+
+def test_section_8_runs_on_a_tiny_synthetic_window(tmp_path):
+    """Section 8 (V13's interval, the error-coverage curves, the bootstrap, V15's band-limit jumps) on a 30 x 40 frame:
+    it runs, writes its CSVs, finds the pairs across a band limit, and V15 jumps there where V15s does not."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from experiments.variants import interval as v13
+    src = next(s for s in code_cells() if s.startswith("cal, cov, boot = [], [], []"))
+    H_, W_ = 30, 40
+    rng = np.random.default_rng(0)
+    keep_ = np.arange(H_ * W_)
+    rows_, cols_ = np.divmod(keep_, W_)
+    band = (cols_ >= 20).astype(int)                     # a band limit between columns 19 and 20
+    truth_ = 0.01 * cols_ + rng.normal(0, 0.01, len(keep_))
+    px = np.arange(len(keep_))
+    est = {"MAREA": truth_ + 0.2, "MAREA_B": truth_ + rng.normal(0, 0.05, len(px)),
+           "MAREA_Ss": truth_ + rng.normal(0, 0.02, len(px)), "MAREA_S": truth_ + 0.3 * band + rng.normal(0, 0.02, len(px))}
+    key = ("s", 40)
+    ns = dict(np=np, pd=pd, plt=plt, v13=v13, KEYS=[key], EST={key: est}, window_of=lambda k: {"px": px},
+              truth=truth_, keep=keep_, band_of=band, W=W_, H=H_, BINT={},
+              LOOKS={key: dict(n_clear=np.full(len(px), 40), n_wet=rng.integers(0, 40, len(px)))},
+              ORDER=["MAREA", "MAREA_B", "MAREA_S", "MAREA_Ss"], NOT_COMMON={"MAREA_B_abst"},
+              ROLE={"MAREA": "reference", "MAREA_B": "diagnostic", "MAREA_S": "diagnostic", "MAREA_Ss": "diagnostic"},
+              LABELS={m: m for m in est}, SHORT={m: m for m in est}, MARKERS={}, COLORS={}, PAL={"grey": "#999999"},
+              OUT=str(tmp_path), SITE="s", display=lambda df: None)
+    exec(compile(src, "section 8", "exec"), ns)
+    jumps = pd.read_csv(tmp_path / "s_bandjumps.csv").set_index("method")
+    assert jumps.loc["MAREA_S", "pairs_across"] > 0 and jumps.loc["MAREA_S", "pairs_within"] > 0
+    assert jumps.loc["MAREA_S", "median_jump_across"] > 0.25 > jumps.loc["MAREA_Ss", "median_jump_across"]
+    assert len(pd.read_csv(tmp_path / "s_coverage.csv")) == 5 * 4      # 5 coverages x 4 estimates
+    assert set(pd.read_csv(tmp_path / "s_bootstrap.csv").method) == {"MAREA_B", "MAREA_S", "MAREA_Ss"}
