@@ -138,6 +138,20 @@ def test_the_area_rule_at_half_a_metre(tmp_path):
     assert res["patch_min_cells"] == 800 and res["cells_water_patch"] == 800
 
 
+def test_the_two_epsg_labels_of_one_utm_zone_mosaic(tmp_path):
+    # the CNIG labels sheets of one zone 25829 or 3041 (axis order only): the Eo's 0010-3 and 0010-4
+    z = sheet_2m()
+    g = grid_tif(tmp_path / "grid.tif", crs="EPSG:32629")
+    whole = write_tif(tmp_path / "whole.tif", z, X0, Y0, 2.0, crs="EPSG:25829")
+    west = write_tif(tmp_path / "west.tif", z[:, :250], X0, Y0, 2.0, crs="EPSG:25829")
+    east = write_tif(tmp_path / "east.tif", z[:, 250:], X0 + 500.0, Y0, 2.0, crs="EPSG:3041")
+    a, b = pt.build_truth(whole, g), pt.build_truth([west, east], g)
+    assert np.array_equal(a["z"], b["z"], equal_nan=True)
+    assert [e["crs"] for e in b["sheets"]] == ["EPSG:25829", "EPSG:3041"], "each sheet's own label is recorded"
+    alone = pt.build_truth(write_tif(tmp_path / "alone.tif", z, X0, Y0, 2.0, crs="EPSG:3041"), g)
+    assert np.array_equal(a["z"], alone["z"], equal_nan=True), "a 3041 sheet alone gives the 25829 truth"
+
+
 def test_sheets_that_cannot_be_mosaicked_are_refused(tmp_path):
     z = sheet_2m()
     g = grid_tif(tmp_path / "grid.tif")

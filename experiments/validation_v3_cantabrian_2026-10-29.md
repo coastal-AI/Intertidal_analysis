@@ -78,7 +78,7 @@ rule of the variants files. Santander and Santoña get elevation maps without sc
   7.300-7.215 W, 43.525-43.600 N; Eo 7.095-6.985 W, 43.440-43.580 N), wider than the registry polygons, which leave
   Gernika out at Urdaibai and do not exist for the Eo. Years 2017-2025 at Urdaibai, 2017-2023 at Foz and Eo, fetched
   nearest the truths first; a window the cube does not cover stays not reachable, as above.
-- 2026-10-30, before any computation: the truth years. The CNIG page of each of the 19 files (`detalleArchivo?sec=`,
+- 2026-10-30, before any computation: the truth years. The CNIG page of each of the 17 files (`detalleArchivo?sec=`,
   read one by one on 2026-10-30) gives its year, and three are not the coverage years of the second author's e-mail:
   Villaviciosa 2020 (0015-3, 0030-1) and Eo 2020 (0010-3, 0010-4, 0025-1) as written, but Foz **2016** (0009-4), Mundaka
   2nd coverage **2017** (0038-3, 0038-4) and Mundaka 3rd coverage **2024** (all nine MDT50CM sheets). The provisional

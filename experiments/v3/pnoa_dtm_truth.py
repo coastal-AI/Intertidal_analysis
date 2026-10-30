@@ -196,17 +196,35 @@ def sheet_header(path):
     return head
 
 
+def same_frame(a, b, bounds, tol_m=1e-3):
+    """True when CRS ``a`` and ``b`` are equal, or give the same coordinates (within ``tol_m``) at the corners and
+    centre of ``bounds`` (in ``a``). The CNIG labels sheets of one ETRS89 / UTM zone with two EPSG codes, 25830 and
+    3042 (29N: 25829 and 3041), which differ only in the axis order they declare; rasterio's transforms read x as
+    the easting under both, so their cells coincide."""
+    if a == b:
+        return True
+    from rasterio.warp import transform
+
+    w, s, e, n = bounds
+    xs, ys = [w, e, w, e, (w + e) / 2], [s, s, n, n, (s + n) / 2]
+    try:
+        tx, ty = transform(a, b, xs, ys)
+    except Exception:  # noqa: BLE001 - not transformable: not the same frame
+        return False
+    return max(abs(p - q) for p, q in zip(xs + ys, list(tx) + list(ty))) < tol_m
+
+
 def lattice_offsets(heads):
     """(row, col) of every sheet's origin, in cells of the first sheet's lattice.
 
-    The sheets must share the CRS and the cell size, and their origins must be whole cells apart (within
-    :data:`LATTICE_TOL` of a cell); otherwise ValueError.
+    The sheets must share the CRS (:func:`same_frame`) and the cell size, and their origins must be whole cells
+    apart (within :data:`LATTICE_TOL` of a cell); otherwise ValueError.
     """
     t0, crs0, p0 = heads[0]["transform"], heads[0]["crs"], heads[0]["path"]
     out = []
     for h in heads:
         t = h["transform"]
-        if h["crs"] != crs0:
+        if not same_frame(h["crs"], crs0, h["bounds"]):
             raise ValueError(f"{h['path']}: CRS {h['crs'].to_string()} differs from {crs0.to_string()} of {p0}; "
                              "a truth is made of the sheets of one zone")
         if abs(t.a - t0.a) > 1e-9 * t0.a or abs(t.e - t0.e) > 1e-9 * abs(t0.e):
@@ -255,7 +273,7 @@ def mosaic_sheets(sheets, grid):
         t = head["transform"]
         e = {"path": head["path"], "file": os.path.basename(head["path"]),
              **(parse_sheet_name(head["path"]) or {"product": None, "zone": None, "sheet": None}),
-             "crs": crs.to_string(), "cell_m": [float(t.a), float(-t.e)], "shape": list(head["shape"]),
+             "crs": head["crs"].to_string(), "cell_m": [float(t.a), float(-t.e)], "shape": list(head["shape"]),
              "bounds": head["bounds"], "nodata": head["nodata"], "dtype": head["dtype"], "offset_cells": [dr, dc],
              "cells_in_window": 0, "cells_valid": 0, "cells_used": 0, "cells_overlap": 0,
              "overlap_cells_differ": 0, "overlap_max_abs_diff_m": None}
