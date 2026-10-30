@@ -1590,7 +1590,9 @@ steps.to_csv(f"{OUT}/{SITE}_ladder_steps.csv", index=False)
 cases.to_csv(f"{OUT}/{SITE}_ladder_cases.csv", index=False)
 if len(lad):
     display(lad.set_index(["site", "n", "label"])[["n_px", "coverage_F", "rmse", "crmse", "bias", "slope", "r"]].round(3))
+if len(steps):                                          # each needs its rungs: a run of a few methods may have none
     display(steps.set_index(["site", "n", "step"]).round(3))
+if len(cases):
     display(cases.set_index(["site", "n", "e4_case"]).round(3))
 ''')
 
