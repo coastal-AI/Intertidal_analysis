@@ -71,3 +71,10 @@ rule of the variants files. Santander and Santoña get elevation maps without sc
 
 - 2026-10-29, before any computation: the water-patch rule is an area, the one the MDT02 rule implies: 4-connected
   patches of at least 200 m2 whose values round to the same mm (50 cells at 2 m, 800 cells at 0.5 m for MDT50CM).
+- 2026-10-30, before any computation: the cubes. Villaviciosa: the production 10-year cube (2016-2025, the 915 x 915 px
+  frame of every Villaviciosa product). Urdaibai, Foz and Eo: B03, B08 and SCL at 10 m, the netCDF process of the
+  existing cubes, one job per year (`experiments/download_cube_v3.py`), on lon/lat boxes drawn from the head of the
+  tide to the open sea with the sea on the north edge (its `BOXES`: Urdaibai 2.735-2.625 W, 43.300-43.435 N; Foz
+  7.300-7.215 W, 43.525-43.600 N; Eo 7.095-6.985 W, 43.440-43.580 N), wider than the registry polygons, which leave
+  Gernika out at Urdaibai and do not exist for the Eo. Years 2017-2025 at Urdaibai, 2017-2023 at Foz and Eo, fetched
+  nearest the truths first; a window the cube does not cover stays not reachable, as above.

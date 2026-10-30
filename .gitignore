@@ -111,6 +111,8 @@ foz_mdt5*.tif
 bench/
 final_notebook.ipynb.bak*
 ndwi_cube_*.nc
+# validation v3 yearly parts and their job ledgers (experiments/download_cube_v3.py)
+cubes_v3/
 bathymetry_hsr*/
 
 # datos pesados v4: fuera del repo; su procedencia queda en sealed/registry.jsonl
