@@ -8,8 +8,9 @@ the process of ``pyintertidal.cube.SentinelCube.ensure``:
 job per site and year on the Copernicus Data Space, each kept as the part
 ``cubes_v3/<site>/<year>.nc``. Validation v3
 (experiments/validation_v3_cantabrian_2026-10-29.md) centres its windows on the
-LiDAR flights (2020, and 2023 at Urdaibai), so the parts are fetched in the
-order of the queue on the command line: the years nearest the truths first.
+LiDAR flights (2016 at Foz, 2017 and 2024 at Urdaibai, 2020 at the Eo), so the
+parts are fetched in the order of the queue on the command line: the years
+nearest the truths first.
 
 Why not experiments.download_cube_zarr: its stores are registered against the
 site's reference netCDF cube, or a store registered against one, and these
