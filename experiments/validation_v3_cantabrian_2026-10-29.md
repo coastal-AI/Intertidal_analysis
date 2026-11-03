@@ -107,3 +107,6 @@ rule of the variants files. Santander and Santoña get elevation maps without sc
   [c - T, c + T] (`experiments/v3/windows.py`, `fitting_window`). A window reachable about d does not move; a moved
   one is reported with its centre and its shift c - d. It applies to every truth (Foz; Mundaka 2017 at the archive's
   start and Mundaka 2024 at the cube's end, where they need it).
+- 2026-11-03, before Santander's map is made: a maps-only cube that holds fewer screened scenes than 100 gets its map
+  at the largest n of NS it holds. Santander's 2023-2025 cube holds 51 (the transition-zone screening over its large
+  box): its map is at n = 40. Santoña's stays at n = 100.

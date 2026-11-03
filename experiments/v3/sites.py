@@ -51,11 +51,13 @@ V3["villaviciosa_2020"] = {
 }
 #: maps only (the design's amendment of 2026-11-03: their LiDAR was flown at high water): the 2023-2025 cubes, the
 #: new sites' production, the window of the 100 screened scenes nearest 2024-07-15, no truth and no score
-for _site, _gauge, _side in (("santander", "san2", "north"), ("santona", "san2", "any")):
+#: (Santander's 2023-2025 cube holds 51 screened scenes: its map is at n = 40, the largest window of NS it holds; the
+#: design's amendment of 2026-11-03)
+for _site, _gauge, _side, _ns in (("santander", "san2", "north", (40,)), ("santona", "san2", "any", (100,))):
     _key, _c = _new(_site, (2023, 2025), 2024, None, _gauge)
     _key = f"{_site}_maps"
     _c.update(key=_key, out=f"products_v3_{_key}_10m", box=download_box(_site), mouth_side=_side, sheets_dir=None, truth=None,
-              maps_only=True, ns=(100,))
+              maps_only=True, ns=_ns)
     V3[_key] = _c
 #: the keys whose production notebooks/validation/v3_production_site.ipynb makes
 NEW = tuple(k for k, v in V3.items() if not v.get("existing_production"))

@@ -1550,8 +1550,9 @@ pd.DataFrame(SCORES).to_csv(f"{OUT}/{TAG}_scores.csv", index=False)   # also the
 KEYS = list(EST)
 print(f"-> {OUT}/{TAG}_scores.csv ({len(SCORES)} rows); windows computed: {KEYS}")
 sc = pd.DataFrame(SCORES)
-display(sc[sc.status == "ok"].pivot_table(index=["site", "n"], columns="method", values="rmse")
-        .reindex(columns=[m for m in ORDER if m in set(sc.method)]).round(3))
+if (sc.status == "ok").any() and "rmse" in sc:
+    display(sc[sc.status == "ok"].pivot_table(index=["site", "n"], columns="method", values="rmse")
+            .reindex(columns=[m for m in ORDER if m in set(sc.method)]).round(3))
 ''')
 
 # ─────────────────────────────────────────────────────────────────────────────

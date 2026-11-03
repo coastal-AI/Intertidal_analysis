@@ -77,7 +77,8 @@ def test_the_configuration():
     assert set(sites.TRUTHS) == {"urdaibai_2017", "urdaibai_2024", "foz_2016", "eo_2020", "villaviciosa_2020"}
     for key in ("santander_maps", "santona_maps"):
         c = sites.V3[key]
-        assert c["maps_only"] and c["truth"] is None and c["years"] == (2023, 2025) and c["ns"] == (100,)
+        assert c["maps_only"] and c["truth"] is None and c["years"] == (2023, 2025)
+        assert c["ns"] == ((40,) if key == "santander_maps" else (100,))
         assert c["box"] == pytest.importorskip("pyintertidal").sites.get(c["site"]).bbox
     for key in set(sites.NEW) & set(sites.TRUTHS):
         c = sites.V3[key]
