@@ -406,7 +406,7 @@ def test_last_check_compares_the_windows_notebook_01_computed():
         pd.DataFrame(ref).to_csv(os.path.join(nt, "s.csv"), index=False)
         new = [row("s", n, m) for n in (125, 100) for m in ("MAREA", "MAREA_BL", "E4")]
         pd.DataFrame(new).to_csv(os.path.join(out, "s_scores.csv"), index=False)
-        ns = dict(pd=pd, np=np, os=os, Counter=Counter, NTABLES=nt, FIRST=first, OUT=out, SITE="s", NS=[125, 100],
+        ns = dict(pd=pd, np=np, os=os, Counter=Counter, NTABLES=nt, FIRST=first, OUT=out, SITE="s", TAG="s", V3KEY=None, NS=[125, 100],
                   METHODS=["MAREA", "MAREA_BL", "E4"], windows=[{"site": "s"}])
         exec(code_cells()[-1], ns)                       # n = 100 was not reachable in notebook 01's run: not compared
         pd.DataFrame([dict(r, rmse=0.3) if r["method"] == "E4" else r for r in new]).to_csv(
@@ -507,7 +507,7 @@ def test_section_8_runs_on_a_tiny_synthetic_window(tmp_path):
               ORDER=["MAREA", "MAREA_B", "MAREA_S", "MAREA_Ss"], NOT_COMMON={"MAREA_B_abst"},
               ROLE={"MAREA": "reference", "MAREA_B": "diagnostic", "MAREA_S": "diagnostic", "MAREA_Ss": "diagnostic"},
               LABELS={m: m for m in est}, SHORT={m: m for m in est}, MARKERS={}, COLORS={}, PAL={"grey": "#999999"},
-              OUT=str(tmp_path), SITE="s", display=lambda df: None)
+              OUT=str(tmp_path), SITE="s", TAG="s", display=lambda df: None)
     exec(compile(src, "section 8", "exec"), ns)
     jumps = pd.read_csv(tmp_path / "s_bandjumps.csv").set_index("method")
     assert jumps.loc["MAREA_S", "pairs_across"] > 0 and jumps.loc["MAREA_S", "pairs_within"] > 0

@@ -9,7 +9,9 @@
 #   NB_NS=125,100,75 NB_OUT=results/attribution_nb_conf NB_NTABLES=results/fixedcfg_nb_conf NB_LOG=logs/v2/claude/nb05_conf \
 #     bash notebooks/validation/run_05_on_server.sh escalda wadden
 #
-# Passed through to the notebook when set: NB_NS, NB_METHODS, NB_EXTRA, NB_NTABLES, NB_FIRST, NB_BED, NB_ROW_YEARS,
+# Validation v3: NB_V3=<truth key> (experiments/v3/sites.py) with the site as argument, one truth per run.
+#
+# Passed through to the notebook when set: NB_V3, NB_Q, NB_NS, NB_METHODS, NB_EXTRA, NB_NTABLES, NB_FIRST, NB_BED, NB_ROW_YEARS,
 # MAREA_DEA_TMP, OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to results/attribution_nb/ (NB_OUT),
 # with the CSVs, the per-pixel npz and the figures; logs and STATUS to logs/v2/claude/nb05/ (NB_LOG); the notebook is
 # read from notebooks/validation/ (NB_DIR). Its last cell checks the rows it shares with notebook 01 against
@@ -71,10 +73,11 @@ to_html() {
 for s in $SITES; do
   (
     t0=$(date +%s)
-    NB_SITE=$s execute "$NB/05_error_attribution_site.ipynb" "$OUT/05_$s.executed.ipynb" "$LOG/05_$s.log"
+    tag=${NB_V3:-$s}                                     # a v3 run (NB_V3): its files are named by the truth's key
+    NB_SITE=$s execute "$NB/05_error_attribution_site.ipynb" "$OUT/05_$tag.executed.ipynb" "$LOG/05_$tag.log"
     rc=$?
-    to_html "$OUT/05_$s.executed.ipynb" "$LOG/05_$s.log"
-    echo "$s $([ $rc -eq 0 ] && echo ok || echo FAILED) ($(( ($(date +%s) - t0) / 60 )) min) $(date -Is)" >> "$STATUS"
+    to_html "$OUT/05_$tag.executed.ipynb" "$LOG/05_$tag.log"
+    echo "$tag $([ $rc -eq 0 ] && echo ok || echo FAILED) ($(( ($(date +%s) - t0) / 60 )) min) $(date -Is)" >> "$STATUS"
   ) &
 done
 wait

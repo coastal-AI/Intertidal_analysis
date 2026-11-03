@@ -105,6 +105,11 @@ FIRST   = os.environ.get("NB_FIRST", "results/fixedcfg_nb")         # ... else n
 BED     = os.environ.get("NB_BED", "results/bed_change_nb")         # notebook 04's change class per pixel (optional)
 ROW_YEARS = [int(v) for v in os.environ.get("NB_ROW_YEARS", "2025").split(",")]   # the survey-year rows analysed
 ONE_ROW = os.environ.get("NB_ONE_ROW", "1") == "1"   # 1: one row per site (the Wadden's 2023-2025 surveys together)
+V3KEY   = os.environ.get("NB_V3")                    # a validation v3 truth (experiments/v3/sites.py, e.g. foz_2016):
+                                                     # its cube, PNOA truth, symmetric windows and class mask; unset:
+                                                     # the Dutch sites as before
+Q_CLASS = float(os.environ.get("NB_Q", "0.10"))      # v3: a pixel is scored when q <= f_wet <= 1 - q in the window
+Q_SENS  = (0.0, 0.05, 0.10, 0.15, 0.20)              # v3: the sensitivity of the scores to q (the design)
 
 # ── The analysis ────────────────────────────────────────────────────────
 Q_BINS      = 5           # quantile bins of the strata (section 5); the positive delays get 4 (section 6)
@@ -137,7 +142,30 @@ SITES = {
     "wadden":  dutch("wadden", 1, ["harl"], "north+west", [2025, 2024, 2023], (60, 50)),
     "ems":     dutch("ems", 1, ["delf"], "north+west", [2025], (50, 40)),    # 54 screened scenes: 60 is not reachable
 }
-P = SITES[SITE]
+# ── Validation v3 (experiments/validation_v3_cantabrian_2026-10-29.md): one truth, its cube and production ──
+V3_METHODS = ["MAREA", "MAREA_ndwi0", "NIDEM", "DEA", "E4", "E5a", "E5b", "E5c", "E7", "E12",
+              "MAREA_B", "MAREA_BL", "MAREA_Ss"]           # the design's methods: the n-tables' ten, MAREA-B, -BL, V15s
+if V3KEY:
+    from experiments.v3.sites import V3
+    from experiments.v3 import windows as v3w
+    from experiments.v3 import error_maps as em
+    C3 = V3[V3KEY]
+    SITE = C3["site"]
+    if C3.get("existing_production"):                      # Villaviciosa: its production, as notebook 01 runs it
+        prod = dict(extract="products_marea/marea_extract.npz", marea="products_marea/marea_eot20_g0_2023-2025",
+                    nodelay=("products_marea/external_products.npz", "no_delay"), record_period=("2023-01-01", "2025-12-31"))
+    else:                                                  # notebooks/validation/v3_production_site.ipynb
+        ptag = f"{C3['tide_model'].lower()}_g{C3['n_gauges']}"
+        prod = dict(extract=f"{C3['out']}/marea_extract.npz", marea=f"{C3['out']}/marea_{ptag}",
+                    nodelay=(f"{C3['out']}/comparison_{ptag}/products.npz", "z_plain"), record_period=C3["period"])
+    SITES[V3KEY] = dict(cache=C3["cube"], overpass=C3["overpass"], period=C3["period"], n_gauges=C3["n_gauges"],
+                        judges=C3["judges"], mouth_side=C3["mouth_side"], truth_years=[int(C3["truth_date"][:4])],
+                        ns=v3w.NS, **prod)
+    EXTRA = "none"                                         # every scene of a v3 window is in its cube
+    if not os.environ.get("NB_METHODS"):
+        METHODS = V3_METHODS
+P = SITES[V3KEY or SITE]
+TAG = V3KEY or SITE                                        # the outputs' name: the truth's key in v3 (Urdaibai has two)
 NS = [int(v) for v in NS.split(",")] if NS else list(P["ns"])
 print(f"{SITE}: windows n = {NS} on the rows of {ROW_YEARS}; estimates {METHODS}")
 print(f"  cube {P['cache']} · extraction {P['extract']} · boundary EOT20 + {P['n_gauges'] or 0} gauge(s), "
@@ -266,8 +294,22 @@ for code, name, km in near:
 ''')
 
 code(r'''
+if V3KEY and not C3.get("existing_production"):        # v3: the production's AOI, the download box
+    from pyintertidal.aoi import AOI
+    aoi = AOI.from_bbox(**C3["box"], name=f"{SITE} (v3 box)")
+    lat_c, lon_c = aoi.centroid
+    near = nearest_gauges(lat_c, lon_c, 6)
+    members = [g[0] for g in near if g[0] not in P["judges"]][:(P["n_gauges"] or 0)]
+    print(aoi, f"· centroid {lat_c:.3f}, {lon_c:.3f}; boundary gauge(s) {members} (expected {C3['expected_gauge']})")
+    assert C3["expected_gauge"] in members, "not the production's boundary"
+''')
+
+code(r'''
 years = P["truth_years"]
-if ONE_ROW:      # one row per site: every cell with its most recent survey of these years, one window to the last
+if V3KEY:        # v3: one row, the truth's key, dated at the truth date (its windows are centred there)
+    ROWS = [dict(site=V3KEY, year=years[0], end=C3["truth_date"])]
+    ROW_YEARS = [years[0]]
+elif ONE_ROW:    # one row per site: every cell with its most recent survey of these years, one window to the last
     ROWS = [dict(site=SITE, year=years[0], end=f"{years[0]}-12-31")]
 else:
     ROWS = [dict(site=f"{SITE}-{y}" if len(years) > 1 else SITE, year=y, end=f"{y}-12-31") for y in years]
@@ -321,6 +363,14 @@ print(f"S: {len(S_dates)} screened scenes {S_dates[0]} → {S_dates[-1]} ({len(u
 record = [d[:10] for d in json.load(open(f"{P['marea']}/result.json"))["record_dates"]]
 part = [d for d in S_dates if "2023-01-01" <= d <= "2025-12-31"]
 print(f"S in 2023-2025 is the production MAREA record ({len(record)} scenes): {part == record}")
+''')
+
+code(r'''
+if V3KEY:        # v3: S over the production record's period is that record (the same screening and boundary)
+    r0, r1 = P["record_period"]
+    part = [d for d in S_dates if r0 <= d <= r1]
+    print(f"v3: S in {r0} → {r1} is the production MAREA record of {P['marea']} ({len(record)} scenes): "
+          f"{part == record}")
 ''')
 
 code(r'''
@@ -437,19 +487,33 @@ def vaklodingen(year):
 ''')
 
 code(r'''
-with xr.open_dataset(P["cache"]) as ds:
-    xs, ys = ds["x"].values, ds["y"].values
-to_rd = pyproj.Transformer.from_crs(crs, "EPSG:28992", always_xy=True)
-xq, yq = to_rd.transform(xs[keep % W], ys[keep // W])
-truth, group = np.full(len(keep), np.nan), np.zeros(len(keep), int)
-for year in (2025, 2024, 2023):                        # the most recent survey with a value wins
-    v, _ = sample_truth(vaklodingen(year), xq, yq)
-    new = np.isfinite(v) & (group == 0)
-    truth[new], group[new] = v[new], year
-survey = group.copy()                                  # the year of each cell's survey
-if ONE_ROW:
-    group[np.isin(group, P["truth_years"])] = ROWS[0]["year"]   # the site's truth years in its one row; a cell
-                                                       # surveyed in another year stays out, as per year
+if V3KEY:        # v3: the PNOA DTM truth on the cube's grid (experiments/v3/pnoa_dtm_truth.py), read as it is
+    import rasterio
+    with rasterio.open(C3["truth"]) as r:
+        assert (r.height, r.width) == (H, W), f"{C3['truth']} is {r.height} x {r.width}, the cube {H} x {W}"
+        assert np.allclose(tuple(r.transform)[:6], tuple(transform)[:6]) and r.crs == crs, "not on the cube's grid"
+        z_truth = r.read(1).astype(float).ravel()
+    TRUTH_META = json.load(open(os.path.splitext(C3["truth"])[0] + ".json", encoding="utf-8"))
+    truth = z_truth[keep]
+    group = np.where(np.isfinite(truth), ROWS[0]["year"], 0)
+    survey = group.copy()
+    print(f"{C3['truth']}: truth date {TRUTH_META['truth_date']} ({TRUTH_META['truth_date_rule']}); "
+          f"{np.isfinite(truth).sum():,} of {len(keep):,} production pixels with a value; water patches "
+          f"{TRUTH_META['water_patch_share']:.1%} of the sheets' cells")
+else:
+    with xr.open_dataset(P["cache"]) as ds:
+        xs, ys = ds["x"].values, ds["y"].values
+    to_rd = pyproj.Transformer.from_crs(crs, "EPSG:28992", always_xy=True)
+    xq, yq = to_rd.transform(xs[keep % W], ys[keep // W])
+    truth, group = np.full(len(keep), np.nan), np.zeros(len(keep), int)
+    for year in (2025, 2024, 2023):                    # the most recent survey with a value wins
+        v, _ = sample_truth(vaklodingen(year), xq, yq)
+        new = np.isfinite(v) & (group == 0)
+        truth[new], group[new] = v[new], year
+    survey = group.copy()                              # the year of each cell's survey
+    if ONE_ROW:
+        group[np.isin(group, P["truth_years"])] = ROWS[0]["year"]   # the site's truth years in its one row; a
+                                                       # cell surveyed in another year stays out, as per year
 ''')
 
 code(r'''
@@ -485,6 +549,25 @@ windows = []
 for row in ROWS:
     if row["year"] not in ROW_YEARS:
         continue
+    if V3KEY:    # v3: the n screened scenes nearest the truth date, a window symmetric in time inside the cube
+        cover = (cube.dates[0], cube.dates[-1])
+        for n in NS:
+            sw = v3w.symmetric_window(S_dates, row["end"], n, cover)
+            win = dict(site=row["site"], year=row["year"], end=row["end"], truth_date=row["end"], n=n,
+                       px=row["px"], available=len(S_dates), scenes=sw["idx"] if sw["reachable"] else None,
+                       half_width_days=sw["half_width_days"], n_before=sw["n_before"], n_after=sw["n_after"])
+            if win["scenes"] is None:
+                win["why"] = (f"{len(S_dates)} screened scenes: the window of {n} around {row['end']} is not "
+                              f"inside the cube's {cover[0]} → {cover[1]}")
+                print(f"{row['site']:14s} n={n:3d}: not reachable, {win['why']}")
+            else:
+                d = S_dates[win["scenes"]]
+                win["end"] = d[-1]                     # the window's last scene (the level series reach it)
+                per_year = dict(sorted(Counter(str(x)[:4] for x in d).items()))
+                print(f"{row['site']:14s} n={n:3d}: {d[0]} → {d[-1]}  T = {sw['half_width_days']:.0f} d, "
+                      f"{sw['n_before']} before / {sw['n_after']} after the truth date; per year {per_year}")
+            windows.append(win)
+        continue
     upto = np.flatnonzero(S_dates <= row["end"])
     for n in NS:
         win = dict(site=row["site"], year=row["year"], end=row["end"], n=n, px=row["px"], available=len(upto),
@@ -496,6 +579,19 @@ for row in ROWS:
             d = S_dates[win["scenes"]]
             per_year = dict(sorted(Counter(str(x)[:4] for x in d).items()))
             print(f"{row['site']:12s} n={n:3d}: {d[0]} → {d[-1]}  images per year {per_year}")
+''')
+
+code(r'''
+if V3KEY:        # v3: the class-dominance mask of the design, q <= f_wet <= 1 - q over the window's clear looks
+    for win in windows:
+        if win["scenes"] is None:
+            continue
+        masks = v3w.class_mask_sensitivity(Y_S[:, win["px"]], C_S[:, win["px"]], Q_SENS, rows=win["scenes"])
+        q0 = masks[0.0]                                # every pixel of F with a clear look in the window
+        win["px_F"], win["px"] = win["px"], win["px"][q0]
+        win["qmask"] = {q: m[q0] for q, m in masks.items()}   # on the estimated pixels win["px"]
+        print(f"{win['site']} n={win['n']}: F {len(win['px_F']):,} px, with a clear look {len(win['px']):,}; "
+              + ", ".join(f"q={q:g}: {int(m.sum()):,}" for q, m in win["qmask"].items()))
 ''')
 
 code(r'''
@@ -1390,15 +1486,37 @@ def run_window(win):
 
 code(r'''
 SCORES, EST, EXTRA_PX, TAU, LOOKS = [], {}, {}, {}, {}
+SENS = []                                              # v3: the scores at every q of the class mask
 for win in windows:
     key = (win["site"], win["n"])
     if win["scenes"] is None:
         SCORES += [dict(site=win["site"], survey_year=win["year"], truth_date=win["end"], n=win["n"],
                         available=win["available"], method=m, label=LABELS.get(m, m), role=ROLE.get(m, ""),
-                        status="not reachable", reason=f"{win['available']} screened images on or before {win['end']}")
+                        status="not reachable",
+                        reason=win.get("why") or f"{win['available']} screened images on or before {win['end']}")
                    for m in METHODS]
         continue
     rows, EST[key], EXTRA_PX[key] = run_window(win)
+    if V3KEY:    # estimated once on every pixel with a clear look; scored at each q; kept at Q_CLASS from here on
+        t_all = truth[win["px"]]
+        for q, m in win["qmask"].items():
+            common = m & np.isfinite(t_all)
+            for mid, z in EST[key].items():
+                if mid not in NOT_COMMON:
+                    common &= np.isfinite(z)
+            for mid, z in EST[key].items():
+                for pixels, sel in (("own", m), ("common", common)):
+                    SENS.append(dict(site=win["site"], n=win["n"], q=q, method=mid, label=LABELS.get(mid, mid),
+                                     pixels=pixels, n_scored=int(sel.sum()), **scores(z[sel], t_all[sel])))
+        main = win["qmask"][Q_CLASS]
+        win["px_q0"], win["px"] = win["px"], win["px"][main]
+        EST[key] = {mid: z[main] for mid, z in EST[key].items()}
+        EXTRA_PX[key] = {mid: {k: (v[main] if isinstance(v, np.ndarray) and v.ndim >= 1 and len(v) == len(main)
+                                   else v) for k, v in d.items()} for mid, d in EXTRA_PX[key].items()}
+        for r in rows:
+            r.update(truth_date=win["truth_date"], n_F=len(win["px"]), n_F_clear=len(win["px_q0"]), q=Q_CLASS,
+                     half_width_days=win["half_width_days"], n_before=win["n_before"], n_after=win["n_after"])
+        pd.DataFrame(SENS).to_csv(f"{OUT}/{TAG}_class_sensitivity.csv", index=False)
     t_true = truth[win["px"]]
     for r in rows:
         if r["method"] in EST[key]:
@@ -1409,9 +1527,9 @@ for win in windows:
     C_w = C_S[np.ix_(w, px)]
     with np.errstate(invalid="ignore"):
         LOOKS[key] = dict(n_clear=C_w.sum(axis=0), n_wet=(C_w & (Y_S[np.ix_(w, px)] > 0)).sum(axis=0))
-    pd.DataFrame(SCORES).to_csv(f"{OUT}/{SITE}_scores.csv", index=False)
+    pd.DataFrame(SCORES).to_csv(f"{OUT}/{TAG}_scores.csv", index=False)
 KEYS = list(EST)
-print(f"-> {OUT}/{SITE}_scores.csv ({len(SCORES)} rows); windows computed: {KEYS}")
+print(f"-> {OUT}/{TAG}_scores.csv ({len(SCORES)} rows); windows computed: {KEYS}")
 sc = pd.DataFrame(SCORES)
 display(sc[sc.status == "ok"].pivot_table(index=["site", "n"], columns="method", values="rmse")
         .reindex(columns=[m for m in ORDER if m in set(sc.method)]).round(3))
@@ -1464,7 +1582,7 @@ for key in KEYS:
                 rows.append(dict(site=key[0], n=key[1], method=mid, label=LABELS[mid], role=ROLE[mid], pixels=pixels,
                                  **decompose(est[mid][m], t[m])))
 decomp = pd.DataFrame(rows)
-decomp.to_csv(f"{OUT}/{SITE}_decomposition.csv", index=False)
+decomp.to_csv(f"{OUT}/{TAG}_decomposition.csv", index=False)
 for pixels in ("common", "own"):
     print(f"{pixels} pixels")
     display(decomp[decomp.pixels == pixels].set_index(["site", "n", "label"])
@@ -1490,7 +1608,7 @@ for ax, key in zip(axes[0], KEYS):
     ax.grid(axis="y", visible=False)
 fig.tight_layout(rect=(0, 0, 1, 0.9))
 fig.legend(*axes[0][0].get_legend_handles_labels(), loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.0))
-fig.savefig(f"{OUT}/{SITE}_decomposition.png")
+fig.savefig(f"{OUT}/{TAG}_decomposition.png")
 ''')
 
 md(r"""
@@ -1528,7 +1646,7 @@ for key in KEYS:
             rows.append(dict(site=key[0], n=key[1], method=mid, label=LABELS[mid],
                              **sigma_check(EST[key][mid], t, EXTRA_PX[key][mid]["sigma"])))
 sigma_tab = pd.DataFrame(rows)
-sigma_tab.to_csv(f"{OUT}/{SITE}_sigma.csv", index=False)
+sigma_tab.to_csv(f"{OUT}/{TAG}_sigma.csv", index=False)
 if len(sigma_tab):
     display(sigma_tab.set_index(["site", "n", "label"]).round(3))
 ''')
@@ -1585,9 +1703,9 @@ for key in KEYS:
                                   median_E4_minus_V2d=float(np.median(b[m] - a[m])),
                                   mean_abs_E4_minus_V2d=float(np.mean(np.abs(b[m] - a[m])))))
 lad, steps, cases = pd.DataFrame(lad), pd.DataFrame(steps), pd.DataFrame(cases)
-lad.to_csv(f"{OUT}/{SITE}_ladder.csv", index=False)
-steps.to_csv(f"{OUT}/{SITE}_ladder_steps.csv", index=False)
-cases.to_csv(f"{OUT}/{SITE}_ladder_cases.csv", index=False)
+lad.to_csv(f"{OUT}/{TAG}_ladder.csv", index=False)
+steps.to_csv(f"{OUT}/{TAG}_ladder_steps.csv", index=False)
+cases.to_csv(f"{OUT}/{TAG}_ladder_cases.csv", index=False)
 if len(lad):
     display(lad.set_index(["site", "n", "label"])[["n_px", "coverage_F", "rmse", "crmse", "bias", "slope", "r"]].round(3))
 if len(steps):                                          # each needs its rungs: a run of a few methods may have none
@@ -1617,7 +1735,7 @@ for ax, (col, title) in zip(axes, PANELS):
         ax.axhline(1, color=PAL["secondary"], lw=0.7)
 axes[0].legend(loc="best")
 fig.tight_layout()
-fig.savefig(f"{OUT}/{SITE}_ladder.png")
+fig.savefig(f"{OUT}/{TAG}_ladder.png")
 ''')
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1733,8 +1851,8 @@ for key in KEYS:
         for r in strata({m: e[sel] for m, e in err.items()}, {m: c[sel] for m, c in cerr.items()}, x[sel], pairs):
             strata_rows.append(dict(site=key[0], n=key[1], stratum=name, best_rival=BEST[key], n_set=int(S.sum()), **r))
 rivals, strat = pd.DataFrame(rivals), pd.DataFrame(strata_rows)
-rivals.to_csv(f"{OUT}/{SITE}_rivals.csv", index=False)
-strat.to_csv(f"{OUT}/{SITE}_strata.csv", index=False)
+rivals.to_csv(f"{OUT}/{TAG}_rivals.csv", index=False)
+strat.to_csv(f"{OUT}/{TAG}_strata.csv", index=False)
 if len(rivals):
     display(rivals.set_index(["site", "n", "label"]).round(3))
 for key in KEYS:
@@ -1825,8 +1943,8 @@ for key in KEYS:
             r[f"d_rmse_{name}"] = r[f"rmse_{name}_delay"] - r[f"rmse_{name}_none"]
         dbins.append(r)
 dsum, dbins = pd.DataFrame(dsum), pd.DataFrame(dbins)
-dsum.to_csv(f"{OUT}/{SITE}_delay_summary.csv", index=False)
-dbins.to_csv(f"{OUT}/{SITE}_delay_bins.csv", index=False)
+dsum.to_csv(f"{OUT}/{TAG}_delay_summary.csv", index=False)
+dbins.to_csv(f"{OUT}/{TAG}_delay_bins.csv", index=False)
 display(dsum.set_index(["site", "n"]).round(3))
 if len(dbins):
     display(dbins.set_index(["site", "n", "tau_bin"]).round(3))
@@ -1947,7 +2065,7 @@ for key in KEYS:
     fig.supxlabel("boundary level at the pixel's delay, h_B(t − τ_px) (m)", fontsize=8, y=0.0)
     fig.savefig(f"{OUT}/{key[0]}_n{key[1]}_gallery.png")
 gal = pd.DataFrame(gal)
-gal.to_csv(f"{OUT}/{SITE}_gallery.csv", index=False)
+gal.to_csv(f"{OUT}/{TAG}_gallery.csv", index=False)
 if len(gal):
     display(gal.set_index(["site", "n", "kind", "rank"]).round(3))
 ''')
@@ -2022,13 +2140,13 @@ for key in KEYS:
                           pairs_within=int((fin & ~straddle).sum()),
                           median_jump_within=float(np.median(d[fin & ~straddle])) if (fin & ~straddle).any() else np.nan))
 jumps = pd.DataFrame(jumps)
-jumps.to_csv(f"{OUT}/{SITE}_bandjumps.csv", index=False)
+jumps.to_csv(f"{OUT}/{TAG}_bandjumps.csv", index=False)
 if len(jumps):
     display(jumps.round(4))
 cal, cov, boot = pd.DataFrame(cal), (pd.concat(cov, ignore_index=True) if cov else pd.DataFrame()), pd.DataFrame(boot)
 for name, df in (("interval", cal), ("coverage", cov), ("bootstrap", boot)):
-    df.to_csv(f"{OUT}/{SITE}_{name}.csv", index=False)
-    print(f"-> {OUT}/{SITE}_{name}.csv ({len(df)} rows)")
+    df.to_csv(f"{OUT}/{TAG}_{name}.csv", index=False)
+    print(f"-> {OUT}/{TAG}_{name}.csv ({len(df)} rows)")
 if len(cal):
     display(cal.round(3))
 if len(boot):
@@ -2048,8 +2166,57 @@ if len(cov):                                           # RMSE on the common pixe
         ax.set(title=f"{key[0]} n={key[1]}", xlabel="coverage of F (%), most reliable pixels kept",
                ylabel="RMSE on the common pixels (m)")
     axes[0, -1].legend(loc="center left", bbox_to_anchor=(1.02, 0.5), ncol=2)
-    fig.savefig(f"{OUT}/{SITE}_coverage.png")
+    fig.savefig(f"{OUT}/{TAG}_coverage.png")
     plt.show()
+''')
+
+md(r"""
+### Validation v3: the class-dominance sensitivity and the error maps
+
+A v3 run only (`NB_V3`; the design's outputs 2 and 3). **The sensitivity:** every estimate was computed once on the
+pixels of F with a clear look in the window, and scored on those where neither class dominates, q ≤ f_wet ≤ 1 − q,
+for q = 0, 0.05, 0.10, 0.15 and 0.20 (`<truth>_class_sensitivity.csv`, own and common pixels); everything above is at
+q = `Q_CLASS` (0.10). **The maps:** at n = 100 and at the smallest window computed, one map of p − t per method of the
+design (the diverging scale centred on 0, one limit for both windows: the larger of their 98th percentiles of |p − t|),
+the decomposition of the mean squared error into offset, relief and scatter on the common pixels, and the error
+rasters as GeoTIFFs on the cube's grid (`experiments/v3/error_maps.py`).
+""")
+
+code(r'''
+if V3KEY:
+    sens = pd.DataFrame(SENS)
+    if len(sens):
+        display(sens[sens.pixels == "own"].pivot_table(index=["n", "q"], columns="method", values="rmse")
+                .reindex(columns=[m for m in ORDER if m in set(sens.method)]).round(3))
+    done_ns = sorted(k[1] for k in KEYS)
+    map_ns = sorted({n for n in (100, done_ns[0]) if n in done_ns}) if done_ns else []
+    show = [m for m in ORDER if m in V3_METHODS]
+    picked = {n: {m: EST[(V3KEY, n)][m] for m in show if m in EST[(V3KEY, n)]} for n in map_ns}
+    lim = max((em.error_limit(truth[window_of((V3KEY, n))["px"]], picked[n]) for n in map_ns), default=None)
+    MAPS = []
+    for n in map_ns:
+        px = window_of((V3KEY, n))["px"]
+        t, est = truth[px], picked[n]
+        tab = em.decomposition(t, est, labels=LABELS)
+        tab.insert(0, "n", n)
+        tab.insert(0, "site", V3KEY)
+        MAPS.append(tab)
+        fig = em.figure_error_maps((H, W), keep[px], t, est, labels=LABELS, limit=lim,
+                                   title=f"{V3KEY}, n = {n}: p − t (m), q = {Q_CLASS:g}")
+        fig.savefig(f"{OUT}/{TAG}_n{n}_error_maps.png")
+        plt.show()
+        fig = em.figure_decomposition(tab, pixels="common", title=f"{V3KEY}, n = {n}: MSE = offset² + relief² + scatter²")
+        fig.savefig(f"{OUT}/{TAG}_n{n}_map_decomposition.png")
+        plt.show()
+        em.write_error_geotiffs(em.error_rasters((H, W), keep[px], t, est), transform, crs, f"{OUT}/{TAG}_n{n}_errors")
+    if MAPS:
+        maps_tab = pd.concat(MAPS, ignore_index=True)
+        maps_tab.to_csv(f"{OUT}/{TAG}_map_decomposition.csv", index=False)
+        display(maps_tab[maps_tab.pixels == "common"].set_index(["n", "label"])[
+            ["n_px", "rmse", "bias", "crmse", "mean_bias", "relief", "scatter"]].round(3))
+    print(f"-> {OUT}/{TAG}_class_sensitivity.csv; maps at n = {map_ns} (colour limit ±{lim} m)")
+else:
+    print("not a v3 run (NB_V3 unset): no class sensitivity, no error maps")
 ''')
 
 md(r"""
@@ -2079,9 +2246,9 @@ for key in KEYS:
         for k, v in EXTRA_PX[key].get(mid, {}).items():
             name = f"{tag}_fit_{k}" if mid == "MAREA_ndwi0" else f"{tag}_{mid}_{k}"
             arrays[name.replace("fit_z_mid", "fit_z")] = v
-np.savez_compressed(f"{OUT}/{SITE}_pixels.npz", **arrays)
-print(f"-> {OUT}/{SITE}_pixels.npz: {len(arrays)} arrays")
-print("written:", sorted(os.path.basename(f) for f in glob.glob(f"{OUT}/{SITE}*")))
+np.savez_compressed(f"{OUT}/{TAG}_pixels.npz", **arrays)
+print(f"-> {OUT}/{TAG}_pixels.npz: {len(arrays)} arrays")
+print("written:", sorted(os.path.basename(f) for f in glob.glob(f"{OUT}/{TAG}*")))
 ''')
 
 code(r'''
@@ -2097,23 +2264,26 @@ print("versions", f"python {platform.python_version()} · numpy {np.__version__}
 ''')
 
 code(r'''
-ref = next((f"{d}/{SITE}.csv" for d in (NTABLES, FIRST) if os.path.exists(f"{d}/{SITE}.csv")), None)
-assert ref, f"neither {NTABLES}/{SITE}.csv nor {FIRST}/{SITE}.csv: notebook 01's rows cannot be checked"
-first = pd.read_csv(ref, float_precision="round_trip")
-new = pd.read_csv(f"{OUT}/{SITE}_scores.csv", float_precision="round_trip")
-key, same = ["site", "n", "method"], ["status", "reason", "first_date", "last_date", "n_F", "n_px", "coverage",
-                                      "rmse", "bias", "crmse", "slope", "r"]
-rows_here = {w["site"] for w in windows}
-done = first.method.isin(METHODS) & first.n.isin(NS) & first.site.isin(rows_here) & (first.status != "not reachable")
-a = first[done].reindex(columns=key + same).set_index(key)            # the windows notebook 01's run computed
-b = new[new.method.isin(set(first.method))].reindex(columns=key + same).set_index(key)
-both = a.index.intersection(b.index)
-assert len(both), f"no window of n = {NS} computed in {ref}: run notebook 01 on these windows (NB_NTABLES)"
-pd.testing.assert_frame_equal(a.loc[both].sort_index(), b.loc[both].sort_index(), check_exact=True, check_dtype=False)
-print(f"{len(both)} rows bit for bit those of {ref}: " +
-      ", ".join(f"{m} ×{k}" for m, k in Counter(i[2] for i in both).items()))
-missing = sorted(set(a.index) - set(both))
-print("rows of notebook 01 not computed here:", missing or "none")
+if V3KEY:
+    print("v3: no notebook 01 run of these windows to check against; this notebook makes the v3 tables")
+else:
+    ref = next((f"{d}/{SITE}.csv" for d in (NTABLES, FIRST) if os.path.exists(f"{d}/{SITE}.csv")), None)
+    assert ref, f"neither {NTABLES}/{SITE}.csv nor {FIRST}/{SITE}.csv: notebook 01's rows cannot be checked"
+    first = pd.read_csv(ref, float_precision="round_trip")
+    new = pd.read_csv(f"{OUT}/{TAG}_scores.csv", float_precision="round_trip")
+    key, same = ["site", "n", "method"], ["status", "reason", "first_date", "last_date", "n_F", "n_px", "coverage",
+                                          "rmse", "bias", "crmse", "slope", "r"]
+    rows_here = {w["site"] for w in windows}
+    done = first.method.isin(METHODS) & first.n.isin(NS) & first.site.isin(rows_here) & (first.status != "not reachable")
+    a = first[done].reindex(columns=key + same).set_index(key)            # the windows notebook 01's run computed
+    b = new[new.method.isin(set(first.method))].reindex(columns=key + same).set_index(key)
+    both = a.index.intersection(b.index)
+    assert len(both), f"no window of n = {NS} computed in {ref}: run notebook 01 on these windows (NB_NTABLES)"
+    pd.testing.assert_frame_equal(a.loc[both].sort_index(), b.loc[both].sort_index(), check_exact=True, check_dtype=False)
+    print(f"{len(both)} rows bit for bit those of {ref}: " +
+          ", ".join(f"{m} ×{k}" for m, k in Counter(i[2] for i in both).items()))
+    missing = sorted(set(a.index) - set(both))
+    print("rows of notebook 01 not computed here:", missing or "none")
 ''')
 
 

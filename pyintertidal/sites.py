@@ -114,6 +114,15 @@ SITES = {
                     (-9.06, 42.76)],
         "tide_model": "EOT20",
     },
+    "eo": {
+        "name": "Eo (Ribadeo)",
+        "description": "Ría de Ribadeo / Ría del Eo (Galicia-Asturias) — "
+                       "the estuary of the Eo from Vegadeo to the sea; "
+                       "the box of validation v3 (experiments/download_cube_v3.py).",
+        "polygon": [(-7.095, 43.440), (-6.985, 43.440), (-6.985, 43.580),
+                    (-7.095, 43.580)],
+        "tide_model": "EOT20",
+    },
     "urdaibai": {
         "name": "Urdaibai",
         "description": "Urdaibai / Mundaka (Basque Country) — UNESCO "
