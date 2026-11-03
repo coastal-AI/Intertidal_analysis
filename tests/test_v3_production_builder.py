@@ -42,7 +42,7 @@ def test_the_notebook_is_the_templates_code(tmp_path):
     for i in TEMPLATE_CELLS:
         assert bp.source(tpl, i).strip("\n") in codes, f"template cell {i} is not in the notebook unchanged"
     joined = "\n".join(codes)
-    assert "pit.sites.get(SITE)" not in joined and 'AOI.from_bbox(**C["box"]' in joined
+    assert "pit.sites.get(SITE)" not in joined and 'AOI.from_bbox(**V3C["box"]' in joined
     assert 'OVERPASS_CACHE = f"{OUT_DIR}/overpass_times.json"' not in joined
     assert "Granadeiro" not in joined and "lag_validation" not in joined, "sections 9-10b are left out"
     assert len({c["id"] for c in nb["cells"]}) == len(nb["cells"])
