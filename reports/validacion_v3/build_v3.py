@@ -63,7 +63,8 @@ READ = {}
 def fetch():
     BASE.mkdir(parents=True, exist_ok=True)
     for pat in ("*_scores.csv", "*_decomposition.csv", "*_class_sensitivity.csv", "*_map_decomposition.csv",
-                "*_error_maps.png", "*_map_decomposition.png"):
+                "*_error_maps.png", "*_map_decomposition.png", "*_uncertainty_maps.png", "*_uncertainty_vs_error.png",
+                "*_pixels.npz", "*_delay_summary.csv"):
         subprocess.run(["scp", "-q", *SSH, f"{SERVER}/{pat}", str(BASE)], check=False)
     for pat in ("*_elevation_maps.png", "*_elevation_summary.csv"):
         subprocess.run(["scp", "-q", *SSH, f"{SERVER_MAPS}/{pat}", str(BASE)], check=False)
@@ -220,6 +221,91 @@ def fig_sensitivity(data, name):
     return name
 
 
+DIST_METHODS = [("MAREA", "MAREA_nodelay"), ("MAREA_B", "MAREA_B_nodelay"), ("E4_delay", "E4")]
+DIST_RIVALS = ["DEA", "NIDEM", "E5c"]
+DIST_LABEL = {"MAREA": "MAREA", "MAREA_nodelay": "MAREA sin retardo", "MAREA_B": "MAREA-B",
+              "MAREA_B_nodelay": "MAREA-B sin retardo", "E4_delay": "LT2D con retardo", "E4": "LT2D",
+              "DEA": "DEA", "NIDEM": "NIDEM", "E5c": "SE"}
+
+
+def distance_frame(t):
+    """The largest computed window of a truth, per pixel: its distance from the mouth, delay, truth and estimates
+    (notebook 05's <truth>_pixels.npz). None without the npz."""
+    p = BASE / f"{t}_pixels.npz"
+    if not p.exists():
+        return None, None
+    READ[p.name] = (br.sha256(p), None)
+    z = np.load(p)
+    ns = sorted({int(k.split("_n")[-1].split("_")[0]) for k in z.files if k.startswith(f"{t}_n") and k.endswith("_keep")})
+    if not ns:
+        return None, None
+    n = ns[-1]
+    tag = f"{t}_n{n}"
+    s_of = dict(zip(z[f"{t}_keep"].tolist(), z[f"{t}_s_km"].tolist()))
+    keep = z[f"{tag}_keep"]
+    out = pd.DataFrame({"s_km": [s_of.get(int(k), np.nan) for k in keep], "tau": z[f"{tag}_tau_px"],
+                        "truth": z[f"{tag}_truth"]})
+    for m in [m for pair in DIST_METHODS for m in pair] + DIST_RIVALS:
+        if f"{tag}_{m}" in z.files:
+            out[m] = z[f"{tag}_{m}"]
+    return n, out
+
+
+def fig_distance(data, name, bins=5):
+    """Per truth, the RMSE and the median error against the distance from the mouth (equal-count bins), each method
+    with MAREA's delay (solid) and without it (dashed), the rivals without delay, and the median delay of each bin."""
+    truths = [t for t in TRUTHS if t in data]
+    frames = {t: distance_frame(t) for t in truths}
+    truths = [t for t in truths if frames[t][1] is not None]
+    if not truths:
+        return None
+    fig, axes = plt.subplots(2, len(truths), figsize=(2.3 * len(truths) + 1.0, 5.2), squeeze=False)
+    colours = {"MAREA": br.PAL["accent"], "MAREA_B": "#6B1F2A", "E4_delay": "#2F5D7C"}
+    rows = []
+    for j, t in enumerate(truths):
+        n, d = frames[t]
+        d = d[np.isfinite(d.s_km) & np.isfinite(d.truth)]
+        edges = np.unique(np.percentile(d.s_km, np.linspace(0, 100, bins + 1)))
+        d = d.assign(bin=np.clip(np.digitize(d.s_km, edges[1:-1]), 0, len(edges) - 2))
+        g = d.groupby("bin")
+        x = g.s_km.median().to_numpy()
+        series = []
+        for a, b in DIST_METHODS:
+            series += [(a, colours[a], "-"), (b, colours[a], "--")]
+        series += [(m, GREY, ":") for m in DIST_RIVALS]
+        for m, c, ls in series:
+            if m not in d:
+                continue
+            e = d[m] - d.truth
+            rmse = e.pow(2).groupby(d.bin).mean().pow(0.5).to_numpy()
+            med = e.groupby(d.bin).median().to_numpy()
+            axes[0, j].plot(x, rmse, color=c, ls=ls, marker="o", ms=2.5, lw=1.4 if ls != ":" else 0.9,
+                            label=DIST_LABEL[m])
+            axes[1, j].plot(x, med, color=c, ls=ls, marker="o", ms=2.5, lw=1.4 if ls != ":" else 0.9)
+            for k in range(len(x)):
+                rows.append(dict(truth=t, n=n, bin=k, s_km=x[k], method=m, rmse=rmse[k], bias=med[k]))
+        tw = axes[0, j].twinx()
+        tw.bar(x, g.tau.median().to_numpy(), width=0.35 * (np.ptp(x) / max(len(x), 1) or 1), color="#D9D4C7",
+               alpha=0.6, zorder=0)
+        tw.set_ylabel("retardo mediano (min)" if j == len(truths) - 1 else "", fontsize=6.5)
+        tw.tick_params(labelsize=6)
+        axes[0, j].set_zorder(tw.get_zorder() + 1)
+        axes[0, j].patch.set_visible(False)
+        axes[0, j].set_title(f"{TRUTH_NAME[t]}, n = {n}")
+        axes[1, j].axhline(0, color="#8F897D", lw=0.6)
+        axes[1, j].set_xlabel("distancia a la boca (km)")
+    axes[0, 0].set_ylabel("RMSE (m)")
+    axes[1, 0].set_ylabel("error mediano (m)")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False, fontsize=6.5, bbox_to_anchor=(0.5, 0.0))
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
+    fig.savefig(FIG / name, format="pdf", metadata={"Creator": None, "Producer": None, "CreationDate": None})
+    fig.savefig(FIG / name.replace(".pdf", ".png"), dpi=200)
+    plt.close(fig)
+    pd.DataFrame(rows).to_csv(TAB / "distance.csv", index=False)
+    return name
+
+
 def maps_tex(data):
     """The \\includegraphics of each truth's error maps and decomposition bars (notebook 05's PNGs)."""
     lines = []
@@ -236,8 +322,22 @@ def maps_tex(data):
                 shutil.copyfile(bars, FIG / bars.name)
                 lines.append(rf"\\[4pt]\includegraphics[width=0.62\textwidth]{{figures/{bars.name}}}")
             lines += [rf"\caption{{{TRUTH_NAME[t]}, $n = {n}$: error por píxel $p - t$ (m) de cada método, misma "
-                      r"escala para todos, y descomposición del error cuadrático medio en desplazamiento, relieve y "
-                      r"dispersión sobre los píxeles comunes.}", r"\end{figure}", ""]
+                      r"escala para todos ($\pm 0{,}5$\,m; morado, por debajo del LiDAR; naranja, por encima; gris "
+                      r"oscuro, fuera del intermareal puntuado), y descomposición del error cuadrático medio en "
+                      r"desplazamiento, relieve y dispersión sobre los píxeles comunes.}", r"\end{figure}", ""]
+            unc, vs = BASE / f"{t}_n{n}_uncertainty_maps.png", BASE / f"{t}_n{n}_uncertainty_vs_error.png"
+            if unc.exists():
+                shutil.copyfile(unc, FIG / unc.name)
+                lines += [r"\begin{figure}[p]\centering", rf"\includegraphics[width=\textwidth]{{figures/{unc.name}}}"]
+                if vs.exists():
+                    shutil.copyfile(vs, FIG / vs.name)
+                    lines.append(rf"\\[6pt]\includegraphics[width=\textwidth]{{figures/{vs.name}}}")
+                lines += [rf"\caption{{{TRUTH_NAME[t]}, $n = {n}$: la incertidumbre de la cota. Arriba, por píxel: "
+                          r"el ancho del intervalo de confianza del 95\,\% de MAREA-B (verosimilitud perfilada), su "
+                          r"$\sigma$ (lo gradual de la transición seco--mojado), la dispersión entre los métodos del "
+                          r"diseño y, para comparar, el $|p - t|$ de MAREA-B. Abajo, el $|p - t|$ de MAREA-B por "
+                          r"deciles de cada incertidumbre: si crece, la incertidumbre avisa del error.}",
+                          r"\end{figure}", ""]
     (TAB / "maps.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -329,6 +429,7 @@ def main():
     body_tex(data)
     fig_curves(data, "curves_v3.pdf")
     fig_sensitivity(data, "sensitivity_v3.pdf")
+    fig_distance(data, "distance_v3.pdf")
     maps_tex(data)
     elevation_maps_tex()
     vals = {"build:date": dt.datetime.now().astimezone().strftime("%Y-%m-%d"),

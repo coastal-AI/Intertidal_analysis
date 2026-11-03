@@ -79,10 +79,29 @@ adoptado, $q = 0{,}10$. Colores y trazos como en la figura~1.}\label{fig:sens}
 \input{tables/body.tex}
 
 \section*{Mapas de error y descomposición}
-Por verdad, en $n = 100$ y en la ventana menor calculada: el error $p - t$ de cada método en cada píxel (escala
-divergente centrada en 0, la misma para todos los métodos y ventanas de una verdad) y la descomposición del error
-cuadrático medio, $\mathrm{MSE} = \overline{d}^{\,2} + ((1-\beta)\,s_t)^2 + s_e^2$: desplazamiento, compresión del
-relieve y dispersión.
+Por verdad, en $n = 100$ y en la ventana menor calculada: el error $p - t$ de cada método en cada píxel (la misma
+escala, $\pm 0{,}5$\,m, para todos los métodos, ventanas y sitios) y la descomposición de su error cuadrático medio.
+
+\textbf{Cómo se descompone el error.} En los píxeles comunes a todos los métodos, con $d = p - t$ el error de cada
+píxel, se ajusta por mínimos cuadrados la recta de la cota estimada frente a la verdadera, $p \approx a + \beta\,t$, y
+se separa el error cuadrático medio en tres sumandos que suman exactamente el total:
+\[
+\mathrm{MSE} = \underbrace{\overline{d}^{\,2}}_{\text{desplazamiento}^2}
+ + \underbrace{\big((1-\beta)\,s_t\big)^2}_{\text{relieve}^2}
+ + \underbrace{s_e^2}_{\text{dispersión}^2},
+\qquad e = (p - \overline{p}) - \beta\,(t - \overline{t}),
+\]
+con $s_t$ la desviación típica de la verdad y $s_e$ la de los residuos $e$ (momentos de población).
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+\item \textbf{Desplazamiento}: el error medio, igual en todo el llano (un datum distinto, un nivel de marea con sesgo).
+\item \textbf{Relieve}: lo que se debe a una pendiente $\beta \ne 1$; con $\beta < 1$ el método aplana el llano
+(sube lo bajo y baja lo alto), con $\beta > 1$ lo exagera.
+\item \textbf{Dispersión} (\emph{scatter}): lo que queda cuando se quitan el desplazamiento y la pendiente, es decir,
+el error de píxel a píxel que ninguna corrección lineal arregla: miradas mal clasificadas, nivel de marea con ruido,
+efectos locales (charcas, canales, vegetación) y el propio error de la verdad (el agua del vuelo cae aquí).
+\end{itemize}
+Una dispersión dominante, como en casi todos los casos, significa que el método no está desplazado ni aplana el
+relieve: falla píxel a píxel.
 
 \input{tables/maps.tex}
 

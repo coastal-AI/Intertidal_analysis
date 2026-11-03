@@ -1529,6 +1529,8 @@ for win in windows:
         main = win["qmask"][Q_CLASS]
         win["px_q0"], win["px"] = win["px"], win["px"][main]
         EST[key] = {mid: z[main] for mid, z in EST[key].items()}
+        if key in BINT:                            # V13's interval, also on the pixels kept
+            BINT[key] = {k: v[main] for k, v in BINT[key].items()}
         EXTRA_PX[key] = {mid: {k: (v[main] if isinstance(v, np.ndarray) and v.ndim >= 1 and len(v) == len(main)
                                    else v) for k, v in d.items()} for mid, d in EXTRA_PX[key].items()}
         for r in rows:
