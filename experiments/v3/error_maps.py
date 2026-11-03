@@ -148,17 +148,17 @@ def error_rasters(shape, px, truth, estimates):
 # ── The scores and the decomposition ────────────────────────────────────────
 
 def scores(p, t):
-    """Notebook 01's scores of p against t on the same pixels: RMSE, bias = median(p - t), centred RMSE (p and t each
-    centred on its median), the OLS slope of p on t, r, the pixels scored (p and t finite) and their share, the
-    coverage. NaN scores on fewer than MIN_PX pixels."""
+    """Notebook 01's scores of p against t on the same pixels: RMSE, MAE = mean |p - t|, bias = median(p - t),
+    centred RMSE (p and t each centred on its median), the OLS slope of p on t, r, the pixels scored (p and t finite)
+    and their share, the coverage. NaN scores on fewer than MIN_PX pixels."""
     p, t = np.asarray(p, float), np.asarray(t, float)
     ok = np.isfinite(p) & np.isfinite(t)
     out = dict(n_px=int(ok.sum()), coverage=float(ok.mean()) if len(ok) else np.nan,
-               rmse=np.nan, bias=np.nan, crmse=np.nan, slope=np.nan, r=np.nan)
+               rmse=np.nan, mae=np.nan, bias=np.nan, crmse=np.nan, slope=np.nan, r=np.nan)
     if ok.sum() >= MIN_PX:
         d = p[ok] - t[ok]
         pc, tc = p[ok] - np.median(p[ok]), t[ok] - np.median(t[ok])
-        out.update(rmse=float(np.sqrt(np.mean(d ** 2))), bias=float(np.median(d)),
+        out.update(rmse=float(np.sqrt(np.mean(d ** 2))), mae=float(np.mean(np.abs(d))), bias=float(np.median(d)),
                    crmse=float(np.sqrt(np.mean((pc - tc) ** 2))), slope=float(np.polyfit(tc, pc, 1)[0]),
                    r=float(np.corrcoef(tc, pc)[0, 1]))
     return out
@@ -231,8 +231,7 @@ def _fmt(v, spec):
 def _title(label, s):
     if not s["n_px"]:
         return f"{label}\nno value"
-    return (f"{label}\nRMSE {_fmt(s['rmse'], '.3f')} · bias {_fmt(s['bias'], '+.3f')} · "
-            f"cRMSE {_fmt(s['crmse'], '.3f')} m")
+    return f"{label}\nMAE {_fmt(s['mae'], '.3f')} · bias {_fmt(s['bias'], '+.3f')} m"   # the maps: MAE and bias
 
 
 def _panel_maps(shape, px, layers, titles, cmap, norm, cbar_label, family, title=None, ncols=None, extend="both"):

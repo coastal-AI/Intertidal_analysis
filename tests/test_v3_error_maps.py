@@ -115,11 +115,14 @@ def test_scores_and_decompose_are_notebook_05s():
              (np.full(40, np.nan), t[:40]), (np.empty(0), np.empty(0))]
     for p, tt in cases:
         mine, ref = em.decompose(p, tt), nb_decompose(p, tt)
-        assert set(mine) == set(ref) | {"offset"}
+        assert set(mine) == set(ref) | {"offset", "mae"}               # + the maps' MAE
         for key, value in ref.items():
             np.testing.assert_equal(mine[key], value, err_msg=key)          # bit for bit, NaN equal to NaN
         np.testing.assert_equal(mine["offset"], abs(ref["mean_bias"]))
-        assert em.scores(p, tt).keys() == nb_scores(p, tt).keys()
+        assert set(em.scores(p, tt)) == set(nb_scores(p, tt)) | {"mae"}
+        ok = np.isfinite(p) & np.isfinite(tt)
+        if ok.sum() >= em.MIN_PX:
+            np.testing.assert_allclose(em.scores(p, tt)["mae"], np.mean(np.abs(p[ok] - tt[ok])))
         for key, value in nb_scores(p, tt).items():
             np.testing.assert_equal(em.scores(p, tt)[key], value, err_msg=key)
 
@@ -267,7 +270,9 @@ def test_maps_share_the_limits_and_put_each_error_at_its_pixel():
         first, second = title.get_text().split("\n")
         assert first == LABELS[m]
         if s["n_px"]:
-            assert second == f"RMSE {s['rmse']:.3f} · bias {s['bias']:+.3f} · cRMSE {s['crmse']:.3f} m"
+            assert second == f"MAE {s['mae']:.3f} · bias {s['bias']:+.3f} m"
+            ok = np.isfinite(p) & np.isfinite(t)
+            assert np.isclose(s["mae"], np.mean(np.abs(p[ok] - t[ok])))
         else:
             assert second == "no value"
         assert to_hex(title.get_color()).upper() == (em.ACCENT if m in em.MAREA_FAMILY else em.INK)
@@ -295,7 +300,7 @@ def test_maps_nan_handling_and_options():
         colour = to_hex(left_title(ax).get_color()).upper()
         assert colour == (em.ACCENT if m == "E4" else em.INK)
     titles = {m: left_title(ax).get_text() for ax, m in zip(axes, est)}
-    assert titles["E4"].endswith("RMSE n/a · bias n/a · cRMSE n/a m")
+    assert titles["E4"].endswith("MAE n/a · bias n/a m")
     assert titles["E5c"].endswith("no value")
     assert np.isnan(np.ma.filled(axes[-1].images[-1].get_array().astype(float), np.nan)).all()
     with pytest.raises(ValueError, match="positive"):

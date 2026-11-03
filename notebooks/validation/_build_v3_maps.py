@@ -36,7 +36,7 @@ the maps. The elevations are on the boundary's datum (EOT20 + the nearest IOC ga
 MAPS = r'''
 import rasterio
 
-show = [m for m in ORDER if m in V3_METHODS]
+show = [m for m in ORDER if m in V3_REPORT]       # the original MAREA and the n-tables' methods
 MAPS_DIR = f"{OUT}/{TAG}_maps"
 os.makedirs(MAPS_DIR, exist_ok=True)
 summary = []
