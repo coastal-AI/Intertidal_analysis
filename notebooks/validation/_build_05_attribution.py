@@ -562,7 +562,7 @@ for row in ROWS:
                 print(f"{row['site']:14s} n={n:3d}: not reachable, {win['why']}")
             else:
                 d = S_dates[win["scenes"]]
-                win["end"] = d[-1]                     # the window's last scene (the level series reach it)
+                win["end"] = str(d[-1])                # the window's last scene (the level series reach it)
                 per_year = dict(sorted(Counter(str(x)[:4] for x in d).items()))
                 print(f"{row['site']:14s} n={n:3d}: {d[0]} → {d[-1]}  T = {sw['half_width_days']:.0f} d, "
                       f"{sw['n_before']} before / {sw['n_after']} after the truth date; per year {per_year}")
