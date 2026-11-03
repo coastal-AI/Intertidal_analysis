@@ -1,0 +1,86 @@
+% MAREA validation v3: the Cantabrian estuaries against the PNOA LiDAR. Its tables, figures and macros are written
+% by build_v3.py, which compiles it.
+
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish,es-noshorthands,es-nodecimaldot,es-tabla]{babel}
+\usepackage{lmodern}
+\usepackage[a4paper,top=2.2cm,bottom=2.4cm,left=2.0cm,right=2.0cm,headsep=0.6cm]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx,booktabs,array,multirow,enumitem,float}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{accent}{HTML}{B5523B}
+\definecolor{ink}{HTML}{2B2B2B}
+\definecolor{secondary}{HTML}{6B6B6B}
+\color{ink}
+
+\newcommand{\valdef}[2]{\expandafter\def\csname val@#1\endcsname{#2}}
+\DeclareRobustCommand{\val}[1]{\ifcsname val@#1\endcsname\csname val@#1\endcsname\else
+  \PackageError{report}{Missing value #1}{build_v3.py did not write it}\fi}
+\input{tables/macros.tex}
+
+\captionsetup{font=small,labelfont=bf,labelsep=period,justification=raggedright,singlelinecheck=false}
+\captionsetup[table]{position=top,skip=3pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5ex plus 0.2ex}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyhead[L]{\footnotesize\color{secondary}MAREA · validación v3 · estuarios cantábricos}
+\fancyhead[R]{\footnotesize\color{secondary}borrador interno · ningún resultado es definitivo}
+\fancyfoot[C]{\footnotesize\color{secondary}\thepage}
+
+\begin{document}
+
+{\Large\bfseries Validación v3: estuarios cantábricos frente al LiDAR del PNOA}\\[2pt]
+{\small\color{secondary}Compilado el \val{build:date}. Verdades con resultados: \val{truths}.}
+
+\section*{Qué se valida}
+
+\textbf{Verdad.} Los modelos del terreno del PNOA-LiDAR que indicó F.~García-González: MDT02 de la 2.ª cobertura
+(Villaviciosa y Eo 2020, Foz 2016, Mundaka 2017) y MDT50CM de la 3.ª (Mundaka 2024); el año es el que da el CNIG para
+cada fichero. Se enmascara el agua en el vuelo (parches planos de al menos 200\,m²) y se promedia a la malla de
+10\,m de Sentinel-2. Fecha de verdad provisional: 15 de julio del año del vuelo.
+
+\textbf{Ventanas.} Para cada $n$ = 20, 40, 60, 80, 100 y 120, las $n$ escenas cribadas más cercanas a la fecha de
+verdad, simétricas en el tiempo; una ventana que el cubo no cubre entera no es alcanzable.
+
+\textbf{Píxeles.} Los de la extracción de producción con verdad dentro del rango del producto sin retardo
+($\pm 0{,}25$\,m), y solo aquellos en los que ninguna clase domina la ventana: fracción de miradas mojadas entre
+0,10 y 0,90 ($q = 0{,}10$; la sensibilidad a $q$ va en la figura~\ref{fig:sens}).
+
+\textbf{Métodos.} Los diez de las tablas $n$, MAREA-B, MAREA-BL y MAREA-S (un único ajuste, retardo suavizado).
+
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{figures/curves_v3.pdf}
+\caption{Error frente a $n$ en cada verdad, píxeles propios de cada método ($q = 0{,}10$). MAREA y sus versiones en
+color; el resto en gris.}
+\end{figure}
+
+\IfFileExists{figures/sensitivity_v3.pdf}{%
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{figures/sensitivity_v3.pdf}
+\caption{Sensibilidad a la máscara de clase dominante: RMSE en los píxeles comunes frente a $q$ (se puntúan los
+píxeles con fracción mojada entre $q$ y $1-q$), en la ventana mayor de cada verdad; la línea punteada es el valor
+adoptado, $q = 0{,}10$. Colores y trazos como en la figura~1.}\label{fig:sens}
+\end{figure}}{}
+
+\clearpage
+\section*{Tablas por verdad}
+\input{tables/body.tex}
+
+\section*{Mapas de error y descomposición}
+Por verdad, en $n = 100$ y en la ventana menor calculada: el error $p - t$ de cada método en cada píxel (escala
+divergente centrada en 0, la misma para todos los métodos y ventanas de una verdad) y la descomposición del error
+cuadrático medio, $\mathrm{MSE} = \overline{d}^{\,2} + ((1-\beta)\,s_t)^2 + s_e^2$: desplazamiento, compresión del
+relieve y dispersión.
+
+\input{tables/maps.tex}
+
+\end{document}

@@ -96,3 +96,8 @@ rule of the variants files. Santander and Santoña get elevation maps without sc
   none held out, as no gauge lies inside these estuaries), the sea on the north edge, the download box as the AOI, a
   lag-fit record of at least 40 scenes. Villaviciosa keeps its production (EOT20 at the AOI centroid, no gauge). Each
   truth is built on its cube's grid. Keys and paths: `experiments/v3/sites.py`.
+- 2026-11-03, before any map is made: Santander and Santoña (maps only, their LiDAR flown at high water). Their cubes
+  are 2023-2025 (the production period of the other sites' products, as no truth date centres them), B03, B08 and
+  SCL on the registry boxes (`download_cube_v3.py`, `BOXES` None: the registry polygon's box), and their production
+  is the new sites' (EOT20 + the nearest IOC gauge, the box as the AOI). The maps are the elevations of the design's
+  methods on the window of the 100 screened scenes nearest 2024-07-15, the middle of the period; no score.
