@@ -1546,6 +1546,7 @@ for win in windows:
     with np.errstate(invalid="ignore"):
         LOOKS[key] = dict(n_clear=C_w.sum(axis=0), n_wet=(C_w & (Y_S[np.ix_(w, px)] > 0)).sum(axis=0))
     pd.DataFrame(SCORES).to_csv(f"{OUT}/{TAG}_scores.csv", index=False)
+pd.DataFrame(SCORES).to_csv(f"{OUT}/{TAG}_scores.csv", index=False)   # also the windows not reachable after the last one
 KEYS = list(EST)
 print(f"-> {OUT}/{TAG}_scores.csv ({len(SCORES)} rows); windows computed: {KEYS}")
 sc = pd.DataFrame(SCORES)
