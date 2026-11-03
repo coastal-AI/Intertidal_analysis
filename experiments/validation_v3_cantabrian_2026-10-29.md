@@ -87,3 +87,12 @@ rule of the variants files. Santander and Santoña get elevation maps without sc
   site in 2015, ~65 in 2016 and ~125 a year from 2017), so the larger windows of Foz and of Mundaka 2017 will not be
   reachable, and are reported as such. The years downloaded follow, replacing those of the amendment above: Urdaibai
   2015-2019 and 2022-2026 (2026 up to the download date), Foz 2015-2019, Eo 2017-2023.
+- 2026-11-03, before any window is computed (the cubes were downloaded on 2026-11-01, 305 credits): the cubes and
+  their production. One cube per truth, holding only the years around it, so that no window spans a gap: Urdaibai
+  2015-2019 (truth 2017) and 2022-2026 (truth 2024; 2026 up to 2026-10-31), Foz 2015-2019, Eo 2017-2023; Villaviciosa
+  its 10-year cube. Each new cube's production is Ferrol's (`notebooks/validation/v3_production_site.ipynb`, built
+  from the code of `tide_boundary_comparison_ferrol.ipynb`, its sections 0-8 and its products): NDWI > 0, the
+  transition-zone cloud screening, EOT20 + the nearest IOC gauge (Bilbao3 for Urdaibai, Ferrol2 for Foz and the Eo;
+  none held out, as no gauge lies inside these estuaries), the sea on the north edge, the download box as the AOI, a
+  lag-fit record of at least 40 scenes. Villaviciosa keeps its production (EOT20 at the AOI centroid, no gauge). Each
+  truth is built on its cube's grid. Keys and paths: `experiments/v3/sites.py`.
