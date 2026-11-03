@@ -2253,6 +2253,9 @@ for row in ROWS:
                        f"{row['site']}_s_km": s_km[row["px"]]})
 for key in KEYS:
     tag = f"{key[0]}_n{key[1]}"
+    if V3KEY:    # v3: each window's own pixels (F at the class mask's q), which its estimates are on
+        arrays[f"{tag}_keep"] = keep[window_of(key)["px"]]
+        arrays[f"{tag}_truth"] = truth[window_of(key)["px"]]
     arrays[f"{tag}_tau_px"] = TAU[key]
     arrays.update({f"{tag}_{k}": v for k, v in LOOKS[key].items()})
     for mid, z in EST[key].items():
