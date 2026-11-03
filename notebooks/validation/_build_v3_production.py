@@ -49,27 +49,27 @@ from experiments.v3.sites import NEW, V3
 
 KEY = os.environ.get("NB_V3", "foz_2016")          # the truth whose cube this run produces
 assert KEY in NEW, f"{KEY!r} is not a new v3 cube; one of {NEW}"
-C = V3[KEY]
+V3C = V3[KEY]                                      # (not C: the template's cells use C for the clear mask)
 
 # ── Which area, and over what period (experiments/v3/sites.py) ───────────
-SITE         = C["site"]
-TIME_EXTENT  = C["period"]
+SITE         = V3C["site"]
+TIME_EXTENT  = V3C["period"]
 RESOLUTION_M = 10
-CACHE        = C["cube"]
-OUT_DIR      = C["out"]
-OVERPASS_CACHE = C["overpass"]                     # the downloader's overpass times of every cube date
-MIN_SCENES   = C["min_scenes"]
+CACHE        = V3C["cube"]
+OUT_DIR      = V3C["out"]
+OVERPASS_CACHE = V3C["overpass"]                     # the downloader's overpass times of every cube date
+MIN_SCENES   = V3C["min_scenes"]
 
 # ── The boundary: two switches ──────────────────────────────────────────
-TIDE_MODEL   = C["tide_model"]
-N_GAUGES     = C["n_gauges"]
-JUDGE_GAUGES = C["judges"]
-MOUTH_SIDE   = C["mouth_side"]
+TIDE_MODEL   = V3C["tide_model"]
+N_GAUGES     = V3C["n_gauges"]
+JUDGE_GAUGES = V3C["judges"]
+MOUTH_SIDE   = V3C["mouth_side"]
 
 # ── Derived ─────────────────────────────────────────────────────────────
 BOUNDARY_TAG = f"{(TIDE_MODEL or 'nomodel').lower()}_g{N_GAUGES or 0}"
 print(f"v3 truth {KEY}: {SITE} · {TIME_EXTENT[0]} → {TIME_EXTENT[1]} @ {RESOLUTION_M} m")
-print(f"  boundary  model={TIDE_MODEL}  gauges={N_GAUGES} (expected {C['expected_gauge']})  "
+print(f"  boundary  model={TIDE_MODEL}  gauges={N_GAUGES} (expected {V3C['expected_gauge']})  "
       f"held out={JUDGE_GAUGES}  → tag {BOUNDARY_TAG}")
 print(f"  cache     {CACHE}")
 print(f"  outputs   {OUT_DIR}")
@@ -100,7 +100,7 @@ def git(*args):
 
 
 record = {
-    "key": KEY, "config": {k: (list(v) if isinstance(v, tuple) else v) for k, v in C.items()},
+    "key": KEY, "config": {k: (list(v) if isinstance(v, tuple) else v) for k, v in V3C.items()},
     "design": "experiments/validation_v3_cantabrian_2026-10-29.md (amendment of 2026-11-03)",
     "template": "tide_boundary_comparison_ferrol.ipynb (sections 0-8, built by notebooks/validation/_build_v3_production.py)",
     "git_commit": git("rev-parse", "HEAD"), "git_dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
@@ -115,7 +115,7 @@ record = {
     "pyintertidal": pit.__version__,
 }
 json.dump(record, open(f"{OUT_DIR}/v3_production.json", "w", encoding="utf-8"), indent=1, default=str)
-assert C["expected_gauge"] in member_codes, f"boundary gauge {member_codes}, expected {C['expected_gauge']}"
+assert V3C["expected_gauge"] in member_codes, f"boundary gauge {member_codes}, expected {V3C['expected_gauge']}"
 print(f"-> {prod_dir}/products.npz, {OUT_DIR}/marea_{BOUNDARY_TAG}/ and {OUT_DIR}/v3_production.json")
 '''
 
@@ -125,7 +125,7 @@ def build(template=TEMPLATE, out=OUT):
     setup = swap(source(nb, 4), 'log = explain.OpLog(f"Escalda {TIME_EXTENT[0][:4]}–{TIME_EXTENT[1][:4]}")',
                  'log = explain.OpLog(f"{SITE} v3 {TIME_EXTENT[0][:4]}–{TIME_EXTENT[1][:4]}")')
     area = swap(source(nb, 6), "aoi = pit.sites.get(SITE)",
-                'from pyintertidal.aoi import AOI\n\naoi = AOI.from_bbox(**C["box"], name=f"{SITE} (v3 box)")')
+                'from pyintertidal.aoi import AOI\n\naoi = AOI.from_bbox(**V3C["box"], name=f"{SITE} (v3 box)")')
     levels = swap(source(nb, 17), 'OVERPASS_CACHE = f"{OUT_DIR}/overpass_times.json"\n',
                   'assert os.path.exists(OVERPASS_CACHE), f"{OVERPASS_CACHE}: the downloader writes it"\n')
     cells = [

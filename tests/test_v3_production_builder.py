@@ -48,6 +48,20 @@ def test_the_notebook_is_the_templates_code(tmp_path):
     assert len({c["id"] for c in nb["cells"]}) == len(nb["cells"])
 
 
+def test_no_later_cell_rebinds_the_parameters(tmp_path):
+    # the template's cells bind C (the clear mask): the configuration's name must be one no other cell assigns
+    nb = built(tmp_path)
+    codes = [c["source"] for c in nb["cells"] if c["cell_type"] == "code"]
+    params = codes[0]
+    mine = {t.id for node in ast.walk(ast.parse(params)) if isinstance(node, ast.Assign) for t in node.targets
+            if isinstance(t, ast.Name)} | {"V3", "NEW"}
+    for src in codes[1:]:
+        bound = {t.id for node in ast.walk(ast.parse(src)) if isinstance(node, (ast.Assign, ast.AugAssign))
+                 for t in (node.targets if isinstance(node, ast.Assign) else [node.target]) if isinstance(t, ast.Name)}
+        assert not ({"V3C", "KEY", "V3", "NEW"} & bound), sorted({"V3C", "KEY", "V3", "NEW"} & bound)
+    assert "V3C" in mine
+
+
 def test_a_changed_template_stops_the_build(tmp_path):
     tpl = json.load(open(bp.TEMPLATE, encoding="utf-8"))
     src = bp.source(tpl, 6).replace("aoi = pit.sites.get(SITE)", "aoi = pit.sites.get(SITE, 1)")
