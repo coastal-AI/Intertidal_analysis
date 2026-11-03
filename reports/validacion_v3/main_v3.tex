@@ -49,7 +49,10 @@ cada fichero. Se enmascara el agua en el vuelo (parches planos de al menos 200\,
 10\,m de Sentinel-2. Fecha de verdad provisional: 15 de julio del año del vuelo.
 
 \textbf{Ventanas.} Para cada $n$ = 20, 40, 60, 80, 100 y 120, las $n$ escenas cribadas más cercanas a la fecha de
-verdad, simétricas en el tiempo; una ventana que el cubo no cubre entera no es alcanzable.
+verdad, simétricas en el tiempo. Si el cubo no admite la ventana centrada en la fecha de verdad (el archivo de
+Sentinel-2 empieza en julio de 2015), su centro se desplaza los días mínimos para que quepa, con la fecha de verdad
+dentro (Foz); el desplazamiento figura en la tabla de ventanas de cada verdad. Una ventana que no cabe de ningún modo
+no es alcanzable.
 
 \textbf{Píxeles.} Los de la extracción de producción con verdad dentro del rango del producto sin retardo
 ($\pm 0{,}25$\,m), y solo aquellos en los que ninguna clase domina la ventana: fracción de miradas mojadas entre
@@ -82,5 +85,25 @@ cuadrático medio, $\mathrm{MSE} = \overline{d}^{\,2} + ((1-\beta)\,s_t)^2 + s_e
 relieve y dispersión.
 
 \input{tables/maps.tex}
+
+\clearpage
+\section*{Mapas de cota sin verdad: Santander y Santoña}
+Su LiDAR se voló en pleamar, así que no hay puntuación: solo la cota de cada método, en la ventana de las escenas
+cribadas más cercanas al 15 de julio de 2024 ($n = 100$ en Santoña; $n = 40$ en Santander, cuyo cubo de 2023--2025
+solo tiene 51 escenas cribadas).
+
+\input{tables/elevation_maps.tex}
+
+\section*{Avisos sobre la verdad}
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+\item \textbf{Agua en el vuelo.} En el intermareal bajo el LiDAR mide la superficie del agua donde la había durante el
+vuelo, no el fondo. Se aprecia en los valores repetidos de la verdad baja (Villaviciosa, Foz), en el solape de las
+hojas 0010-3 y 0010-4 del Eo (difieren en el canal y coinciden en lo alto) y, sobre todo, en Mundaka: la 3.ª cobertura
+queda casi un metro por encima de la 2.ª en lo más bajo y coincide con ella en el terreno estable. La máscara de nivel
+de vuelo del diseño lo resolvería, pero necesita la hora del vuelo (las nubes de puntos LAZ la llevan).
+\item \textbf{Píxeles que no sigue la marea.} En Villaviciosa hay una zona (charcas o marisma con compuertas) donde
+MAREA-B, MAREA-S y SE dan cotas más de un metro por debajo del LiDAR; DEA y MAREA V0 se abstienen allí. Por eso el
+orden cambia entre los píxeles propios de cada método y los comunes.
+\end{itemize}
 
 \end{document}
