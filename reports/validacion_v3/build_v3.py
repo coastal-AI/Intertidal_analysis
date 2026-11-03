@@ -240,13 +240,17 @@ def maps_tex(data):
 def windows_tex(t, d):
     """The windows of a truth: half-width T, scenes before / after the truth date, first and last scene, pixels."""
     w = d[d.method == "MAREA"].sort_values("n")
-    lines = [r"\begin{tabular}{rrrrllr}", r"\toprule",
-             r"$n$ & $T$ (días) & antes & después & primera escena & última escena & píxeles $F$\\", r"\midrule"]
+    lines = [r"\begin{tabular}{rrrrrllr}", r"\toprule",
+             r"$n$ & $T$ (días) & centro desplazado & antes & después & primera escena & última escena & "
+             r"píxeles $F$\\", r"\midrule"]
     for _, r in w.iterrows():
         if r.status == "not reachable":
-            lines.append(rf"{int(r.n)} & \multicolumn{{6}}{{l}}{{no alcanzable: el cubo no cubre $[d-T, d+T]$}}\\")
+            lines.append(rf"{int(r.n)} & \multicolumn{{7}}{{l}}{{no alcanzable: ninguna ventana con la fecha de "
+                         r"verdad cabe en el cubo}\\")
         else:
-            lines.append(f"{int(r.n)} & {r.half_width_days:.0f} & {int(r.n_before)} & {int(r.n_after)} & "
+            shift = int(r.shift_days) if "shift_days" in r.index and np.isfinite(r.shift_days) else 0
+            moved = f"{shift:+d} d" if shift else "no"
+            lines.append(f"{int(r.n)} & {r.half_width_days:.0f} & {moved} & {int(r.n_before)} & {int(r.n_after)} & "
                          f"{r.first_date} & {r.last_date} & {br.thousands(r.n_F)}\\\\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     (TAB / f"{t}_windows.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")

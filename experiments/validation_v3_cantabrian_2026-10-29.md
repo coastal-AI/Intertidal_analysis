@@ -101,3 +101,9 @@ rule of the variants files. Santander and Santoña get elevation maps without sc
   SCL on the registry boxes (`download_cube_v3.py`, `BOXES` None: the registry polygon's box), and their production
   is the new sites' (EOT20 + the nearest IOC gauge, the box as the AOI). The maps are the elevations of the design's
   methods on the window of the 100 screened scenes nearest 2024-07-15, the middle of the period; no score.
+- 2026-11-03, on the first author's request after the Foz windows came out (only n = 20 reachable: the archive starts
+  in July 2015, a year before its truth): a window the cube cannot hold symmetric about the truth date d is centred
+  at the nearest date c that lets it fit, the days d + 1, d - 1, d + 2, ... (the later first), with d still inside
+  [c - T, c + T] (`experiments/v3/windows.py`, `fitting_window`). A window reachable about d does not move; a moved
+  one is reported with its centre and its shift c - d. It applies to every truth (Foz; Mundaka 2017 at the archive's
+  start and Mundaka 2024 at the cube's end, where they need it).

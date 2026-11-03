@@ -169,6 +169,44 @@ def symmetric_window(dates, truth_date, n, cover):
                 n_after=int(after[idx].sum()), reachable=bool(first <= d - half and d + half <= last))
 
 
+def fitting_window(dates, truth_date, n, cover):
+    """The design's amendment of 2026-11-03: `symmetric_window` about the truth date d when it is reachable; else the
+    same window about the nearest centre c that makes it reachable, the days d + 1, d - 1, d + 2, d - 2, ... (the later
+    first at the same distance) until the cube's span is used up, with d still inside [c - T, c + T]. A window the
+    archive's start (or the cube's end) leaves unreachable around d thus moves forward (backward) by the fewest days
+    that let the cube hold it; one that is reachable around d does not move.
+
+    Returns symmetric_window's dict about c (idx, half_width_days, reachable), with n_before and n_after counted
+    about the truth date d, plus centre (c, a 'YYYY-MM-DD' string) and shift_days (c - d, a whole number of days).
+    When no centre works: the window about d, reachable False, centre d, shift_days 0."""
+    t = _instants(dates, "dates")
+    d = _instants(truth_date, "truth_date")
+    if d.ndim:
+        raise ValueError(f"truth_date must be one date, got shape {d.shape}")
+    d = d[()].astype("datetime64[D]")
+    first, last = _cover(cover)
+    span = int((last.astype("datetime64[D]") - first.astype("datetime64[D]")) / np.timedelta64(1, "D"))
+
+    def about(c):
+        w = symmetric_window(t, c, n, cover)
+        sel = t[w["idx"]]
+        half = None if w["half_width_days"] is None else np.timedelta64(int(round(w["half_width_days"])), "D")
+        inside = half is not None and c - half <= d <= c + half
+        return dict(w, reachable=bool(w["reachable"] and inside), n_before=int((sel < d).sum()),
+                    n_after=int((sel > d).sum()), centre=str(c), shift_days=int((c - d) / np.timedelta64(1, "D")))
+
+    w = about(d)
+    if w["reachable"]:
+        return w
+    for k in range(1, span + 1):
+        for c in (d + np.timedelta64(k, "D"), d - np.timedelta64(k, "D")):
+            if first <= c <= last:
+                v = about(c)
+                if v["reachable"]:
+                    return v
+    return w
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  the class-balance mask
 # ─────────────────────────────────────────────────────────────────────────────

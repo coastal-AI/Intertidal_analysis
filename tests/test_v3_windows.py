@@ -516,3 +516,56 @@ def test_the_constants_and_defaults_are_the_designs():
     assert "For each n in (20, 40, 60, 80, 100, 120)" in text
     assert "(sorted by |t - d|, ties by the earlier t)" in text and "covers [d - T, d + T] entirely" in text
     assert "0.10 <= f <= 0.90" in text and "q = 0, 0.05, 0.10, 0.15 and 0.20" in text
+
+
+# ── fitting_window: the centre moved the fewest days (the design's amendment of 2026-11-03) ──
+
+def _days(start, n, step=3):
+    return (np.datetime64(start) + np.arange(n) * step).astype("datetime64[D]").astype(str)
+
+
+def test_fitting_window_does_not_move_a_reachable_window():
+    dates = _days("2019-01-01", 300)
+    cover = (dates[0], dates[-1])
+    a = win.symmetric_window(dates, "2020-07-15", 60, cover)
+    b = win.fitting_window(dates, "2020-07-15", 60, cover)
+    assert a["reachable"] and b["reachable"] and b["shift_days"] == 0 and b["centre"] == "2020-07-15"
+    assert np.array_equal(a["idx"], b["idx"])
+
+
+def test_fitting_window_moves_forward_from_the_archives_start_by_the_fewest_days():
+    dates = _days("2015-07-08", 400)                         # the archive starts 2015-07-08
+    cover = (dates[0], dates[-1])
+    d = "2015-09-01"
+    assert not win.symmetric_window(dates, d, 80, cover)["reachable"]
+    w = win.fitting_window(dates, d, 80, cover)
+    assert w["reachable"] and w["shift_days"] > 0
+    c = np.datetime64(w["centre"])
+    assert not win.symmetric_window(dates, str(c - np.timedelta64(1, "D")), 80, cover)["reachable"], "not the fewest days"
+    T = np.timedelta64(int(w["half_width_days"]), "D")
+    assert c - T >= np.datetime64(cover[0]) and c - T <= np.datetime64(d) <= c + T, "the truth date stays inside"
+    sel = dates[w["idx"]]
+    assert w["n_before"] == int((sel < d).sum()) and w["n_after"] == int((sel > d).sum())
+
+
+def test_fitting_window_moves_backward_from_the_cubes_end():
+    dates = _days("2022-01-01", 300)
+    cover = (dates[0], dates[-1])
+    d = str(np.datetime64(dates[-1]) - np.timedelta64(20, "D"))
+    w = win.fitting_window(dates, d, 100, cover)
+    assert w["reachable"] and w["shift_days"] < 0
+
+
+def test_fitting_window_prefers_the_later_centre_on_a_tie_and_refuses_the_impossible():
+    dates = _days("2015-07-08", 30)
+    cover = (dates[0], dates[-1])
+    w = win.fitting_window(dates, "2015-07-08", 31, cover)
+    assert not w["reachable"] and w["shift_days"] == 0
+    # symmetric dates: centres d + k and d - k both fit at the same k; the later one is taken
+    dates = _days("2020-01-01", 101, step=1)
+    cover = (dates[0], dates[-1])
+    mid = dates[50]
+    w = win.fitting_window(dates, mid, 101, cover)
+    assert w["reachable"] and w["shift_days"] == 0
+    w = win.fitting_window(dates, dates[49], 101, cover)
+    assert w["reachable"] and w["shift_days"] == 1

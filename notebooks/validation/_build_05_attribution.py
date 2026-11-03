@@ -563,22 +563,25 @@ windows = []
 for row in ROWS:
     if row["year"] not in ROW_YEARS:
         continue
-    if V3KEY:    # v3: the n screened scenes nearest the truth date, a window symmetric in time inside the cube
+    if V3KEY:    # v3: the n screened scenes nearest the truth date, a window symmetric in time inside the cube;
+                 # one the cube cannot hold about d is centred at the nearest date that lets it (amendment 2026-11-03)
         cover = (cube.dates[0], cube.dates[-1])
         for n in NS:
-            sw = v3w.symmetric_window(S_dates, row["end"], n, cover)
+            sw = v3w.fitting_window(S_dates, row["end"], n, cover)
             win = dict(site=row["site"], year=row["year"], end=row["end"], truth_date=row["end"], n=n,
                        px=row["px"], available=len(S_dates), scenes=sw["idx"] if sw["reachable"] else None,
-                       half_width_days=sw["half_width_days"], n_before=sw["n_before"], n_after=sw["n_after"])
+                       half_width_days=sw["half_width_days"], n_before=sw["n_before"], n_after=sw["n_after"],
+                       centre=sw["centre"], shift_days=sw["shift_days"])
             if win["scenes"] is None:
-                win["why"] = (f"{len(S_dates)} screened scenes: the window of {n} around {row['end']} is not "
-                              f"inside the cube's {cover[0]} → {cover[1]}")
+                win["why"] = (f"{len(S_dates)} screened scenes: no window of {n} holding the truth date "
+                              f"{row['end']} fits in the cube's {cover[0]} → {cover[1]}")
                 print(f"{row['site']:14s} n={n:3d}: not reachable, {win['why']}")
             else:
                 d = S_dates[win["scenes"]]
                 win["end"] = str(d[-1])                # the window's last scene (the level series reach it)
                 per_year = dict(sorted(Counter(str(x)[:4] for x in d).items()))
-                print(f"{row['site']:14s} n={n:3d}: {d[0]} → {d[-1]}  T = {sw['half_width_days']:.0f} d, "
+                moved = f", centred {sw['centre']} ({sw['shift_days']:+d} d)" if sw["shift_days"] else ""
+                print(f"{row['site']:14s} n={n:3d}: {d[0]} → {d[-1]}  T = {sw['half_width_days']:.0f} d{moved}, "
                       f"{sw['n_before']} before / {sw['n_after']} after the truth date; per year {per_year}")
             windows.append(win)
         continue
@@ -1529,7 +1532,8 @@ for win in windows:
                                    else v) for k, v in d.items()} for mid, d in EXTRA_PX[key].items()}
         for r in rows:
             r.update(truth_date=win["truth_date"], n_F=len(win["px"]), n_F_clear=len(win["px_q0"]), q=Q_CLASS,
-                     half_width_days=win["half_width_days"], n_before=win["n_before"], n_after=win["n_after"])
+                     half_width_days=win["half_width_days"], n_before=win["n_before"], n_after=win["n_after"],
+                     centre=win["centre"], shift_days=win["shift_days"])
         pd.DataFrame(SENS).to_csv(f"{OUT}/{TAG}_class_sensitivity.csv", index=False)
     t_true = truth[win["px"]]
     for r in rows:
