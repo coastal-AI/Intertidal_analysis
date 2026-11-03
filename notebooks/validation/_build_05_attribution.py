@@ -164,8 +164,9 @@ if V3KEY:
     EXTRA = "none"                                         # every scene of a v3 window is in its cube
     if C3.get("maps_only"):                                # Santander, Santoña: elevation maps, no truth, no mask
         Q_CLASS = 0.0
-    if not os.environ.get("NB_METHODS"):
-        METHODS = V3_METHODS
+    if not os.environ.get("NB_METHODS"):          # the design's methods, then four diagnostics: the pairs with and
+        METHODS = V3_METHODS + ["MAREA_nodelay", "MAREA_B_nodelay", "E4_delay", "MAREA_B_abst"]   # without the delay
+                                                   # (section 6) and MAREA-B's 95 % interval (the uncertainty maps)
 P = SITES[V3KEY or SITE]
 TAG = V3KEY or SITE                                        # the outputs' name: the truth's key in v3 (Urdaibai has two)
 NS = [int(v) for v in NS.split(",")] if NS else list(P["ns"])
@@ -2212,7 +2213,7 @@ if V3KEY:
     map_ns = sorted({n for n in (100, done_ns[0]) if n in done_ns}) if done_ns else []
     show = [m for m in ORDER if m in V3_METHODS]
     picked = {n: {m: EST[(V3KEY, n)][m] for m in show if m in EST[(V3KEY, n)]} for n in map_ns}
-    lim = max((em.error_limit(truth[window_of((V3KEY, n))["px"]], picked[n]) for n in map_ns), default=None)
+    lim = em.LIMIT_M                               # one scale for every site, method and window (±0.5 m)
     MAPS = []
     for n in map_ns:
         px = window_of((V3KEY, n))["px"]
@@ -2229,6 +2230,42 @@ if V3KEY:
         fig.savefig(f"{OUT}/{TAG}_n{n}_map_decomposition.png")
         plt.show()
         em.write_error_geotiffs(em.error_rasters((H, W), keep[px], t, est), transform, crs, f"{OUT}/{TAG}_n{n}_errors")
+        # the uncertainty of the elevation: MAREA-B's 95 % profile-likelihood interval (V13) and its sigma (how
+        # gradual the wet/dry transition is), the spread of the design's methods, and MAREA-B's |error| beside them
+        ex = EXTRA_PX[(V3KEY, n)]
+        unc = {}
+        if "MAREA_B_abst" in ex:
+            unc["95 % interval of MAREA-B (m)"] = ex["MAREA_B_abst"]["z_hi"] - ex["MAREA_B_abst"]["z_lo"]
+        if "MAREA_B" in ex and "sigma" in ex["MAREA_B"]:
+            unc["sigma of MAREA-B's transition (m)"] = ex["MAREA_B"]["sigma"]
+        stack = np.vstack([est[m] for m in est])
+        with np.errstate(invalid="ignore"):
+            unc["spread of the methods, SD (m)"] = np.where(np.isfinite(stack).sum(0) >= 3, np.nanstd(stack, axis=0), np.nan)
+        if "MAREA_B" in est:
+            unc["|p − t| of MAREA-B (m)"] = np.abs(est["MAREA_B"] - t)
+        fig = em.figure_value_maps((H, W), keep[px], unc, vmax=0.6, cbar_label="m", ncols=len(unc),
+                                   title=f"{V3KEY}, n = {n}: the uncertainty of the elevation")
+        fig.savefig(f"{OUT}/{TAG}_n{n}_uncertainty_maps.png")
+        plt.show()
+        err = np.abs(est["MAREA_B"] - t) if "MAREA_B" in est else None
+        if err is not None:                        # does the uncertainty predict the error? |error| by its deciles
+            fig, axes_u = plt.subplots(1, 3, figsize=(10, 2.8), layout="constrained")
+            for ax_u, (name, u) in zip(axes_u, [kv for kv in unc.items() if not kv[0].startswith("|p")]):
+                ok = np.isfinite(u) & np.isfinite(err)
+                if ok.sum() < 100:
+                    continue
+                edges = np.unique(np.percentile(u[ok], np.linspace(0, 100, 11)))
+                b = np.clip(np.digitize(u[ok], edges[1:-1]), 0, len(edges) - 2)
+                mid = [np.median(u[ok][b == k]) for k in range(len(edges) - 1)]
+                med = [np.median(err[ok][b == k]) for k in range(len(edges) - 1)]
+                p90 = [np.percentile(err[ok][b == k], 90) for k in range(len(edges) - 1)]
+                ax_u.plot(mid, med, "o-", color=PAL["accent"], label="median |error|")
+                ax_u.plot(mid, p90, "s--", color=PAL["deep"], label="90th percentile")
+                ax_u.set(xlabel=name, ylabel="|p − t| of MAREA-B (m)")
+            axes_u[0].legend()
+            fig.suptitle(f"{V3KEY}, n = {n}: MAREA-B's error by deciles of each uncertainty", fontsize=9)
+            fig.savefig(f"{OUT}/{TAG}_n{n}_uncertainty_vs_error.png")
+            plt.show()
     if MAPS:
         maps_tab = pd.concat(MAPS, ignore_index=True)
         maps_tab.to_csv(f"{OUT}/{TAG}_map_decomposition.csv", index=False)

@@ -69,7 +69,10 @@ import pandas as pd
 MIN_PX = 30                   # notebook 01's scores: no score on fewer pixels
 LIMIT_PERCENTILE = 98         # the maps' limit L: this percentile of |p - t| over every method's scored pixels,
 LIMIT_STEP = 0.05             # rounded up to a multiple of this (m)
-CMAP = "RdBu_r"               # the diverging scale of the maps, centred on 0
+LIMIT_M = 0.5                 # the maps' default colour limit (m): -0.5 to +0.5 m for every site and method, so the
+                              # maps compare across sites; beyond it the extremes of the scale (the first author's
+                              # request of 2026-11-03: a narrower scale than the 98th percentile's)
+CMAP = "PuOr_r"               # the diverging scale of the maps, centred on 0: purple below the truth, orange above
 MAREA_FAMILY = ("MAREA", "MAREA_ndwi0", "MAREA_B", "MAREA_BL", "MAREA_S", "MAREA_Ss")
                               # MAREA, MAREA-0, MAREA-B, MAREA-BL and MAREA-S by their ids in notebooks 01 and 05:
                               # the design's MAREA-S is V15s (MAREA_Ss); V15 (MAREA_S, the band lags) is kept too
@@ -77,7 +80,9 @@ MAREA_FAMILY = ("MAREA", "MAREA_ndwi0", "MAREA_B", "MAREA_BL", "MAREA_S", "MAREA
 ACCENT = "#B5523B"            # pyintertidal/palette.py ACCENT: the MAREA family
 INK = "#2B2B2B"               # INK: titles and labels
 SECONDARY = "#6B6B6B"         # SECONDARY: ticks, frames, the RMSE next to each bar
-LIGHT_GREY = "#B8B2A3"        # LIGHT_GREY: the pixels not scored
+LIGHT_GREY = "#B8B2A3"        # LIGHT_GREY: grid lines
+NOT_SCORED = "#34383C"        # the frame outside the scored intertidal pixels: dark, against the scale's white zero
+NO_VALUE = "#A9ADB0"          # a scored pixel where the method has no value
 COMPONENTS = (("offset²", "offset", "#C9A66B"),      # SAND        (notebook 05's colours of the three terms)
               ("relief²", "relief", "#2F5D7C"),      # DEEP_WATER
               ("scatter²", "scatter", "#8DB3C7"))    # SHALLOW_WATER
@@ -230,32 +235,22 @@ def _title(label, s):
             f"cRMSE {_fmt(s['crmse'], '.3f')} m")
 
 
-def figure_error_maps(shape, px, truth, estimates, labels=None, family=MAREA_FAMILY, limit=None, title=None,
-                      ncols=None):
-    """One map of p - t per method (the module docstring's maps), as a matplotlib figure. `limit`: the colour limit L
-    (default error_limit of these estimates); `title`: the figure's title; `ncols`: the maps per row (default from the
-    shape of the bounding box)."""
+def _panel_maps(shape, px, layers, titles, cmap, norm, cbar_label, family, title=None, ncols=None, extend="both"):
+    """One map per layer ({name: value at each scored pixel}) on the bounding box of the scored pixels: the frame
+    outside them in NOT_SCORED, a scored pixel without a value in NO_VALUE, one colour bar. `titles`: {name: text}."""
     import matplotlib.pyplot as plt
-    from matplotlib import colormaps
     from matplotlib.cm import ScalarMappable
-    from matplotlib.colors import Normalize
+    from matplotlib.colors import to_rgba
     from matplotlib.patches import Patch
 
     H, W, px = _grid(shape, px)
-    t, est = _values(truth, estimates, len(px))
-    if not est or not len(px):
-        raise ValueError("nothing to map: no method or no scored pixel")
-    labels, family = labels or {}, _family(family)
+    if not layers or not len(px):
+        raise ValueError("nothing to map: no layer or no scored pixel")
     rows, cols = px // W, px % W
     r0, r1, c0, c1 = int(rows.min()), int(rows.max()), int(cols.min()), int(cols.max())
     bh, bw = r1 - r0 + 1, c1 - c0 + 1
-    L = error_limit(t, est) if limit is None else float(limit)
-    if not L > 0:
-        raise ValueError(f"the colour limit must be positive, not {limit}")
-    norm = Normalize(-L, L)
-    cmap = colormaps[CMAP].with_extremes(bad=LIGHT_GREY)
-
-    n, aspect = len(est), bw / bh
+    cmap = cmap.with_extremes(bad=(0, 0, 0, 0))
+    n, aspect = len(layers), bw / bh
     if ncols is None:
         ncols = int(np.clip(round(math.sqrt(n * 1.5 / aspect)), 1, n))
         ncols = math.ceil(n / math.ceil(n / ncols))         # the same rows, filled evenly
@@ -264,12 +259,17 @@ def figure_error_maps(shape, px, truth, estimates, labels=None, family=MAREA_FAM
     fig, axes = plt.subplots(nrows, ncols, squeeze=False, layout="constrained",
                              figsize=(ncols * PANEL_IN + 1.0, nrows * (height + 0.5) + 0.4 + 0.3 * bool(title)))
     extent = (c0 - 0.5, c1 + 0.5, r1 + 0.5, r0 - 0.5)       # grid columns and rows, row 0 at the top
-    for ax, (m, p) in zip(axes.flat, est.items()):
+    scored = np.zeros((bh, bw), bool)
+    scored[rows - r0, cols - c0] = True
+    for ax, (m, v) in zip(axes.flat, layers.items()):
         img = np.full((bh, bw), np.nan, np.float32)
-        img[rows - r0, cols - c0] = _error(p, t)
-        ax.imshow(img, cmap=cmap, norm=norm, extent=extent, interpolation="antialiased")
-        ax.set_title(_title(labels.get(m, m), scores(p, t)), loc="left", fontsize=7.5, fontweight="bold",
-                     color=ACCENT if m in family else INK)
+        img[rows - r0, cols - c0] = v
+        ground = np.empty((bh, bw, 4), np.float32)
+        ground[:] = to_rgba(NOT_SCORED)
+        ground[scored & ~np.isfinite(img)] = to_rgba(NO_VALUE)
+        ax.imshow(ground, extent=extent, interpolation="nearest")
+        ax.imshow(img, cmap=cmap, norm=norm, extent=extent, interpolation="nearest")
+        ax.set_title(titles.get(m, m), loc="left", fontsize=7.5, fontweight="bold", color=ACCENT if m in family else INK)
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
@@ -277,16 +277,63 @@ def figure_error_maps(shape, px, truth, estimates, labels=None, family=MAREA_FAM
             spine.set_linewidth(0.5)
     for ax in axes.flat[n:]:
         ax.set_axis_off()
-    cb = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=axes, extend="both", shrink=0.8, aspect=30)
-    cb.set_label("p − t (m)", fontsize=8, color=INK)
+    cb = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=axes, extend=extend, shrink=0.8, aspect=30)
+    cb.set_label(cbar_label, fontsize=8, color=INK)
     cb.ax.tick_params(labelsize=7, colors=SECONDARY)
     cb.outline.set_edgecolor(SECONDARY)
     cb.outline.set_linewidth(0.5)
-    fig.legend(handles=[Patch(facecolor=LIGHT_GREY, edgecolor="none", label="not scored, or no value")],
-               loc="outside lower left", frameon=False, fontsize=7)
+    fig.legend(handles=[Patch(facecolor=NOT_SCORED, edgecolor="none", label="not scored (outside the scored intertidal)"),
+                        Patch(facecolor=NO_VALUE, edgecolor="none", label="scored, no value from the method")],
+               loc="outside lower left", frameon=False, fontsize=7, ncol=2)
     if title:
         fig.suptitle(title, x=0.01, ha="left", fontsize=9, fontweight="bold", color=INK)
     return fig
+
+
+def figure_error_maps(shape, px, truth, estimates, labels=None, family=MAREA_FAMILY, limit=LIMIT_M, title=None,
+                      ncols=None):
+    """One map of p - t per method (the module docstring's maps), as a matplotlib figure. `limit`: the colour limit L
+    (default LIMIT_M = 0.5 m for every site and method; None: error_limit of these estimates); `title`: the figure's
+    title; `ncols`: the maps per row (default from the shape of the bounding box)."""
+    from matplotlib import colormaps
+    from matplotlib.colors import Normalize
+
+    H, W, px = _grid(shape, px)
+    t, est = _values(truth, estimates, len(px))
+    if not est or not len(px):
+        raise ValueError("nothing to map: no method or no scored pixel")
+    labels = labels or {}
+    L = error_limit(t, est) if limit is None else float(limit)
+    if not L > 0:
+        raise ValueError(f"the colour limit must be positive, not {limit}")
+    layers = {m: _error(p, t) for m, p in est.items()}
+    titles = {m: _title(labels.get(m, m), scores(p, t)) for m, p in est.items()}
+    return _panel_maps((H, W), px, layers, titles, colormaps[CMAP], Normalize(-L, L), "p − t (m)", _family(family),
+                       title=title, ncols=ncols)
+
+
+def figure_value_maps(shape, px, layers, labels=None, family=MAREA_FAMILY, cmap="magma_r", vmin=0.0, vmax=None,
+                      cbar_label="", title=None, ncols=None):
+    """One map per layer of a quantity on the scored pixels ({name: value per scored pixel}), e.g. the uncertainty of
+    each method's elevation: a sequential scale from vmin to vmax (default the 98th percentile of every layer's
+    values), the same background as the error maps. Each title gives the layer's label and its median."""
+    from matplotlib import colormaps
+    from matplotlib.colors import Normalize
+
+    H, W, px = _grid(shape, px)
+    labels = labels or {}
+    vals = {m: np.asarray(v, float) for m, v in layers.items()}
+    for m, v in vals.items():
+        if v.shape != (len(px),):
+            raise ValueError(f"{m}: shape {v.shape} for {len(px)} scored pixels")
+    allv = np.concatenate([v[np.isfinite(v)] for v in vals.values()] or [np.empty(0)])
+    if vmax is None:
+        vmax = float(np.percentile(allv, 98)) if len(allv) else 1.0
+    med = {m: float(np.nanmedian(v)) if np.isfinite(v).any() else np.nan for m, v in vals.items()}
+    titles = {m: labels.get(m, m) + "\n" + f"median {_fmt(med[m], '.3f')} · {int(np.isfinite(v).sum()):,} px"
+              for m, v in vals.items()}
+    return _panel_maps((H, W), px, vals, titles, colormaps[cmap], Normalize(vmin, vmax), cbar_label, _family(family),
+                       title=title, ncols=ncols, extend="max")
 
 
 def figure_decomposition(table, pixels="common", title=None, ax=None):

@@ -240,19 +240,25 @@ def test_the_limit_is_the_98th_percentile_rounded_up():
 def test_maps_share_the_limits_and_put_each_error_at_its_pixel():
     shape, px, t, est = site()
     H, W = shape
-    fig = em.figure_error_maps(shape, px, t, est, labels=LABELS, title="synthetic, n = 100")
+    fig = em.figure_error_maps(shape, px, t, est, labels=LABELS, title="synthetic, n = 100", limit=None)
     fig.savefig(io.BytesIO(), format="png")
-    L = em.error_limit(t, est)
+    L = em.error_limit(t, est)                                            # limit=None: the 98th percentile's
     rasters = em.error_rasters(shape, px, t, est)
     rows, cols = px // W, px % W
     r0, r1, c0, c1 = rows.min(), rows.max(), cols.min(), cols.max()
     axes = map_axes(fig)
     assert len(axes) == len(est)
     for ax, (m, p) in zip(axes, est.items()):
-        im = ax.images[0]
+        ground, im = ax.images                                            # the background, then the errors
         assert im.get_clim() == (-L, L)                                   # the same limits, centred on 0
-        assert im.cmap.name == "RdBu_r"
-        assert np.allclose(im.cmap.get_bad(), to_rgba(em.LIGHT_GREY))     # the pixels not scored
+        assert im.cmap.name.startswith("PuOr_r")
+        assert im.cmap.get_bad()[3] == 0                                  # NaN transparent: the background shows
+        g = ground.get_array()
+        scored = np.zeros(g.shape[:2], bool)
+        scored[rows - r0, cols - c0] = True
+        nov = scored & ~np.isfinite(rasters[m][r0:r1 + 1, c0:c1 + 1])
+        assert np.allclose(g[~scored][:, :3], to_rgba(em.NOT_SCORED)[:3])  # outside the scored pixels: dark
+        assert np.allclose(g[nov][:, :3], to_rgba(em.NO_VALUE)[:3]) if nov.any() else True
         shown = np.ma.filled(im.get_array().astype(float), np.nan)
         np.testing.assert_array_equal(shown, rasters[m][r0:r1 + 1, c0:c1 + 1])
         assert ax.get_xlim() == (c0 - 0.5, c1 + 0.5) and ax.get_ylim() == (r1 + 0.5, r0 - 0.5)
@@ -282,7 +288,7 @@ def test_maps_nan_handling_and_options():
     W = shape[1]
     r0, c0 = (px // W).min(), (px % W).min()
     for ax, m in zip(axes, est):
-        im = ax.images[0]
+        im = ax.images[-1]
         assert im.get_clim() == (-0.4, 0.4)
         shown = np.ma.filled(im.get_array().astype(float), np.nan)
         assert np.isnan(shown[px[:10] // W - r0, px[:10] % W - c0]).all()
@@ -291,7 +297,7 @@ def test_maps_nan_handling_and_options():
     titles = {m: left_title(ax).get_text() for ax, m in zip(axes, est)}
     assert titles["E4"].endswith("RMSE n/a · bias n/a · cRMSE n/a m")
     assert titles["E5c"].endswith("no value")
-    assert np.isnan(np.ma.filled(axes[-1].images[0].get_array().astype(float), np.nan)).all()
+    assert np.isnan(np.ma.filled(axes[-1].images[-1].get_array().astype(float), np.nan)).all()
     with pytest.raises(ValueError, match="positive"):
         em.figure_error_maps(shape, px, t, est, limit=0)
 
@@ -369,7 +375,7 @@ def test_constants_and_colours_are_the_palettes():
     assert em.ACCENT == pal.ACCENT == "#B5523B"
     assert (em.INK, em.SECONDARY, em.LIGHT_GREY) == (pal.INK, pal.SECONDARY, pal.LIGHT_GREY)
     assert [c for _, _, c in em.COMPONENTS] == [pal.SAND, pal.DEEP_WATER, pal.SHALLOW_WATER]
-    assert (em.MIN_PX, em.LIMIT_PERCENTILE, em.LIMIT_STEP, em.CMAP) == (30, 98, 0.05, "RdBu_r")
+    assert (em.MIN_PX, em.LIMIT_PERCENTILE, em.LIMIT_STEP, em.CMAP, em.LIMIT_M) == (30, 98, 0.05, "PuOr_r", 0.5)
     assert em.MAREA_FAMILY[:4] == ("MAREA", "MAREA_ndwi0", "MAREA_B", "MAREA_BL") and "MAREA_Ss" in em.MAREA_FAMILY
 
 
@@ -383,3 +389,17 @@ def test_figures_leave_matplotlibs_settings_alone():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_the_default_limit_is_the_fixed_half_metre_and_value_maps_draw():
+    shape, px, t, est = site(seed=7)
+    fig = em.figure_error_maps(shape, px, t, est)
+    for ax in map_axes(fig):
+        assert ax.images[-1].get_clim() == (-0.5, 0.5)
+    layers = {m: np.abs(p - t) for m, p in est.items()}
+    fig = em.figure_value_maps(shape, px, layers, labels=LABELS, vmax=0.3, cbar_label="|p - t| (m)", title="x")
+    fig.savefig(io.BytesIO(), format="png")
+    axes = map_axes(fig)
+    assert len(axes) == len(layers) and all(ax.images[-1].get_clim() == (0.0, 0.3) for ax in axes)
+    with pytest.raises(ValueError, match="scored pixels"):
+        em.figure_value_maps(shape, px, {"a": np.zeros(3)})
