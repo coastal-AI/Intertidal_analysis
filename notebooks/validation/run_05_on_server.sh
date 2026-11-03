@@ -9,7 +9,8 @@
 #   NB_NS=125,100,75 NB_OUT=results/attribution_nb_conf NB_NTABLES=results/fixedcfg_nb_conf NB_LOG=logs/v2/claude/nb05_conf \
 #     bash notebooks/validation/run_05_on_server.sh escalda wadden
 #
-# Validation v3: NB_V3=<truth key> (experiments/v3/sites.py) with the site as argument, one truth per run.
+# Validation v3: NB_V3=<truth key> (experiments/v3/sites.py) with the site as argument, one truth per run;
+# the maps-only sites with NB_NOTEBOOK=v3_maps_site.ipynb.
 #
 # Passed through to the notebook when set: NB_V3, NB_Q, NB_NS, NB_METHODS, NB_EXTRA, NB_NTABLES, NB_FIRST, NB_BED, NB_ROW_YEARS,
 # MAREA_DEA_TMP, OMP_NUM_THREADS. Executed copies (and HTML when nbconvert can) go to results/attribution_nb/ (NB_OUT),
@@ -74,7 +75,7 @@ for s in $SITES; do
   (
     t0=$(date +%s)
     tag=${NB_V3:-$s}                                     # a v3 run (NB_V3): its files are named by the truth's key
-    NB_SITE=$s execute "$NB/05_error_attribution_site.ipynb" "$OUT/05_$tag.executed.ipynb" "$LOG/05_$tag.log"
+    NB_SITE=$s execute "$NB/${NB_NOTEBOOK:-05_error_attribution_site.ipynb}" "$OUT/05_$tag.executed.ipynb" "$LOG/05_$tag.log"
     rc=$?
     to_html "$OUT/05_$tag.executed.ipynb" "$LOG/05_$tag.log"
     echo "$tag $([ $rc -eq 0 ] && echo ok || echo FAILED) ($(( ($(date +%s) - t0) / 60 )) min) $(date -Is)" >> "$STATUS"

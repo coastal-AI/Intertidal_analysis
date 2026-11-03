@@ -160,8 +160,10 @@ if V3KEY:
                     nodelay=(f"{C3['out']}/comparison_{ptag}/products.npz", "z_plain"), record_period=C3["period"])
     SITES[V3KEY] = dict(cache=C3["cube"], overpass=C3["overpass"], period=C3["period"], n_gauges=C3["n_gauges"],
                         judges=C3["judges"], mouth_side=C3["mouth_side"], truth_years=[int(C3["truth_date"][:4])],
-                        ns=v3w.NS, **prod)
+                        ns=C3.get("ns", v3w.NS), **prod)
     EXTRA = "none"                                         # every scene of a v3 window is in its cube
+    if C3.get("maps_only"):                                # Santander, Santoña: elevation maps, no truth, no mask
+        Q_CLASS = 0.0
     if not os.environ.get("NB_METHODS"):
         METHODS = V3_METHODS
 P = SITES[V3KEY or SITE]
@@ -487,7 +489,12 @@ def vaklodingen(year):
 ''')
 
 code(r'''
-if V3KEY:        # v3: the PNOA DTM truth on the cube's grid (experiments/v3/pnoa_dtm_truth.py), read as it is
+if V3KEY and C3.get("maps_only"):   # maps only: no truth; F is set below from the production's mapped pixels
+    truth = np.full(len(keep), np.nan)
+    group = np.full(len(keep), ROWS[0]["year"])
+    survey, TRUTH_META = group.copy(), None
+    print(f"{V3KEY}: maps only, no truth")
+elif V3KEY:      # v3: the PNOA DTM truth on the cube's grid (experiments/v3/pnoa_dtm_truth.py), read as it is
     import rasterio
     with rasterio.open(C3["truth"]) as r:
         assert (r.height, r.width) == (H, W), f"{C3['truth']} is {r.height} x {r.width}, the cube {H} x {W}"
@@ -534,6 +541,13 @@ if len(F) > MAX_PX:                                    # v19's seeded subsample:
 for row in ROWS:
     row["px"] = F[group[F] == row["year"]]
     print(f"row {row['site']:12s}: F = {len(row['px']):,} pixels")
+''')
+
+code(r'''
+if V3KEY and C3.get("maps_only"):   # maps only: every pixel the production's no-delay inversion maps
+    F = np.flatnonzero(np.isfinite(z_nodelay))
+    ROWS[0]["px"] = F
+    print(f"{V3KEY}: maps on the {len(F):,} pixels of the production's no-delay product")
 ''')
 
 md(r"""

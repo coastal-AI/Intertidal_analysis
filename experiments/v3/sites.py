@@ -16,7 +16,7 @@ from __future__ import annotations
 import glob
 import os
 
-from experiments.download_cube_v3 import BOXES, merged_path, overpass_path
+from experiments.download_cube_v3 import BOXES, box as download_box, merged_path, overpass_path
 
 TRUTH_ROOT = "data_v4/truth/pnoa_v3"
 
@@ -49,8 +49,18 @@ V3["villaviciosa_2020"] = {
     "sheets_dir": f"{TRUTH_ROOT}/villaviciosa", "truth_date": "2020-07-15",
     "truth": f"{TRUTH_ROOT}/villaviciosa_cob2_2020_10m.tif", "existing_production": True,
 }
+#: maps only (the design's amendment of 2026-11-03: their LiDAR was flown at high water): the 2023-2025 cubes, the
+#: new sites' production, the window of the 100 screened scenes nearest 2024-07-15, no truth and no score
+for _site, _gauge, _side in (("santander", "san2", "north"), ("santona", "san2", "any")):
+    _key, _c = _new(_site, (2023, 2025), 2024, None, _gauge)
+    _key = f"{_site}_maps"
+    _c.update(key=_key, out=f"products_v3_{_key}_10m", box=download_box(_site), mouth_side=_side, sheets_dir=None, truth=None,
+              maps_only=True, ns=(100,))
+    V3[_key] = _c
 #: the keys whose production notebooks/validation/v3_production_site.ipynb makes
 NEW = tuple(k for k, v in V3.items() if not v.get("existing_production"))
+#: the keys with a LiDAR truth (the others are maps only)
+TRUTHS = tuple(k for k, v in V3.items() if not v.get("maps_only"))
 
 
 def sheets(key):
