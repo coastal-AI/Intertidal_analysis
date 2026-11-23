@@ -4,7 +4,7 @@
 The package is used from the repository root (``marea.reconstruct`` reads ``configs/m2.yaml`` next to the package),
 so the tests import it from here rather than from an installed copy.
 
-    python -X utf8 -m pytest -q -p no:cacheprovider tests/                  # everything (about 2 minutes)
+    python -X utf8 -m pytest -q -p no:cacheprovider tests/                  # everything (about a minute)
     python -X utf8 -m pytest -q -p no:cacheprovider -m "not slow" tests/    # without the offline reproduction
 
 What the tests cover: test_publication_guard (nothing private in the repository; run it before every commit),

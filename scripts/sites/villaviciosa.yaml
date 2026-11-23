@@ -46,7 +46,7 @@ record:                            # step 5
   which: latest                    # the latest epoch: 2023-2025
 
 marea:                             # steps 7-10: pyintertidal.marea.reconstruct
-  mouth_side: any                  # the sea touches the frame on one side only
+  mouth_side: any                  # the open sea touches the north and east edges, and nothing else does
   min_scenes: 40                   # the product's floor (reconstruct's own default is 80)
   quality_min_bracket: 0           # the product predates the quality rule (reconstruct's default is 3)
   band_km: 3.0                     # section length and smoothing bandwidth (km)

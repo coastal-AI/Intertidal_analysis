@@ -20,7 +20,8 @@ What each function does (the step numbers of METHOD.md, section 10):
 
 * :func:`extract` — step 4: the looks (NDWI and a clear flag) of every
   intertidal pixel, and the permanent sea, in two streaming passes.
-* :func:`reconstruct` — steps 6-10 and the hypsometry: the mouth, the
+* :func:`reconstruct` — steps 7–10 and the hypsometry of step 11; it reads
+  the tide (step 6) itself only without a ``boundary``: the mouth, the
   distance ``s``, the 3-km sections, one delay per section with a bootstrap
   interval, the delay of every pixel, and :func:`invert_series` per delay.
   Writes ``marea.npz``, ``result.json`` and ``figure.png``.
@@ -87,20 +88,22 @@ CLEAR = (4, 5, 6, 7)
 #: Scenes read per streaming block in :func:`extract` (memory only).
 T_CHUNK = 40
 TAU_DETECT_MIN = 0.0      # no detection threshold: the fitted lag of every
-                          # band is applied as measured (a fixed cut-off was
-                          # an artefact; the matched null is reported as the
-                          # significance band, not used as a gate). Negative
+                          # band is applied as measured (a fixed cut-off
+                          # would set small but real delays to 0). Negative
                           # lags are clipped to 0 by causality, band by band.
                           # With 0 the test |tau| > TAU_DETECT_MIN in
-                          # reconstruct changes nothing.
+                          # reconstruct changes nothing; the constant and
+                          # reconstruct's tau_detect_min stay so that older
+                          # calls still run.
 #: Per-pixel quality rule (2026-10-06): an
 #: elevation is kept only if it is INTERPOLATED from the pixel's own record,
 #: i.e. at least this many clear observations were taken with the (lagged)
 #: water level below it and as many above it. Fewer than 3 on a side cannot
 #: tell a wet/dry transition from one misclassified or mislevelled scene
 #: (non-tidal residual ~0.13 m). It removes elevations pinned to the edge of
-#: the sampled range — the lowest inner flats of the Wadden when the lag
-#: moves the record off low water. Applied to MAREA and no delay alike.
+#: the sampled range, such as the lowest inner flats of a long estuary when
+#: the delay moves the record off low water. Applied to MAREA and no delay
+#: alike.
 QUALITY_MIN_BRACKET = 3
 
 
@@ -360,9 +363,8 @@ def build_bank(lat, lon, times, bank_taus=None, model="EOT20",
 #: beyond 180 min can be measured.
 BANK_TAUS = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0,
              75.0, 90.0, 105.0, 120.0, 135.0, 150.0, 165.0, 180.0]
-# 180 min, not 120: behind the Vlie inlet (Wadden, 2026-09-16) the inner
-# bands pinned at the old 120-min bound while the Harlingen gauge put the
-# lag near 90-120; a pinned lag is not a measurement
+# 180 min, not 120: in a long tidal basin the inner bands can reach a
+# 120-min bound, and a lag pinned at the bound is not a measurement
 #: Bounds (min) passed to ``tide_estimators.m2a_rasch``. With
 #: ``monotone=True``, as reconstruct calls it, only the upper value is used,
 #: and it bounds each section's increment over the previous section (0 to
@@ -376,7 +378,10 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
                 extraction=None, mouth_side="any", verbose=True,
                 band_km=3.0, min_px_band=500, n_boot=30, min_scenes=80,
                 overpass_times=None, quality_min_bracket=QUALITY_MIN_BRACKET):
-    """MAREA steps 6-10 for one cube: the delay of every pixel and its elevation.
+    """MAREA steps 7–10 for one cube: the delay of every pixel and its elevation.
+
+    It also makes the hypsometry of step 11, and reads the tide (step 6)
+    itself only without a ``boundary``.
 
     Writes ``out_dir``/{marea.npz, result.json, figure.png} and returns the
     content of result.json as a dict, or None when the run is refused;
@@ -401,8 +406,11 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
        section adds a non-negative increment
        (``tide_estimators.m2a_rasch``, METHOD Eq. 3), with a 95 % interval
        from ``n_boot`` scene resamples. With 5,000 pixels or fewer having a
-       distance ``s``, or with a single section, no delay is fitted and every
-       pixel keeps the mouth tide;
+       distance ``s``, no delay is fitted and every pixel keeps the mouth
+       tide. A single section (flats that lie, after thin sections are
+       merged, within one ``band_km`` of the mouth: a short estuary, or a
+       short branch passed as ``region_mask``) currently raises
+       ``ValueError`` in the delay fit, which then has no delay to fit;
     5. the delay of every pixel: the section delays smoothed along ``s``
        (Gaussian kernel of ``band_km``), 0 at the mouth, never decreasing
        inland, rounded to the minute; pixels without ``s`` keep 0;
@@ -424,13 +432,15 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         Site name in the messages and in result.json (default: the cube's
         file name).
     n_bands : int
-        No effect, kept so older calls still run: the estuary's length sets
-        the number of sections.
+        Not used: kept only so that older calls still run. The estuary's
+        length sets the number of sections (``band_km``).
     pixel_m : float
         Pixel size (m) of the cube's projected grid, for ``s`` and the areas.
     tau_detect_min : float
-        No effect with the default 0 (see :data:`TAU_DETECT_MIN`): every
-        fitted section delay is applied.
+        Kept so that older calls still run; leave it at the default 0 (see
+        :data:`TAU_DETECT_MIN`), with which every fitted section delay is
+        applied. A positive value sets every section delay whose size is at
+        most that many minutes to 0.
     model, tide_dir : str
         The pyTMD tide model and the folder of its files, used only when
         ``boundary`` is None.
@@ -507,7 +517,7 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
 
     Examples
     --------
-    A cube and a tide record (naive-UTC times, metres):
+    A cube and a tide-gauge series (naive-UTC times, metres):
 
     >>> from pyintertidal import marea
     >>> from pyintertidal.boundary import GaugeBoundary

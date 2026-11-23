@@ -28,8 +28,8 @@ What is here, by step
   :func:`write_json`.
 
 The 11 processing steps (the same numbers and names in the guide, the
-scripts and the notebooks; the code comments of notebook 03 number its own
-sub-steps):
+scripts and the code comments of notebook 03; the headings of the notebooks
+number their own sections):
 
  (1) Download the Sentinel-2 cube
  (2) Get the acquisition time of every scene
@@ -93,7 +93,7 @@ PROTECTED = (ROOT / "products_marea", ROOT / "products_villaviciosa")
 #: packages reported by check_env: (distribution name, role)
 PACKAGES = (
     ("numpy", "core"), ("scipy", "core"), ("pandas", "core"),
-    ("xarray", "core"), ("pyTMD", "core"), ("eo-tides", "core"),
+    ("xarray", "core"), ("pyTMD", "tide models"), ("eo-tides", "tide models"),
     ("scikit-image", "core"), ("PyYAML", "core"), ("pyproj", "core"),
     ("netCDF4", "core"), ("h5netcdf", "core"), ("joblib", "core"),
     ("rasterio", "core"), ("shapely", "core"), ("matplotlib", "core"),

@@ -12,15 +12,15 @@ themselves.
 This edition holds the code that the method, its scripts and its notebooks
 use, the general tools around it (hypsometry, terrain, export, ...) and a few
 alternative delay estimators kept for comparison (marked as such in
-:mod:`~pyintertidal.tide_estimators`). The validation code is not part of it.
+:mod:`~pyintertidal.tide_estimators`).
 
 Where to start
 --------------
-* Reproduce the published Villaviciosa map offline (about 2 minutes)::
+* Reproduce the published Villaviciosa map offline (about a minute)::
 
       python -X utf8 scripts/reproduce_villaviciosa.py --from-kit replication
 
-* Map a new estuary from a cube and a tide record: ``scripts/quickstart.py``
+* Map a new estuary from a cube and a tide series: ``scripts/quickstart.py``
   (function ``map_estuary``).
 * Download and map a new ría through openEO:
   ``notebooks/03_new_ria_openeo.ipynb``.
@@ -62,8 +62,10 @@ The MAREA path: the 11 steps of ``scripts/marea_tools.STEPS``
 * (4) the looks and the intertidal mask — ``marea.extract``
 * (5) the record — ``scripts/marea_tools.build_record``
 * (6) the tide at the mouth — :mod:`~pyintertidal.boundary`
-* (7)-(10) sections, delays, elevations, hypsometry — ``marea.reconstruct``
-  (it calls geometry, tide_estimators, elevation, hypsometry and seal)
+* (7)-(10) and the hypsometry of (11): the mouth, the sections, their delays,
+  every pixel's delay and elevation — ``marea.reconstruct`` (it calls
+  geometry, tide_estimators, elevation, hypsometry and seal; it reads the
+  tide (6) itself only without a ``boundary``)
 * (11) emersion time and GeoTIFFs — ``scripts/marea_tools.emersion_time``,
   ``scripts/marea_tools.export_geotiffs``
 
@@ -86,7 +88,7 @@ module                                 what it does                             
 :mod:`~pyintertidal.geometry`          the mouth, the distance along the water  step 7
 :mod:`~pyintertidal.tide_estimators`   the delay of each section                steps 7-9
 :mod:`~pyintertidal.elevation`         the per-pixel fit                        step 10
-:mod:`~pyintertidal.marea`             MAREA end to end                         steps 4, 7-11
+:mod:`~pyintertidal.marea`             MAREA end to end                         steps 4, 7–10 and the hypsometry of 11
 :mod:`~pyintertidal.hypsometry`        area-elevation curve                     step 11
 :mod:`~pyintertidal.hydroperiod`       time under water, emersion time          step 11
 :mod:`~pyintertidal.terrain`           slope, hillshade, contours               tool

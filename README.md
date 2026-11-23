@@ -1,10 +1,12 @@
 # MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes
 
 MAREA maps the height of tidal flats at 10 m from years of Sentinel-2 images and a tide
-record: for every pixel it finds the tide level at which the ground turns from dry to wet.
+series: for every pixel it finds the tide level at which the ground turns from dry to wet.
 Inside an estuary the tide arrives late, so MAREA first reads that delay from the same
 images, section by section along the channel, and corrects for it; it also gives each
-pixel's emersion time, the share of time it is out of the water.
+pixel's emersion time, the share of time it is out of the water. Elevation and emersion
+time together are a base layer for the potential habitat of *Nanozostera noltei*.
+(*Marea* is Spanish for tide.)
 
 **Explore the maps: <https://coastal-ai.github.io/Intertidal_analysis/>**. Four estuaries
 of northern Spain, with the elevation in m above NMMA, its uncertainty, the emersion time
@@ -39,25 +41,6 @@ CARTOGRASS 2026, Cartagena, Spain. ([BibTeX](#how-to-cite))
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
 [![nbviewer](https://img.shields.io/badge/notebooks-nbviewer-orange.svg)](https://nbviewer.org/github/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26/notebooks/)
 
-## In short
-
-For every 10 m pixel of a tidal flat, MAREA maps the elevation of the ground with its
-uncertainty, and its emersion time, the share of time the ground is out of the water. A
-pixel on a flat is photographed many times, at different stages of the tide. How wet it
-looks in each image, together with the water level at that moment, fixes its elevation.
-
-Global tide models give that water level at the open coast. Inside an estuary, though,
-the tide arrives later: by more than an hour at the head of the Ría de Mundaka. MAREA
-reads this delay from the images themselves, one delay for each 3-km section along the
-channel (zero in the section at the mouth, never decreasing inland). A smooth curve
-through those delays then gives every pixel its own delay; MAREA shifts the tide by it and
-only then fits the pixel's elevation.
-
-The images come as openEO data cubes from the Copernicus Data Space Ecosystem. The tide
-comes from the global model EOT20, averaged at three of the four sites with the nearest
-tide gauge. Elevation and emersion time together are a base layer for the potential
-habitat of *Nanozostera noltei*. (*Marea* is Spanish for tide.)
-
 ## Explore the maps
 
 The map viewer, <https://coastal-ai.github.io/Intertidal_analysis/>, shows MAREA's maps of
@@ -75,8 +58,8 @@ the open coast.
 | Tide lines | elevation contours at the tidal datums (low water of neap tides, mean sea level, …) |
 
 The delay of each pixel comes from a smooth curve through the section delays, which pulls
-the innermost values down: at Mundaka the map's delays reach 80 min, while the fitted
-delay of the last section is 97 min. How the heights, layers and files are defined:
+the innermost values down: at Mundaka the map's delays reach 80 min, while MAREA estimates
+97 min for the last section. How the heights, layers and files are defined:
 [`guide/DATA.md`](guide/DATA.md). To run the viewer on your own machine:
 [Website](#website).
 
@@ -117,7 +100,7 @@ The last command rebuilds the published 10 m map of the Ría de Villaviciosa
 ([`products_marea/`](products_marea/README.md)) from the offline kit in
 [`replication/`](replication/README.md): the delay of each section, then the elevation
 and uncertainty of every pixel. It needs no account, no download and no tide model. It
-runs in about a minute (55 s on a Windows 10 laptop) with about 0.6 GB of memory,
+runs in about a minute (57 s on a Windows 10 laptop) with about 0.6 GB of memory,
 compares its result with the published files array by array, and ends with:
 
 ```
@@ -166,12 +149,14 @@ harmless.
 ## Map your own estuary
 
 Once you have a Sentinel-2 cube of your estuary (notebook 03 shows the openEO download)
-and a tide record, [`scripts/quickstart.py`](scripts/quickstart.py) makes the maps in one
+and a tide series, [`scripts/quickstart.py`](scripts/quickstart.py) makes the maps in one
 call, `map_estuary(cube, tide, out_dir, mouth_side=...)`; its docstring lists every
-argument. [`guide/NEW_ESTUARY.md`](guide/NEW_ESTUARY.md) explains the rest: what you need,
-the rules for drawing the box (reach the open sea, keep the head of tide inside, one exit
-to the sea, one estuary per box), a box check that runs offline on the Villaviciosa kit,
-the functions you call, what comes out and how to judge it.
+argument. [`guide/NEW_ESTUARY.md`](guide/NEW_ESTUARY.md) opens with a
+[short version](guide/NEW_ESTUARY.md#short-version) in three steps (download the cube, get
+the tide model, run `quickstart.py`), then explains the rest: what you need, the rules for
+drawing the box (reach the open sea, keep the head of tide inside, one exit to the sea,
+one estuary per box), a box check that runs offline on the Villaviciosa kit, the functions
+you call, what comes out and how to judge it.
 
 ## MAREA in six steps
 
@@ -194,10 +179,11 @@ assumed S shape ([`guide/METHOD.md`](guide/METHOD.md#2-one-pixel-seen-many-times
    dry looks of its pixels, judged together: zero at the mouth, it can only grow inland.
    A smooth curve through the section delays then gives each pixel its own.
 4. **Its elevation.** The midpoint of its flooding curve on its delayed tide; the width of
-   the curve is the uncertainty. A pixel whose curve its own looks cannot fix is left
-   empty.
+   the curve is the uncertainty
+   ([not a standard error](guide/METHOD.md#8-uncertainty)). A pixel whose curve its own
+   looks cannot fix is left empty.
 5. **Its emersion time.** The share of time its delayed tide stays below its ground, at
-   all times of the tide record, not only at image times.
+   all times of the tide series, not only at image times.
 6. **All pixels: the maps.** Elevation with its uncertainty, and emersion time: the base
    layer for the potential habitat of *Nanozostera noltei*.
 
@@ -214,7 +200,8 @@ Granadeiro et al. (2021). The method in more detail, with real figures:
 [`guide/METHOD.md`](guide/METHOD.md). In the code, these six steps run as the 11
 processing steps listed in its
 [section 10](guide/METHOD.md#10-the-steps-in-the-code), the numbering that the scripts,
-the notebooks and the guides use.
+the guides and the code comments of notebook 03 use (the notebooks' headings number
+their own sections).
 
 ## Limits
 

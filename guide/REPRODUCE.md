@@ -4,7 +4,7 @@
   the 10 m MAREA product of the Ría de Villaviciosa (2023–2025) that the website shows,
   and checking the rebuild array by array.
 * **Who it is for:** reviewers, and anyone who wants to check the method end to end.
-* **Time and needs:** Route A takes 1–2 minutes and about 0.6 GB of memory, with no
+* **Time and needs:** Route A takes about a minute and about 0.6 GB of memory, with no
   account, no download and no tide model. Route B needs the authors' Sentinel-2 cube
   (3.09 GB, not public yet) and the EOT20 files (2.26 GB). Route C needs a free
   Copernicus account and openEO credits.
@@ -25,6 +25,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+or in a conda environment:
+
+```bash
+mamba env create -f environment.yml
+mamba activate marea-cartograss26
+```
+
+With pip, the installation takes about 8 minutes and 1 GB of disk; its "Installing
+collected packages" step stays silent for about 5 minutes.
+
 On Windows, clone the repository into a short folder such as `C:\src\`: some installed
 files have long paths, and pip fails when the clone's folder path is longer than about
 110 characters (or enable long paths in Windows, which needs an administrator). Calling
@@ -35,16 +45,7 @@ py -3.13 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-Then write `.venv\Scripts\python` wherever this page writes `python`. The installation
-takes about 8 minutes and 1 GB of disk; pip's "Installing collected packages" step stays
-silent for about 5 minutes.
-
-or in a conda environment:
-
-```bash
-mamba env create -f environment.yml
-mamba activate marea-cartograss26
-```
+Then write `.venv\Scripts\python` wherever this page writes `python`.
 
 [`requirements.txt`](../requirements.txt) pins the versions with which the product was
 made and reproduced (numpy 2.4.6, scipy 1.17.1, pandas 2.3.3, xarray 2025.1.1,
@@ -69,6 +70,9 @@ It prints one row per package, with the columns package, required, installed and
 and ends with `environment ok`. A version other than the pinned one is reported as
 `other version` but does not stop anything: the arrays were checked identical with the
 pins. A missing core package is reported as `MISSING`, and the command exits with code 1.
+A missing pyTMD, eo-tides or openeo is reported with what it is needed for
+(`missing (needed for tide models)`, `missing (needed for download)`) and does not fail
+the check.
 
 ## 2. Route A: the offline kit
 
@@ -177,7 +181,8 @@ library, a check of the notebook sample in [`data/`](../data/README.md) against 
 elevations, and the `--fast` run of Route A. The last test,
 `tests/test_publication_guard.py`, is for the maintainers: it checks that no file a commit
 would take holds personal paths or credentials, so it fails if you keep in the checkout an
-untracked file that names a folder of your own.
+untracked file that names a folder of your own. Two of its checks need a word list that
+the maintainers keep outside the repository; without it they are reported as skipped.
 
 ## 5. Notebooks
 

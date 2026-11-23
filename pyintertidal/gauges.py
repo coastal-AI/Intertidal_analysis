@@ -77,10 +77,10 @@ def load_gauge(path, time_column="fecha", level_column="nivel_m", skiprows=0,
 def compare_with_model(gauge, tide_service, aoi, verbose=True):
     """Predict the gauge's timestamps with a tide model and pair them up.
 
-    Not usable with this edition alone: it needs the ``TideService`` of the
-    full development library (an object with ``_tide_model()`` and
-    ``_point(aoi)``). With this edition, pair a gauge with a boundary by
-    hand — :func:`load_gauge` returns the times sorted, and
+    Status: kept for older code, and not usable with this package alone. It
+    needs a tide-service object with ``_tide_model()`` and ``_point(aoi)``,
+    which this package does not provide. Pair a gauge with a boundary by
+    hand instead — :func:`load_gauge` returns the times sorted, and
     ``PyTMDBoundary.levels`` returns its levels in time order::
 
         g = load_gauge("gauge.csv", time_column="time", level_column="level_m")
@@ -94,9 +94,8 @@ def compare_with_model(gauge, tide_service, aoi, verbose=True):
     gauge : DataFrame
         Output of :func:`load_gauge`.
     tide_service : object
-        A tide service with ``_tide_model()`` and ``_point(aoi)``: the
-        ``TideService`` of the full development library, which is not part
-        of this edition.
+        A tide service with ``_tide_model()`` and ``_point(aoi)``; this
+        package has none.
     aoi : AOI
         Study area — its centroid (or the service's explicit location) is the
         prediction point.
@@ -158,12 +157,13 @@ def gauge_metrics(comparison, remove_offset=True):
 def compare_models(gauge, services, aoi, verbose=False):
     """Score several tide models against the same gauge record.
 
-    ``services`` is ``{label: TideService}``. Returns a list of metric dicts
+    ``services`` is ``{label: tide service}``. Returns a list of metric dicts
     (one per model, each with a ``model`` key) — ready for a DataFrame and a
-    table in the paper.
+    table.
 
-    Needs the ``TideService`` of the full development library, like
-    :func:`compare_with_model`; ``aoi`` and ``verbose`` are passed to it.
+    Status: kept for older code, and not usable with this package alone,
+    like :func:`compare_with_model`, which it calls; ``aoi`` and ``verbose``
+    are passed to it.
     """
     rows = []
     for label, service in services.items():

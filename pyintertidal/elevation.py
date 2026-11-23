@@ -20,14 +20,14 @@ both turning "how wet is this pixel at each tide level?" into metres:
 physics of MIXED pixels: a 10 m pixel on the waterline is *partially*
 flooded, and its NDWI is the linear mixture of its wet and dry parts. As the
 tide rises the wet fraction follows the pixel's internal hypsometry, so the
-per-pixel NDWI-vs-tide curve is a sigmoid whose parameters are physical:
+per-pixel NDWI-vs-tide curve is a sigmoid:
 
 .. math:: \\mathrm{NDWI}_p(t) = a_p + b_p\\,\\Phi\\!\\left(\\frac{h_t-\\mu_p}{\\sigma_p}\\right)
 
-* centre ``μ`` → the pixel's median elevation. Because the FULL curve is
-  used (no threshold crossing), precision is sub-decimetre.
-* width ``σ`` → the relief INSIDE the pixel: a sub-pixel roughness product
-  no other method provides.
+* centre ``μ`` → the pixel's median elevation, read from the FULL curve (no
+  threshold crossing).
+* width ``σ`` → how gradually the pixel turns from dry to wet; it is not a
+  measure of relief inside the pixel (guide/METHOD.md, section 8).
 * fit quality → a Cramér–Rao uncertainty per pixel, which doubles as the
   method's own quality control.
 
@@ -54,8 +54,8 @@ measured. Use :func:`epochs` to split the archive and fit the recent epoch.
 
 What HSR adds to the step method
 --------------------------------
-The sub-pixel width σ, a per-pixel uncertainty, and elevations for the
-mixed pixels a threshold crossing has to discard.
+The width σ of the transition, a per-pixel uncertainty, and elevations for
+the mixed pixels a threshold crossing has to discard.
 """
 
 from __future__ import annotations
@@ -309,10 +309,9 @@ def auto_tide_bins(tide, samples_per_bin=5, lo=20, hi=400):
     * too many bins (or none) averages nothing, so scene noise — thin cirrus,
       glint, turbidity — passes straight into the fit.
 
-    Measured on the Tagus against a survey of the flats, the best binning
-    holds about ``samples_per_bin`` observations per bin — enough to average
-    noise down, not so much that the axis coarsens below the transitions
-    being measured.
+    The best binning holds about ``samples_per_bin`` observations per bin —
+    enough to average noise down, not so much that the axis coarsens below
+    the transitions being measured.
 
     Parameters
     ----------
@@ -429,8 +428,7 @@ def hsr_stage1(
         Restrict the fit to these dates (an epoch, after cloud filtering).
     mu_points, sg_grid
         Search grid: ``mu_points`` elevations spanning the observed tide
-        range, and the candidate sigmoid widths (metres of within-pixel
-        relief). A σ landing on the last grid value is SATURATED — the fit
+        range, and the candidate sigmoid widths (metres). A σ landing on the last grid value is SATURATED — the fit
         could not represent the transition and stage 2 will not trust it.
     robust_iters : int
         Re-fits after discarding observations beyond 2.5×RMSE (residual
@@ -638,8 +636,10 @@ def hsr_stage2(mu, sigma, valid, scale=4, sigma_floor=0.05, sigma_cap=0.30,
     Each iteration alternates two constraints: Jacobi smoothing (the surface
     should be continuous) and a per-block statistical constraint (each coarse
     block must keep mean ``μ`` and standard deviation ``σ_eff``). The σ term
-    is what distinguishes this from plain interpolation: it injects the
-    within-pixel relief the fit MEASURED instead of inventing a smooth ramp.
+    is what distinguishes this from plain interpolation: it uses the fitted
+    width as if it were the relief inside the pixel. That reading is an
+    assumption of this earlier method, not a measurement, and it is not
+    supported (guide/METHOD.md, section 8); MAREA does not call this function.
 
     Guard rails, all learned the hard way:
 
@@ -698,8 +698,8 @@ class ElevationResult:
     """Elevation products on the analysis grid.
 
     ``mu`` is the DEM (metres above the tide-model MSL datum), ``sigma`` the
-    sub-pixel relief, ``sigma_mu`` the per-pixel uncertainty, ``z_fine`` the
-    super-resolved DEM at ``10/scale`` m.
+    width σ of the transition, ``sigma_mu`` the per-pixel uncertainty,
+    ``z_fine`` the super-resolved DEM at ``10/scale`` m.
     """
 
     mu: np.ndarray
@@ -762,6 +762,8 @@ class ElevationResult:
         if v.any():
             print(f"  elevation [{np.nanmin(self.mu):.2f}, "
                   f"{np.nanmax(self.mu):.2f}] m")
+            # the σ of this line is the transition width, not a measured
+            # relief inside the pixel (see the module docstring)
             print(f"  sub-pixel relief σ: median "
                   f"{np.nanmedian(self.sigma[v]) * 100:.0f} cm | "
                   f"saturated {100 * np.nanmean(self.sigma[v] >= 0.60):.0f}%")
@@ -908,10 +910,9 @@ def fit_step(cube, tide_heights, dates=None, threshold=0.1, n_windows=100,
        An earlier version of this function was **not** faithful: it lacked the
        interpolation to ``interp_intervals`` steps, the trailing rolling mean
        of radius ``smooth_radius``, ``min_count`` and ``min_correlation``.
-       Measured on the Tagus, correcting it made the baseline both more
-       accurate and able to answer for more pixels. Every HSR-versus-step
-       comparison produced before that fix was against a weakened opponent
-       and must not be reused.
+       Correcting it made the baseline both more accurate and able to answer
+       for more pixels, so a comparison of HSR against that earlier version
+       is a comparison against a weakened baseline.
 
     Faithful to the paper
     ---------------------
@@ -939,8 +940,8 @@ def fit_step(cube, tide_heights, dates=None, threshold=0.1, n_windows=100,
     two are nearly identical, and the per-pixel version costs a rolling
     median per pixel per window.
 
-    Returns an :class:`ElevationResult` (``sigma`` is NaN: the method does
-    not estimate within-pixel relief).
+    Returns an :class:`ElevationResult` (``sigma`` is NaN: the method fits
+    no transition width).
     """
     if cube.water != "ndwi":
         raise ValueError("the step method needs an NDWI cube (water='ndwi')")

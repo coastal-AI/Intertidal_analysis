@@ -1,9 +1,10 @@
 # How MAREA works
 
-* **What this page is for:** the method in words, three equations and real figures, from
+* **What this page is for:** the method in words, two equations and real figures, from
   one pixel to the maps.
 * **Who it is for:** coastal scientists, ecologists and managers. No statistics
-  background is assumed.
+  background is assumed; the equation of the delay search, which uses statistical terms,
+  is in the [appendix](#appendix-the-delay-objective).
 * **Time:** about 20 minutes of reading.
 
 Every figure on this page shows real data of the Ría de Villaviciosa (Asturias, Spain):
@@ -103,9 +104,10 @@ fitted.
 **An assumption.** The S shape $\Phi$ is a modelling assumption: it holds if the ground
 inside a pixel is spread like a bell curve around its mean height, which has not been
 tested directly. In earlier tests, replacing $\Phi$ by a logistic curve or by a curve of
-free shape changed the elevations by millimetres, so $z_p$ does not hinge on it; the
-reading of $\sigma_p$ as the relief inside the pixel does. Eq. 1 also treats NDWI as
-varying linearly with the flooded fraction of the pixel, which is an approximation.
+free shape changed the elevations by millimetres, so $z_p$ does not hinge on it. Reading
+$\sigma_p$ as the relief inside the pixel is not supported: treat it only as the sharpness
+of the fitted transition ([section 8](#8-uncertainty)). Eq. 1 also treats NDWI as varying
+linearly with the flooded fraction of the pixel, which is an approximation.
 
 ![Nine panels, three per section of the ría: the NDWI looks of one pixel against the tide that reaches it, dry looks in sand colour and wet looks in blue, with the fitted S-shaped curve and its midpoint z marked.](figures/pixel_gallery.png)
 
@@ -169,11 +171,10 @@ this contradiction to read tidal-stage lags from Sentinel-2.
 or dry, so the pixel's own dry and flooded levels ($a_p$ and $b_p$) play no part. For
 each candidate delay, every pixel first takes the elevation and width that best explain
 its own wet and dry looks under that delay; only then are the candidates compared. The
-delay under which the wet and dry looks of all the pixels are most probable wins. In
-statistical terms this is a *profiled Bernoulli likelihood*. Profiling matters: a wrong
-level offset is absorbed by the pixel's elevation, but a wrong delay reorders the levels
-across dates (look A had more water than look B, yet A is dry and B is wet), and no fixed
-elevation can repair that.
+delay under which the wet and dry looks of all the pixels are most probable wins.
+Letting each pixel take its best elevation matters: a wrong level offset is absorbed by
+the pixel's elevation, but a wrong delay reorders the levels across dates (look A had more
+water than look B, yet A is dry and B is wet), and no fixed elevation can repair that.
 
 **One delay per 3-km section, zero at the mouth, never decreasing inland.** The mouth is
 the permanent sea that touches the edge of the frame. The distance of every pixel is
@@ -182,36 +183,16 @@ into *sections* of 3 km of that distance; a section with fewer than 500 pixels j
 neighbour. Section 0, at the mouth, is the anchor where the tide at the mouth is trusted:
 its delay is 0 by construction. Each section further in may only add to the delay of the
 one before it, because a delay of propagation accumulates. The section delays are found
-together by a bounded quasi-Newton search (L-BFGS-B) that starts from zero delay
-everywhere. The tide is tabulated for delays from −45 to 180 min, so no delay beyond
-three hours can be represented.
+together by a numerical search that starts from zero delay everywhere; the
+[appendix](#appendix-the-delay-objective) writes out what it maximises. The tide is
+tabulated for delays from −45 to 180 min, so no delay beyond three hours can be
+represented.
 
 **One axis.** The sections are cut by distance alone. In an estuary with branches whose
 tide arrives at different times, or with a neighbouring estuary in the same frame, one
 section mixes them and their delays average out. `marea.reconstruct` can fit one branch
 at a time (`region_mask`); how to draw the frame:
 [`NEW_ESTUARY.md`](NEW_ESTUARY.md#2-draw-the-box).
-
-**Eq. 3, the delay objective:**
-
-$$
-\hat\tau_1, \dots, \hat\tau_{K-1} = \arg\max_{0 = \tau_0 \le \tau_1 \le \dots \le \tau_{K-1}} \ \sum_{k=0}^{K-1} \omega_k \sum_{p \in Q_k} \ \max_{z,\, \sigma} \ \sum_{t} \Big[ w_{pt} \log \pi_{pt} + d_{pt} \log\left( 1 - \pi_{pt} \right) \Big], \qquad \pi_{pt} = \Phi\left( \frac{h_B(t - \tau_k) - z}{\sigma} \right)
-$$
-
-where
-
-* $K$ is the number of sections and $\tau_k$ the delay of section $k$ (min); in
-  $\pi_{pt}$, $k$ is the section of pixel $p$;
-* $Q_k$ is a seeded sample of at most 1,200 pixels of section $k$, each with at least 6
-  looks;
-* $w_{pt}$ and $d_{pt}$ are 1 when the look of pixel $p$ in scene $t$ is wet (or dry),
-  and 0 otherwise, including when there is no look;
-* $\pi_{pt}$ is the probability that the look is wet: the flooded fraction of Eq. 1 with
-  $a = 0$ and $b = 1$, kept a little away from 0 and 1;
-* $z$ and $\sigma$ are profiled per pixel, over 60 levels spanning the mouth levels of
-  the record with a 0.3 m margin, and 6 widths from 0.06 to 0.45 m;
-* $\omega_k$ is one over the mean number of looks per pixel of $Q_k$, so that each
-  section scores as an average per look, weighted by its number of pixels.
 
 **An interval for every delay.** An estimator always returns some number, even where the
 true delay is zero. MAREA therefore refits the delays on 30 resamples of the scenes,
@@ -231,16 +212,16 @@ wider than its delay: the images decide it only loosely.
 The section is the unit of estimation; the pixel is the unit of application. A smooth
 curve through the section delays gives each pixel its own delay from its distance $s_p$,
 rounded to the whole minute. The curve is a weighted average of the section delays and of
-an extra point of 0 min at distance 0, with Gaussian weights 3 km wide along the
-distance, made never to decrease inland. Two consequences follow:
+an extra point of 0 min at distance 0, with Gaussian weights of standard deviation 3 km
+along the distance, made never to decrease inland. Two consequences follow:
 
 * **Near the mouth**, pixels already receive a minute or more: at Villaviciosa the pixels
   of section 0 receive 1 to 4 min, borrowed from section 1.
 * **In the last section**, which has no neighbour further in, the average is pulled down
   by the sections before it: at Villaviciosa its pixels receive 10 to 16 min (median
   14 min), while the section's own delay is 20.7 min (95 % interval 13.1 to 28.7). At the
-  Ría de Mundaka the four sections have delays of 0, 9.6, 23.4 and 96.7 min, and the
-  pixel delays reach 80 min.
+  Ría de Mundaka MAREA estimates delays of 0, 9.6, 23.4 and 96.7 min for the four
+  sections, and the pixel delays reach 80 min.
 
 The map therefore applies less delay in the inner reach than the section fit found. The
 pixels of section 1 at Villaviciosa receive 4 to 10 min (median 6). Pixels that water
@@ -325,11 +306,11 @@ A transition sharper than 0.03 m or more gradual than 0.65 m is reported at that
 Villaviciosa, 14 % of the mapped pixels sit at 0.03 m and 12 % at 0.65 m.
 
 How to read it: $\sigma$ says how gradually the pixel turns from dry to wet as the water
-rises. In the pixel model it is the spread of the ground inside the pixel; in practice it
-also absorbs any error in the water level given to each look, which blurs the transition
-in the same way. It is not a standard error of $z$: it does not come from the scatter of
-the fit and does not shrink as more looks are added. Nor is it an accuracy measured
-against an independent survey.
+rises: read it only as the sharpness of the fitted transition. Reading it as the relief
+inside the pixel is not supported, because any error in the water level given to each
+look blurs the transition in the same way, and $\sigma$ absorbs it. It is not a standard
+error of $z$: it does not come from the scatter of the fit and does not shrink as more
+looks are added. Nor is it an accuracy measured against an independent survey.
 
 **Of the hypsometric curve.** The product's area–elevation curve has an envelope
 (`hyp_lo`, `hyp_hi` in `marea.npz`): the curve is recomputed 30 times with every
@@ -403,13 +384,43 @@ The Spanish keys of `result.json` are translated in
     (`hypsometry.curve_with_uncertainty`, `raster.write_geotiff`,
     `hydroperiod.hydroperiod`).
 
-`marea.reconstruct` runs step 6 (EOT20 by default, or the boundary it is given), steps
-7–10 and the hypsometry of step 11, on an extraction (step 4) that it computes or is
-given. Notebook [`01_marea_villaviciosa`](../notebooks/01_marea_villaviciosa.ipynb)
-follows steps 4–11 on real data, and
+`marea.reconstruct` runs steps 7–10 and the hypsometry of step 11; it reads the tide
+(step 6) itself, from EOT20, only without a `boundary`. It works on an extraction (step 4)
+that it computes or is given. Notebook
+[`01_marea_villaviciosa`](../notebooks/01_marea_villaviciosa.ipynb) follows steps 4–11 on
+real data, and
 [`03_new_ria_openeo`](../notebooks/03_new_ria_openeo.ipynb) shows steps 1–3 for a new
 estuary. The whole chain for an estuary of your own, with the rules for drawing its frame:
 [`NEW_ESTUARY.md`](NEW_ESTUARY.md).
+
+## Appendix: the delay objective
+
+The search of [section 4](#4-reading-the-delay-from-the-images) written as an equation.
+In statistical terms it maximises a *profiled Bernoulli likelihood*: each look is a
+wet-or-dry outcome, and each pixel's elevation and width are profiled, set to their best
+values for every candidate delay. The maximum is found by L-BFGS-B, a bounded
+quasi-Newton search, starting from zero delay everywhere.
+
+**Eq. 3, the delay objective:**
+
+$$
+\hat\tau_1, \dots, \hat\tau_{K-1} = \arg\max_{0 = \tau_0 \le \tau_1 \le \dots \le \tau_{K-1}} \ \sum_{k=0}^{K-1} \omega_k \sum_{p \in Q_k} \ \max_{z,\, \sigma} \ \sum_{t} \Big[ w_{pt} \log \pi_{pt} + d_{pt} \log\left( 1 - \pi_{pt} \right) \Big], \qquad \pi_{pt} = \Phi\left( \frac{h_B(t - \tau_k) - z}{\sigma} \right)
+$$
+
+where
+
+* $K$ is the number of sections and $\tau_k$ the delay of section $k$ (min); in
+  $\pi_{pt}$, $k$ is the section of pixel $p$;
+* $Q_k$ is a seeded sample of at most 1,200 pixels of section $k$, each with at least 6
+  looks;
+* $w_{pt}$ and $d_{pt}$ are 1 when the look of pixel $p$ in scene $t$ is wet (or dry),
+  and 0 otherwise, including when there is no look;
+* $\pi_{pt}$ is the probability that the look is wet: the flooded fraction of Eq. 1 with
+  $a = 0$ and $b = 1$, kept a little away from 0 and 1;
+* $z$ and $\sigma$ are profiled per pixel, over 60 levels spanning the mouth levels of
+  the record with a 0.3 m margin, and 6 widths from 0.06 to 0.45 m;
+* $\omega_k$ is one over the mean number of looks per pixel of $Q_k$, so that each
+  section scores as an average per look, weighted by its number of pixels.
 
 ## References
 

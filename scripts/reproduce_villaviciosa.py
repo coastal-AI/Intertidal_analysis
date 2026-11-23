@@ -94,7 +94,7 @@ def reference():
 
 
 def run_reconstruct(cube_path, out, boundary, ex_rec, times, cfg, n_boot):
-    """Steps 7-11 (and the hypsometry) through pyintertidal.marea.reconstruct.
+    """Steps 7–10 and the hypsometry of step 11, through pyintertidal.marea.reconstruct.
 
     ``cube_path`` is hashed into result.json (the kit's record file in Route
     A, the cube in Route B); ``out`` the run folder; ``boundary`` the tide
@@ -144,10 +144,10 @@ def route_a(kit, out, cfg, n_boot, started):
     """Route A, offline: steps 6-11 from the replication kit.
 
     Checks every kit file against its sha256 in ``MANIFEST.json`` (stops if
-    one differs), prints steps 1-6 from the kit's contents, runs steps 7-11
-    through ``marea.reconstruct`` with the tabulated EOT20 levels
-    (``marea_tools.TableBoundary``), and writes record.json and
-    provenance.json. ``kit`` is the kit folder, ``out`` the run folder,
+    one differs), prints steps 1-6 from the kit's contents, runs steps 7–10
+    and the hypsometry of step 11 through ``marea.reconstruct`` with the
+    tabulated EOT20 levels (``marea_tools.TableBoundary``), and writes
+    record.json and provenance.json. ``kit`` is the kit folder, ``out`` the run folder,
     ``cfg`` the site file, ``started`` the UTC start time. Returns the kit
     record's sha256 (what result.json's ``inputs_sha.cube`` must hold).
     """

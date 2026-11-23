@@ -17,6 +17,8 @@ data_v4/
 # credentials and local configuration (openEO keeps its refresh tokens outside the repository; never copy them in)
 .env
 *.token
+# the publication guard's word lists (tests/test_publication_guard.py): kept on the maintainers' machines only
+tests/publication_guard_local.json
 # website: dependencies and build caches (the built site in docs/ is versioned)
 node_modules/
 site/node_modules/

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""MAREA in one call: from a Sentinel-2 cube and a tide record to the maps.
+"""MAREA in one call: from a Sentinel-2 cube and a tide series to the maps.
 
 :func:`map_estuary` runs the steps of ``guide/METHOD.md`` (section 10) in
-their order, with the settings of the Villaviciosa product, by calling
-existing functions of ``pyintertidal`` and ``scripts/marea_tools.py`` only.
-It adds no algorithm and changes no default of the library:
+their order, with the settings of the Villaviciosa product except the
+quality rule, which is on (3, the library default), by calling existing
+functions of ``pyintertidal`` and ``scripts/marea_tools.py`` only. It adds
+no algorithm and changes no default of the library:
 
 ====  ==============================================  =================================
 step  what                                            function
@@ -13,13 +14,15 @@ step  what                                            function
 2     the acquisition time of every scene             ``overpass.get_overpass_times``
 3     the scenes clear over the transition zone       ``marea_tools.screen``
 5     the record: the latest 3-year epoch             ``marea_tools.build_record``
-6-10  mouth, sections, delays, elevation and width    ``marea.reconstruct``
+6     the tide at the mouth                           the ``tide`` argument
+7-10  mouth, sections, delays, elevation and width,   ``marea.reconstruct``
+      and the hypsometry of step 11
 11    emersion time and the GeoTIFFs                  ``marea_tools.emersion_time``,
                                                       ``marea_tools.export_geotiffs``
 ====  ==============================================  =================================
 
 Step 1, the download, is ``pyintertidal.SentinelCube(...).ensure(...)``
-(notebook 03).
+(notebook 03, and the short version of ``guide/NEW_ESTUARY.md``).
 
 Example: the Marismas de Santoña of notebook 03, from the repository root,
 with the EOT20 files in ``tide_models/``::
@@ -27,16 +30,18 @@ with the EOT20 files in ``tide_models/``::
     import sys
     sys.path.insert(0, "scripts")
     from quickstart import map_estuary
-    from pyintertidal.boundary import PyTMDBoundary
+    from pyintertidal.boundary import GaugeBoundary, PyTMDBoundary
 
-    # the tide at the mouth: EOT20 at the centroid of the box of notebook 03
+    # the tide at the mouth: EOT20 at (43.415 N, 3.48 W), the centroid of the
+    # box of notebook 03. That point lies inland: it is a placeholder only.
+    # Replace it with a point in open water off the mouth, checked on a map.
     tide = PyTMDBoundary("EOT20", 43.415, -3.48, directory="tide_models")
-    # ... or a record of your own (UTC instants, metres):
+    # ... or a gauge series of your own (UTC instants, metres):
     # tide = GaugeBoundary(times_utc, levels_m, name="harbour gauge")
     paths = map_estuary("cubes/santona_2023-2025.nc", tide, "runs/santona",
                         mouth_side="north")
 
-or, from a shell::
+or, from a shell, with the same placeholder point (replace it as above)::
 
     python -X utf8 scripts/quickstart.py cubes/santona_2023-2025.nc runs/santona \\
         --lat 43.415 --lon -3.48 --mouth-side north
@@ -46,6 +51,7 @@ about mean sea level); delays in minutes; times are UTC.
 """
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -70,10 +76,10 @@ def map_estuary(cube_path, tide, out_dir, overpass_times=None, site=None,
         The water level at the mouth: anything whose ``levels(times)``
         returns metres for naive-UTC instants, e.g.
         ``pyintertidal.boundary.PyTMDBoundary`` (a tide model),
-        ``GaugeBoundary`` (your record) or ``make_boundary``. It must cover
-        the whole record and, for the emersion time, every 10 minutes of its
-        years: ``marea_tools.TableBoundary`` (the replication kit's table of
-        record instants only) is not enough.
+        ``GaugeBoundary`` (your gauge series) or ``make_boundary``. It must
+        cover the whole record and, for the emersion time, every 10 minutes
+        of its years: ``marea_tools.TableBoundary`` (the replication kit's
+        table of record instants only) is not enough.
     out_dir : str or Path
         Output folder, created if needed (never ``products_marea/`` or
         ``products_villaviciosa/``).
@@ -126,12 +132,20 @@ def map_estuary(cube_path, tide, out_dir, overpass_times=None, site=None,
     usable, _, _ = mt.screen(str(cube_path))
     # (5) the record: usable scenes with a time and a tide level, in the latest epoch
     ex_rec, _ = mt.build_record(ex, usable, times, tide, epoch_years=epoch_years)
-    # (6)-(10) the mouth, the distance along the water, the 3-km sections, one
-    # delay per section, the delay of every pixel, its elevation and width
-    result = marea.reconstruct(str(cube_path), str(out_dir), name=site,
-                               boundary=tide, extraction=ex_rec,
-                               overpass_times=times, mouth_side=mouth_side,
-                               min_scenes=min_scenes, n_boot=n_boot)
+    # (7)-(10) the mouth, the distance along the water, the 3-km sections, one
+    # delay per section, the delay of every pixel, its elevation and width,
+    # and the hypsometry of (11); the tide of (6) is the ``tide`` argument
+    with warnings.catch_warnings():
+        # s_km is NaN where water cannot reach; tide_estimators.make_bands_fixed
+        # casts it to int before masking those pixels to band -1, which numpy
+        # reports as an invalid cast. Harmless; silenced for this call only,
+        # with the filter of reproduce_villaviciosa.py.
+        warnings.filterwarnings("ignore", message="invalid value encountered in cast",
+                                category=RuntimeWarning)
+        result = marea.reconstruct(str(cube_path), str(out_dir), name=site,
+                                   boundary=tide, extraction=ex_rec,
+                                   overpass_times=times, mouth_side=mouth_side,
+                                   min_scenes=min_scenes, n_boot=n_boot)
     if result is None:
         raise RuntimeError(f"reconstruct refused the run: see {out_dir / 'result.json'}")
     # (11) emersion time over the record's years, then the GeoTIFFs

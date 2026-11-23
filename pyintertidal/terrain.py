@@ -95,11 +95,11 @@ def hillshade(elevation, pixel_size=10.0, azimuth=315.0, altitude=45.0,
 def roughness(elevation, window=3):
     """Local standard deviation of elevation — small-scale surface texture.
 
-    Complements the ``sigma`` product (MAREA's, or HSR's): ``sigma`` is
-    relief measured WITHIN a pixel from the tidal signal, this is relief
-    measured BETWEEN neighbouring pixels from the DEM itself. Disagreement
-    between the two is informative (it usually means the DEM is smoother
-    than reality).
+    Not the same thing as the ``sigma`` product (MAREA's, or HSR's):
+    ``sigma`` is the width of each pixel's dry-to-wet transition, read from
+    the tidal signal, and not a measure of relief inside the pixel
+    (guide/METHOD.md, section 8); this is relief measured BETWEEN
+    neighbouring pixels from the DEM itself.
 
     ``elevation`` (H, W) m; ``window`` the side of the square neighbourhood
     in pixels. NaN neighbours are left out; returns metres, NaN where the

@@ -88,9 +88,9 @@ def model_tides(**kwargs):
 
     eo-tides calls ``colorama.init()`` on every prediction, and each call
     wraps ``sys.stdout``/``sys.stderr`` once more. A notebook that predicts
-    once per distinct lag (the Wadden at 10 m: ~140 lags) ends with ~140
-    nested wrappers and the next print raises RecursionError
-    (2026-10-02). The streams are restored after the call; the
+    once per distinct lag (a large tidal basin at 10 m: ~140 lags) ends
+    with ~140 nested wrappers and the next print raises RecursionError.
+    The streams are restored after the call; the
     prediction itself is untouched.
     """
     from eo_tides.model import model_tides as _model_tides

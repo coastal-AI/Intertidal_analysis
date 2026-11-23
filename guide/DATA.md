@@ -26,10 +26,10 @@
   channel edges. Gaps on the flats are pixels of that mask without an elevation: outside
   the product's own mask, or a fit that failed a guard.
 * **Delay:** at the Ría del Eo every section has a delay of 0 min. There the map uses
-  the tide at the mouth unchanged. At the Ría de Mundaka the four sections have delays of
-  0, 9.6, 23.4 and 96.7 min; the delays of the pixels, read from a smooth curve through
-  them, reach 80 min, so the map shows less delay in the inner reach than the last
-  section's fit ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)).
+  the tide at the mouth unchanged. At the Ría de Mundaka MAREA estimates delays of 0, 9.6,
+  23.4 and 96.7 min for the four sections; the delays of the pixels, read from a smooth
+  curve through them, reach 80 min, so the map shows less delay in the inner reach than
+  the last section's fit ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)).
 * **Villaviciosa:** the map is drawn from the product in
   [`products_marea/`](../products_marea/README.md), inside the hand-cleaned mask and on
   the viewer's grid. [`REPRODUCE.md`](REPRODUCE.md) rebuilds that product array by array.
@@ -46,7 +46,7 @@
 | Elevation, z | m | The water level at which the pixel turns from dry to wet, read on the tide that reaches it: the tide at the mouth, delayed by the pixel's τ. |
 | Uncertainty, σ | m | The width of the pixel's dry-to-wet transition: one of eight values, 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m. A larger σ is a less sharp transition. It is neither a standard error of z nor an accuracy measured against a survey. |
 | Emersion time | % of time | The share of the map's period during which the pixel is out of the water: how often its delayed tide, h(t − τ), stays at or below z, with the tide taken every minute. |
-| Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, then a smooth curve through the section delays and a point of 0 min at the mouth (Gaussian weights 3 km wide), never decreasing inland and rounded to the minute. Pixels near the mouth already receive about a minute; the innermost pixels receive less than the last section's fitted delay ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
+| Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, then a smooth curve through the section delays and a point of 0 min at the mouth (Gaussian weights of standard deviation 3 km), never decreasing inland and rounded to the minute. Pixels near the mouth already receive about a minute; the innermost pixels receive less than the last section's fitted delay ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
 | Tide lines | m | Contours of the elevation at the tidal datums ([section 4](#4-tide-lines)). |
 
 MAREA estimates elevations only inside the intertidal mask: the pixels seen wet in 10 to
@@ -119,21 +119,22 @@ The contours are drawn on MAREA's elevation on the pixels on the map
 that ignores empty pixels, with holes of up to 9 pixels filled). Lines shorter than 100 m
 are dropped, and the rest are simplified to 2.5 m. A datum is drawn only where the map
 has values on both sides of it: between the 1st and the 99th percentiles of the mapped
-elevation. The images never see the highest tides
-([`METHOD.md`](METHOD.md#9-what-the-images-cannot-tell)), so MHWS and HAT lie above every
-mapped pixel and are not drawn, and LAT lies below them. The map's legend lists all seven
-datums and marks those that are drawn.
+elevation. Only MLWN, MSL and MHWN are drawn (MLWN and MSL at Mundaka); the other datums
+lie outside that range. The images never see the highest tides
+([`METHOD.md`](METHOD.md#9-what-the-images-cannot-tell)), so MHWS and HAT lie above it,
+and MLWS and LAT below it. The map's legend lists all seven datums and marks those that
+are drawn.
 
 For example, at Villaviciosa the datums are, in m above NMMA: LAT −2.02, MLWS −1.47,
 MLWN −0.46, MSL +0.38, MHWN +1.19, MHWS +2.20 and HAT +2.79.
 
-**Lines of equal delay (Mundaka).** In the Ría de Mundaka the delay grows to more than
-an hour, so the **Delay** layer also draws lines of equal delay every 10 minutes: the
-places the tide reaches the same number of minutes after the mouth (co-tidal lines).
-They follow the delay of each pixel, from the same smooth profile of the section delays,
-on the pixels on the map only, so they stop at the channels. Pieces shorter than 20 m
-are dropped: no line is drawn beyond 50 min, where the flats of the inner reach are a few
-pixels wide.
+**Lines of equal delay (Mundaka).** In the Ría de Mundaka MAREA estimates that the delay
+grows to more than an hour, so the **Delay** layer also draws lines of equal delay every
+10 minutes: the places the tide reaches the same number of minutes after the mouth
+(co-tidal lines). They follow the delay of each pixel, from the same smooth profile of the
+section delays, on the pixels on the map only, so they stop at the channels. Pieces
+shorter than 20 m are dropped: no line is drawn beyond 50 min, where the flats of the
+inner reach are a few pixels wide.
 
 **Files.** For each site, `tide_lines.geojson` holds the contours, with the properties
 `datum`, `level_m` (on the map's zero), `level_nmma_m` (above NMMA), `units`, `label`
@@ -158,8 +159,8 @@ usable ones of the method's screening
 
 * **Grid.** The layers of a site share one grid in Web Mercator (EPSG:3857), of about
   6.89 m, which is 5 m on the ground at these latitudes, over the pixels on the map plus
-  200 m. Each 10 m pixel of a product is 2 × 2 grid pixels; the values are not
-  resampled.
+  200 m. Each 10 m pixel of a product is about 2 × 2 grid pixels, assigned by nearest
+  neighbour (no interpolation).
 * **Overlay images.** Coloured RGBA PNG, for display only: at twice the grid's resolution
   (2.5 m on the ground), each overlay pixel interpolated bilinearly from the grid pixels
   around it that have a value, the edge of the data faded over one grid pixel, and

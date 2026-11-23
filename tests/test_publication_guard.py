@@ -4,16 +4,28 @@
 It checks every file a commit would take (the files git lists as tracked, or as untracked and not ignored; every file
 under the root when this is not a git checkout):
 
-1. no forbidden token: machine, account and private file names, compared by their SHA-256, so this file publishes
-   none of the words it guards against. Text files are read whole; binary files (netCDF, GeoTIFF, PNG, npz, fonts)
-   through their printable strings, which is where their metadata lives;
+1. no forbidden token: no whole token (5 characters or more) from a private list. Text files are read whole; binary
+   files (netCDF, GeoTIFF, PNG, npz, fonts) through their printable strings, which is where their metadata lives;
 2. no forbidden word part: the same idea on the letter runs of each word, split at digits, punctuation and camelCase,
-   for a few names and terms that must not appear in any form, in the text of every text file and in every file path.
-   Long base64 runs (embedded images, package hashes) are left out of this check, and so are the minified bundles of
-   the website (docs/assets/), whose generated names are random letters;
+   for a second private list of names and terms that must not appear in any form, in the text of every text file and
+   in every file path. Long base64 runs (embedded images, package hashes) are left out of this check, and so are the
+   minified bundles of the website (docs/assets/), whose generated names are random letters;
 3. no personal folder, mounted disk, person-named temporary folder, credential or private key, in the text of every
    text file (website bundles included) and in the printable strings of every binary file;
-4. no file over 50 MB.
+4. no file over 50 MB;
+5. the private lists themselves are not among the files a commit would take.
+
+The private lists are not in this repository, not even as hashes: the hash of a short word is reversed by hashing
+candidate words, so a published list of hashes would publish the words. They live in a local file,
+tests/publication_guard_local.json, which .gitignore keeps out of every commit:
+
+    {"tokens": ["<sha256>", ...], "word_parts": ["<sha256>", ...]}
+
+Each entry is the SHA-256 (hex) of a lower-cased word, for example
+
+    python -c "import hashlib; print(hashlib.sha256('someword'.encode()).hexdigest())"
+
+Without that file, checks 1 and 2 are skipped, with a message that says why; checks 3 to 5 always run.
 
 Run it from the repository root before every commit:
 
@@ -21,44 +33,33 @@ Run it from the repository root before every commit:
 """
 import functools  # read each file once for all the checks
 import hashlib  # SHA-256 of each token
+import json  # the local file of private lists
 import os  # walking the repository
 import re  # tokens and generic patterns
 import subprocess  # the list of files a commit would take
 
+import pytest  # skipping checks 1 and 2 without the local file
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the repository root
 SELF = "tests/test_publication_guard.py"  # this file spells the generic patterns themselves
+LOCAL = "tests/publication_guard_local.json"  # the private lists of checks 1 and 2: local only, ignored by git
 
-#: SHA-256 of lower-cased forbidden tokens (machine and account names, a network address, private file names).
-FORBIDDEN_SHA256 = {
-    "a8c6131bf7a207338edb3ced65e8d7b204ab985358d07125f1c840fd61de540d",
-    "df62a5cf66486cb8b7e374ee7e7531c800de2f73ad3b5506aa9aca6750801d5a",
-    "ddb648b4d14d6973a521e022d7db119611f34e27a845faaa49821e58c255821c",
-    "947defbdd230418a099a19dc4223f941d1b63a009bf1a3dc809a7e106cda528d",
-    "2d0d75dcdd4549123defb69055609b6c16702acf3d902ac121b204ec452d0649",
-    "e18ea11600b63f481c54f081284dd94ec4c39ea320a8750cb2c4fc906ea1c642",
-    "0e7d538f9fea38f7fa1a0c69a3399f0dee31b095d81a767572d7b35fedacd178",
-    "ceca322dce6a76937c5eaa4ab9dcdf1e98b4cc844a6c2c4f05a4cde1e5464db3",
-    "aa7b8007d6e360cfc0e6e0eee0c4ddf05987fc608acacc61851a39f7b50e9db3",
-    "d224661143df657521f8b422d0c3a0e8d37596c1bd68d4d1a67f16a2dd030bd1",
-    "48cde36d7bb2c6a33e9ef7768bd361f892bc67012fe26aeb431dd76107b2a64b",
-    "85cbbb8261617b4da05ef4b1030ea122cdfb13f20aba881129a4cb889d01c82a",
-    "21bde7e7a9e7b8ae791915cea18415ed0578b722c6b04953faf1b23d3df4058f",
-    "5d9af8f465c053146e589f7dfda73557c9565d76365a5985174b185cbead77cb",
-}
 
-#: SHA-256 of lower-cased forbidden word parts (letters only): two survey terms, a machine, an account and a local
-#: folder name, the development branch's name, a ledger's name, and assistant attribution.
-FORBIDDEN_PARTS_SHA256 = {
-    "3dc0deea30053c57bcbb7c1ff189b8cd5668eea42faf9b1aff650d1a4a7eb0de",
-    "c97147d5c731672d8a583714b1886d79e983b4d438e83b0fa737860afb6a48f1",
-    "df62a5cf66486cb8b7e374ee7e7531c800de2f73ad3b5506aa9aca6750801d5a",
-    "947defbdd230418a099a19dc4223f941d1b63a009bf1a3dc809a7e106cda528d",
-    "d8621f989f75156e5337c458497eed81b8cbbed3a167ac8a4ea452b403d66437",
-    "59767eb5ab466157bd11baa4214c32ada9981e7db58434ae95d92a8ce98dcd4a",
-    "9509d868376ef50fc9989f7ace5ee7a2cd150eeeb88f391754b62f46263abb8e",
-    "c857d09db23e6822e3600bc06ad8d58f92ed62bc8efd81c753f77048662cb97d",
-    "c70eca6b0f88f44d81a41311647e50fda1ac454ec04ffd442b0eb4743a993131",
-}
+def _local_lists():
+    """The SHA-256 sets ``(tokens, word_parts)`` of the local file, or None when the file is not there."""
+    path = os.path.join(ROOT, LOCAL)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        lists = json.load(f)
+    return {h.lower() for h in lists["tokens"]}, {h.lower() for h in lists["word_parts"]}
+
+
+LOCAL_LISTS = _local_lists()  # None without the local file
+#: SHA-256 of the lower-cased forbidden tokens, and of the lower-cased forbidden word parts (letters only)
+FORBIDDEN_SHA256, FORBIDDEN_PARTS_SHA256 = LOCAL_LISTS or (set(), set())
+NO_LISTS = (f"{LOCAL} is not in this checkout: this check needs the maintainers' private list, which is kept out "
+            f"of the repository (see the docstring of {SELF})")
 
 #: Generic patterns: personal folders, mounted disks, person-named temporary folders, credentials and private keys.
 #: The look-behind keeps a URL path such as https://example.org/home/ from counting as a folder.
@@ -168,6 +169,8 @@ def test_the_file_list_is_not_empty():
 
 
 def test_no_forbidden_tokens():
+    if LOCAL_LISTS is None:
+        pytest.skip(NO_LISTS)
     bad = {}
     for rel in repo_files():
         hits = forbidden_tokens(rel) | forbidden_tokens(strings_of(rel))
@@ -177,6 +180,8 @@ def test_no_forbidden_tokens():
 
 
 def test_no_forbidden_word_parts():
+    if LOCAL_LISTS is None:
+        pytest.skip(NO_LISTS)
     bad = {}
     for rel in repo_files():
         if rel.startswith(BUNDLES):
@@ -205,3 +210,7 @@ def test_no_oversized_files():
     big = {rel: os.path.getsize(os.path.join(ROOT, rel)) for rel in repo_files()
            if os.path.getsize(os.path.join(ROOT, rel)) > MAX_BYTES}
     assert not big, f"files over {MAX_BYTES // 2**20} MB: {big}"
+
+
+def test_the_private_lists_stay_local():
+    assert LOCAL not in repo_files(), f"{LOCAL} would be committed: it must stay listed in .gitignore"

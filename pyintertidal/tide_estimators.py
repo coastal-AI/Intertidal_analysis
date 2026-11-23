@@ -40,15 +40,14 @@ decreases inland.
 
 Why no gain is fitted. Wet/dry data cannot tell a larger tide from a lower
 pixel with a wider transition: scaling (gain, z, σ) together leaves every
-likelihood term unchanged (the project's notes call this the affine
-theorem). The default therefore fits the delay only (``fit_alpha=False``);
+likelihood term unchanged. The default therefore fits the delay only (``fit_alpha=False``);
 :func:`alpha_nll_profile` shows the flat likelihood. For the same reason the
 rank-based estimators below can see the delay but not the gain.
 
 Development alternatives (kept for comparison, not used by MAREA)
 -----------------------------------------------------------------
-The project's notes name the four estimators M2a (:func:`m2a_rasch`, the one
-MAREA uses) to M2d.
+The four estimators are labelled M2a (:func:`m2a_rasch`, the one MAREA uses)
+to M2d.
 
 :func:`m2d_flood_ebb`
     M2d, the published Granadeiro-style approach: the delay that makes the
@@ -510,8 +509,8 @@ def _band_nll(wet, clear, h, z_grid, sigma0, sg_grid=None, min_looks=6):
 def alpha_nll_profile(wet, clear, bank, tau, alpha_grid, z_grid, sg_grid):
     """NLL(alpha) with (z, sigma) profiled per pixel — the degeneracy meter.
 
-    Wet/dry data cannot see gain (the module docstring's "affine theorem"):
-    rescaling (alpha, z, sigma) TOGETHER leaves every likelihood term
+    Wet/dry data cannot see gain (see "Why no gain is fitted" in the module
+    docstring): rescaling (alpha, z, sigma) TOGETHER leaves every likelihood term
     unchanged. The profiling grids therefore scale with alpha — otherwise
     their fixed ceilings penalise large alpha and manufacture
     identifiability out of quantisation (measured once: a spurious 0.18 NLL

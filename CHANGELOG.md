@@ -19,7 +19,7 @@ topography using Sentinel-2 openEO data cubes*, presented at CARTOGRASS 2026 (Ca
   viewer website (`site/`, built into `docs/`).
 * `guide/NEW_ESTUARY.md`: how to map an estuary of your own: what you need, the rules for drawing the box, a box
   check that runs offline on the Villaviciosa kit, the chain of calls, what comes out and how to judge a run.
-* `scripts/quickstart.py`: MAREA in one call (`map_estuary`), from a Sentinel-2 cube and a tide record to the maps,
-  with the settings of the Villaviciosa product; it calls existing functions of the library and of
-  `scripts/marea_tools.py` only.
+* `scripts/quickstart.py`: MAREA in one call (`map_estuary`), from a Sentinel-2 cube and a tide series to the maps,
+  with the settings of the Villaviciosa product except the quality rule, which is on (3, the library default); it
+  calls existing functions of the library and of `scripts/marea_tools.py` only.
 * Licences: MIT for the code, CC BY 4.0 for text, figures and data.

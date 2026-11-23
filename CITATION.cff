@@ -3,22 +3,18 @@ message: "If you use this software or its data, please cite them as below."
 title: "MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes (CARTOGRASS 2026 companion repository)"
 type: software
 version: "cartograss26"
-date-released: "2026-11-23"        # the day of the branch's first commit; update if it is made on another day
+date-released: "2026-11-23"
 authors:
   - given-names: Jorge
     family-names: "Alías Álvarez"
     affiliation: "University of Oviedo, Spain"
-    # orcid: "https://orcid.org/0000-0000-0000-0000"   # to fill
   - given-names: Fernando
     family-names: "García-González"
     affiliation: "Instituto Español de Oceanografía (IEO-CSIC), Spain"
-    # orcid: to fill
   - given-names: Pablo
     family-names: "González"
     affiliation: "University of Oviedo, Spain"
-    # orcid: to fill
 repository-code: "https://github.com/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26"
-# The website, when GitHub Pages serves it from this branch's docs/ folder; change it if it is hosted elsewhere.
 url: "https://coastal-ai.github.io/Intertidal_analysis/"
 license:
   - MIT
