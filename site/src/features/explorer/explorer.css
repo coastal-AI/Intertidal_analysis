@@ -1,17 +1,20 @@
 /* Map explorer: MapLibre's controls in the site's colours and themes, and room for the phone panel.
  * --sheet-h (set on .cg26-map by the explorer) lifts the bottom controls above the phone panel; it is 0 on wide
- * screens, where the panel floats at the top left. MapLibre's own stylesheet loads after this one, so the rules that
- * override it carry one more class. */
+ * screens, where the panel floats at the top left. The scale bar, the zoom buttons and the attribution share the
+ * bottom-right corner, stacked. MapLibre's own stylesheet loads after this one, so the rules that override it carry
+ * one more class. */
 
 .cg26-map .maplibregl-ctrl-bottom-left,
 .cg26-map .maplibregl-ctrl-bottom-right {
   bottom: var(--sheet-h, 0px);
 }
 
-/* Wide screens: the scale bar starts right of the floating panel (16 px margin + 320 px card + 8 px). */
+/* Wide screens: the open attribution wraps before it reaches the floating panel (16 px margin + 320 px card + 8 px
+ * on its left, 10 px on its right; the width includes the padding MapLibre leaves for its button). */
 @media (min-width: 768px) {
-  .cg26-map .maplibregl-ctrl-bottom-left {
-    left: 344px;
+  .cg26-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib {
+    box-sizing: border-box;
+    max-width: calc(100vw - 354px);
   }
 }
 

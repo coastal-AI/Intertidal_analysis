@@ -9,6 +9,8 @@ export interface SheetProps {
   header: ReactNode
   /** The body: always shown on wide screens, shown on phones when the panel is expanded. */
   children: ReactNode
+  /** Wide screens: a last row that stays in view below the body when the body scrolls (e.g. the readout). */
+  footer?: ReactNode
   /** Phones only: start expanded. */
   defaultOpen?: boolean
   className?: string
@@ -16,9 +18,10 @@ export interface SheetProps {
 
 /**
  * The map's control panel: a bottom sheet on phones (a bar that expands), a floating card at the top left on wide
- * screens. Place it inside a positioned box that fills the map area (the viewer's root is one).
+ * screens, whose body scrolls between the header and the footer when the screen is short. Place it inside a
+ * positioned box that fills the map area (the viewer's root is one).
  */
-export function Sheet({ label, header, children, defaultOpen = false, className }: SheetProps) {
+export function Sheet({ label, header, children, footer, defaultOpen = false, className }: SheetProps) {
   const [open, setOpen] = useState(defaultOpen)
   const bodyId = useId()
   return (
@@ -43,9 +46,13 @@ export function Sheet({ label, header, children, defaultOpen = false, className 
           {open ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
         </button>
       </div>
-      <div id={bodyId} className={clsx('min-h-0 overflow-y-auto overscroll-contain px-4 pb-4', open ? 'block' : 'hidden md:block')}>
+      <div
+        id={bodyId}
+        className={clsx('min-h-0 overflow-y-auto overscroll-contain px-4', footer ? 'pb-3' : 'pb-4', open ? 'block' : 'hidden md:block')}
+      >
         {children}
       </div>
+      {footer && <div className="hidden shrink-0 border-t border-line px-4 py-2.5 md:block">{footer}</div>}
     </section>
   )
 }

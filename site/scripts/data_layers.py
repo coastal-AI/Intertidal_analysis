@@ -6,21 +6,26 @@ Run it from the site folder with any Python that has NumPy and Pillow:
     python scripts/data_layers.py --layers <folder of the layer files>
 
 The layer folder holds index.json (the sites), heights.json (each site's NMMA constant C) and one sub-folder per site
-(foz, eo, villaviciosa, santander, santona, mundaka). Each sub-folder has a manifest.json and, for every map layer, a
-value image (<layer>_values.png) on the site's Web Mercator grid; plus the tide lines (tide_lines.geojson,
-tide_levels.json) and, at Mundaka, the lines of equal delay (cotidal.geojson). The coloured images of the layer folder
-are not used: the overlays are drawn here, from the values, with the colour scales of src/features/explorer/ramps.json.
+(foz, eo, villaviciosa, mundaka). Each sub-folder has a manifest.json and, for every map layer, a value image
+(<layer>_values.png) on the site's Web Mercator grid; plus the tide lines (tide_lines.geojson, tide_levels.json) and,
+at Mundaka, the lines of equal delay (cotidal.geojson). Any coloured images of the layer folder are not used: the
+overlays are drawn here, from the values, with the colour scales of src/features/explorer/ramps.json.
+
+Every layer of a site must be drawn on one domain, which its manifest names in a "domain" block: "hand-cleaned" (the
+pixels with an elevation inside an intertidal mask cleaned by hand) or "automatic" (inside a mask made by a rule). A
+site with an automatic mask is listed as preliminary, and the viewer says so next to its name. A layer folder without
+a domain block (layers drawn on a production's own, noisy mask) is refused.
 
 It writes, under --out (default public/data, next to this script's folder):
 
-    sites/index.json                the site list (schema cg26-sites/1)
+    sites/index.json                the site list (schema cg26-sites/1), with a "preliminary" flag per site
     sites/<id>/manifest.json        the site's map: grid, layers, legends and tide levels (schema cg26-explorer-site/2)
     sites/<id>/<layer>.png          overlay images, drawn from the values (<layer>_<k>.png tiles where one image would
                                     be too large)
     sites/<id>/<layer>_values.png   value images, copied byte for byte (code = 256 R + G, value = offset + scale code,
                                     code 0 = no data)
     sites/<id>/tide_lines.geojson   contours at the tidal levels, labelled with the real minus sign
-    sites/<id>/cotidal.geojson      lines of equal delay (where the layer folder has them)
+    sites/<id>/cotidal.geojson      lines of equal delay (where the layer folder has them), without a "status" field
     sites/<id>/thumb.webp           a small picture of the elevation map, shown where a browser cannot draw the map
 
 The overlays are drawn at twice the grid's resolution (2.5 m on the ground) on the grid's own extent. Each overlay
@@ -52,15 +57,14 @@ import sys  # exit codes
 import numpy as np  # value images and overlays
 from PIL import Image  # PNG reading and writing, WebP writing
 
-SITE_ORDER = ["foz", "eo", "villaviciosa", "santander", "santona", "mundaka"]  # west to east
+SITE_ORDER = ["foz", "eo", "villaviciosa", "mundaka"]  # west to east: the sites with a hand-cleaned mask
 REGIONS = {  # the region line of each site card
     "foz": "Galicia",
     "eo": "Galicia–Asturias",
     "villaviciosa": "Asturias",
-    "santander": "Cantabria",
-    "santona": "Cantabria",
     "mundaka": "Basque Country",
 }
+DOMAINS = {"hand-cleaned": False, "automatic": True}  # the domain kinds a layer folder may name: preliminary or not
 
 #: The raster layers the map offers, in the order of its layer list: id, title, one sentence, readout decimals.
 RASTERS = [
@@ -72,6 +76,8 @@ RASTERS = [
 #: The tide-line layer: id, title, one sentence.
 CONTOURS = ("tide_lines", "Tide lines", "Where the ground meets each tidal level of the site.")
 EQUAL_DELAY_TITLE = "Lines of equal delay"  # the delay layer's lines, where the layer folder has them
+#: Units as a legend writes them, where they need more words than the readout's "%".
+LEGEND_UNITS = {"emersion": "% of hours out of the water"}
 
 R_EARTH = 6378137.0  # Web Mercator sphere radius (m)
 MINUS = "−"  # the real minus sign
@@ -486,7 +492,11 @@ def relabel_lines(src, dst, levels_by_id, with_nmma):
 
 
 def copy_lines(src, dst):
+    """Copy a GeoJSON of lines, without the "status" field of the layer folder (in its metadata or at the top)."""
     gj = read_json(src)
+    gj.pop("status", None)
+    if isinstance(gj.get("metadata"), dict):
+        gj["metadata"].pop("status", None)
     for feat in gj.get("features", []):
         if feat["geometry"]["type"] not in ("LineString", "MultiLineString"):
             fail(f"{os.path.basename(src)}: a {feat['geometry']['type']} among the lines")
@@ -537,6 +547,10 @@ def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
     if man.get("site", {}).get("id") != site_id:
         fail(f"{site_id}: manifest.json names another site")
     grid = grid_of(man, site_id)
+    domain = man.get("domain") or {}
+    if domain.get("kind") not in DOMAINS:
+        fail(f"{site_id}: the layers name no domain (hand-cleaned or automatic mask); refused")
+    preliminary = DOMAINS[domain["kind"]]
     prod = man["site"]["production"]
     by_id = {layer["id"]: layer for layer in man["layers"]}
     listed_heights, map_heights = heights_of(heights_entry, site_id)
@@ -594,6 +608,8 @@ def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
                        "check": check_samples(codes)},
             "scale": scale,
         }
+        if lid in LEGEND_UNITS:
+            entry["legendUnits"] = LEGEND_UNITS[lid]
         if lid == "elevation":
             entry["heights"] = True  # shown in the site's heights (NMMA = value + C where C exists)
         if lid == "delay":
@@ -651,9 +667,10 @@ def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
         "thumb": f"sites/{site_id}/thumb.webp",
         "manifest": f"sites/{site_id}/manifest.json",
         "layers": [e["id"] for e in entries],
+        "preliminary": preliminary,
     }
     return listed, {"grid": f"{grid['width']} x {grid['height']}", "thumb": thumb_size, "lines": n_lines,
-                    "drawn": drawn, "cuts": cuts}
+                    "drawn": drawn, "cuts": cuts, "domain": domain["kind"]}
 
 
 def clean_stale(out_dir):
@@ -724,7 +741,7 @@ def main():
         rows, cols = rep["cuts"]
         cut = f"cut at rows {rows} columns {cols}" if rows or cols else "one image"
         print(f"{site_id:13s} grid {rep['grid']:11s} overlay {cut:30s} thumb {rep['thumb'][0]}x{rep['thumb'][1]}  "
-              f"tide lines {rep['lines']} ({', '.join(rep['drawn'])})")
+              f"tide lines {rep['lines']} ({', '.join(rep['drawn'])})  domain {rep['domain']}")
     print(f"{len(WRITTEN)} files, {total / 1e6:.2f} MB, {removed} stale removed; digest {digest.hexdigest()[:16]}")
     return 0
 

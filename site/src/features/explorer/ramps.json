@@ -1,10 +1,10 @@
 {
- "about": "The colour scales of the map viewer's raster layers, defined only here. scripts/data_layers.py colours the overlay images with them and copies them into each site's manifest, from which the viewer draws its legends, so a legend shows the colours of its map. A scale of stops spreads them evenly over the layer's domain (the domain stays in the site's manifest) and interpolates between them in OKLab, as the legend's colour bar does; a scale of classes gives one colour to each class, in increasing order. The colours are ColorBrewer schemes: this product includes color specifications and designs developed by Cynthia Brewer (http://colorbrewer.org/).",
+ "about": "The colour scales of the map viewer's raster layers, defined only here. scripts/data_layers.py colours the overlay images with them and copies them into each site's manifest, from which the viewer draws its legends, so a legend shows the colours of its map. A scale of stops spreads them evenly over the layer's domain (the domain stays in the site's manifest) and interpolates between them in OKLab, as the legend's colour bar does; a scale of classes gives one colour to each class, in increasing order. They are the colours of the poster's maps: matplotlib's viridis for the elevation, and ColorBrewer schemes for the others (this product includes color specifications and designs developed by Cynthia Brewer, http://colorbrewer.org/).",
  "schema": "cg26-ramps/1",
  "elevation": {
-  "scheme": "ColorBrewer YlGnBu, 9 classes, reversed",
-  "reads": "dark blue is low ground, light yellow high ground",
-  "stops": ["#081D58", "#253494", "#225EA8", "#1D91C0", "#41B6C4", "#7FCDBB", "#C7E9B4", "#EDF8B1", "#FFFFD9"]
+  "scheme": "matplotlib viridis, 9 stops",
+  "reads": "dark purple is low ground, yellow high ground",
+  "stops": ["#440154", "#472D7B", "#3B528B", "#2C728E", "#21918C", "#28AE80", "#5EC962", "#ADDC30", "#FDE725"]
  },
  "sigma": {
   "scheme": "ColorBrewer Purples, 9 classes, without the near-white first one",
@@ -17,8 +17,8 @@
   "stops": ["#F7FCF5", "#E5F5E0", "#C7E9C0", "#A1D99B", "#74C476", "#41AB5D", "#238B45", "#006D2C", "#00441B"]
  },
  "delay": {
-  "scheme": "ColorBrewer Oranges, 9 classes",
+  "scheme": "ColorBrewer Oranges without its lightest 15 %, 9 stops",
   "reads": "light is no delay, dark the longest",
-  "stops": ["#FFF5EB", "#FEE6CE", "#FDD0A2", "#FDAE6B", "#FD8D3C", "#F16913", "#D94801", "#A63603", "#7F2704"]
+  "stops": ["#FEE2C5", "#FDCE9F", "#FDB170", "#FD9547", "#F67723", "#E65A0B", "#C94202", "#9F3303", "#7F2704"]
  }
 }

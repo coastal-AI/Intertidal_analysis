@@ -6,13 +6,13 @@
   {
    "bounds": [
     -7.30203,
-    43.53051,
+    43.53604,
     -7.21271,
     43.60134
    ],
    "centre": [
-    -7.25742,
-    43.56594
+    -7.25737,
+    43.5687
    ],
    "firstImage": "2015-07-25",
    "heights": {
@@ -34,20 +34,21 @@
    "longName": "Ría de Foz",
    "manifest": "sites/foz/manifest.json",
    "name": "Foz",
+   "preliminary": false,
    "region": "Galicia",
    "thumb": "sites/foz/thumb.webp",
    "years": "2015–2019"
   },
   {
    "bounds": [
-    -7.09948,
-    43.43806,
+    -7.0983,
+    43.44508,
     -6.98052,
-    43.57218
+    43.56424
    ],
    "centre": [
-    -7.0401,
-    43.50516
+    -7.03941,
+    43.50469
    ],
    "firstImage": "2017-01-25",
    "heights": {
@@ -69,20 +70,21 @@
    "longName": "Ría del Eo",
    "manifest": "sites/eo/manifest.json",
    "name": "Eo",
+   "preliminary": false,
    "region": "Galicia–Asturias",
    "thumb": "sites/eo/thumb.webp",
    "years": "2017–2023"
   },
   {
    "bounds": [
-    -5.46104,
-    43.47151,
+    -5.43695,
+    43.48805,
     -5.34708,
     43.55236
    ],
    "centre": [
-    -5.40401,
-    43.51194
+    -5.39202,
+    43.52022
    ],
    "firstImage": "2023-01-06",
    "heights": {
@@ -104,88 +106,21 @@
    "longName": "Ría de Villaviciosa",
    "manifest": "sites/villaviciosa/manifest.json",
    "name": "Villaviciosa",
+   "preliminary": false,
    "region": "Asturias",
    "thumb": "sites/villaviciosa/thumb.webp",
    "years": "2023–2025"
   },
   {
    "bounds": [
-    -3.88177,
-    43.35855,
-    -3.67863,
-    43.4814
-   ],
-   "centre": [
-    -3.7801,
-    43.42002
-   ],
-   "firstImage": "2023-01-06",
-   "heights": {
-    "C": null,
-    "datum": "model",
-    "note": "Heights above the mean sea level of the tide model at the site; no link to NMMA here."
-   },
-   "id": "santander",
-   "images": 51,
-   "lastImage": "2025-12-28",
-   "layers": [
-    "elevation",
-    "sigma",
-    "emersion",
-    "delay",
-    "tide_lines"
-   ],
-   "longName": "Bahía de Santander",
-   "manifest": "sites/santander/manifest.json",
-   "name": "Santander",
-   "region": "Cantabria",
-   "thumb": "sites/santander/thumb.webp",
-   "years": "2023–2025"
-  },
-  {
-   "bounds": [
-    -3.50051,
-    43.39964,
-    -3.41942,
-    43.46041
-   ],
-   "centre": [
-    -3.45998,
-    43.43004
-   ],
-   "firstImage": "2023-01-03",
-   "heights": {
-    "C": null,
-    "datum": "model",
-    "note": "Heights above the mean sea level of the tide model at the site; no link to NMMA here."
-   },
-   "id": "santona",
-   "images": 116,
-   "lastImage": "2025-12-28",
-   "layers": [
-    "elevation",
-    "sigma",
-    "emersion",
-    "delay",
-    "tide_lines"
-   ],
-   "longName": "Marismas de Santoña",
-   "manifest": "sites/santona/manifest.json",
-   "name": "Santoña",
-   "region": "Cantabria",
-   "thumb": "sites/santona/thumb.webp",
-   "years": "2023–2025"
-  },
-  {
-   "bounds": [
     -2.73567,
-    43.30087,
+    43.33436,
     -2.62414,
-    43.43539
+    43.43005
    ],
    "centre": [
-    -2.67996,
-    43.36817
+    -2.6799,
+    43.38222
    ],
    "firstImage": "2022-01-01",
    "heights": {
@@ -207,6 +142,7 @@
    "longName": "Ría de Mundaka (Urdaibai)",
    "manifest": "sites/mundaka/manifest.json",
    "name": "Mundaka",
+   "preliminary": false,
    "region": "Basque Country",
    "thumb": "sites/mundaka/thumb.webp",
    "years": "2022–2026"

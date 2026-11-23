@@ -4,8 +4,8 @@
 
 /** Tide lines: the poster's ink. */
 export const CONTOUR_COLOUR = '#1F2A30'
-/** Lines of equal delay: a dark tone of the delay ramp. */
-export const EQUAL_DELAY_COLOUR = '#804C22'
+/** Lines of equal delay: the darkest colour of the delay ramp (ramps.json). */
+export const EQUAL_DELAY_COLOUR = '#7F2704'
 /** Dash of the lines of equal delay, in line widths. */
 export const EQUAL_DELAY_DASH = [2, 1.5]
 

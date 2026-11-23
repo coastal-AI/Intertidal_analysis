@@ -290,8 +290,10 @@ export class ExplorerMap {
     })
     this.have.base = view.base
     this.have.theme = view.theme
+    // The scale bar sits right above the attribution, in the same corner, so the two never overlap (MapLibre puts a
+    // control added later to a bottom corner above the ones already there; the zoom buttons go above both).
     this.map.addControl(new AttributionControl({ compact: true }), 'bottom-right')
-    this.map.addControl(new ScaleControl({ unit: 'metric', maxWidth: 96 }), 'bottom-left')
+    this.map.addControl(new ScaleControl({ unit: 'metric', maxWidth: 96 }), 'bottom-right')
     this.setWide(init.wide)
     this.setRotation(false)
     const canvas = this.map.getCanvas()

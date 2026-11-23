@@ -11,8 +11,8 @@ export const SITES_SCHEMA = 'cg26-sites/1'
 /** Where the site list lives, relative to the data folder. */
 export const SITES_INDEX_PATH = 'sites/index.json'
 
-/** The six sites, west to east. */
-export const SITE_IDS = ['foz', 'eo', 'villaviciosa', 'santander', 'santona', 'mundaka'] as const
+/** The sites the viewer knows, west to east. */
+export const SITE_IDS = ['foz', 'eo', 'villaviciosa', 'mundaka'] as const
 export type SiteId = (typeof SITE_IDS)[number]
 
 export function isSiteId(value: unknown): value is SiteId {
@@ -63,6 +63,8 @@ export interface Site {
   manifest: string
   /** Layer ids the map offers at this site. */
   layers: string[]
+  /** The map is drawn inside an automatic mask, not one cleaned by hand: the viewer says "preliminary". */
+  preliminary: boolean
 }
 
 export interface SitesIndex {
@@ -98,6 +100,7 @@ export function parseSitesIndex(json: unknown): SitesIndex {
     const h = s.heights as Record<string, unknown> | undefined
     if (!h || (h.datum === 'NMMA' ? typeof h.C !== 'number' : h.datum !== 'model')) fail(`${s.id}: bad heights`)
     if (!Array.isArray(s.layers)) fail(`${s.id}: layers is not a list`)
+    if (typeof s.preliminary !== 'boolean') fail(`${s.id}: preliminary is not true or false`)
   }
   return o as unknown as SitesIndex
 }

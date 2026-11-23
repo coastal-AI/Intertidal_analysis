@@ -56,9 +56,15 @@ export const dataSources: DataSource[] = [
   },
   {
     label: 'Tide',
-    credit: 'EOT20 tide model (Hart-Davis et al. 2021), with IOC sea-level gauges at five sites',
+    credit: 'EOT20 (Hart-Davis et al. 2021)',
     licence: 'CC BY 4.0',
     href: 'https://doi.org/10.17882/79489',
+  },
+  {
+    label: 'Sea level',
+    credit: 'IOC Sea Level Station Monitoring Facility (VLIZ/IOC), doi:10.14284/482',
+    licence: 'non-commercial use (CC BY-NC 4.0)',
+    href: 'https://doi.org/10.14284/482',
   },
   {
     label: 'Orthophoto and base map',

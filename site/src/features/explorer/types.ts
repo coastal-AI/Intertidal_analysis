@@ -72,6 +72,8 @@ interface LayerBase {
   about: string
   /** Units of the values, e.g. "m", "%", "min". */
   units: string
+  /** Units as the legend writes them, where they need more words than the readout's (e.g. "% of hours out of the water"). */
+  legendUnits?: string
   /** Values are heights in the site's height system (NMMA = value + C where the site has C). */
   heights?: boolean
 }

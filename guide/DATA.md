@@ -5,16 +5,14 @@
 * **Who it is for:** users of the map viewer and of its data files (GIS analysts,
   ecologists, managers), and readers of the product files.
 
-## 1. The six sites
+## 1. The four sites
 
-| site | region | images | period of the images | tide at the mouth | pixels with an elevation |
-|---|---|---|---|---|---|
-| Ría de Foz | Galicia | 140 | 2015-07-25 to 2019-12-31 | EOT20 and the Ferrol 2 gauge (80 km away) | 32,039 |
-| Ría del Eo | Galicia and Asturias | 114 | 2017-01-25 to 2023-12-30 | EOT20 and the Ferrol 2 gauge (98 km away) | 52,562 |
-| Ría de Villaviciosa | Asturias | 97 | 2023-01-06 to 2025-12-28 | EOT20 alone | 29,728 |
-| Bahía de Santander | Cantabria | 51 | 2023-01-06 to 2025-12-28 | EOT20 and the Santander gauge (5 km away) | 90,888 |
-| Marismas de Santoña | Cantabria | 116 | 2023-01-03 to 2025-12-28 | EOT20 and the Santander gauge (27 km away) | 84,904 |
-| Ría de Mundaka (Urdaibai) | Basque Country | 197 | 2022-01-01 to 2026-10-31 | EOT20 and the Bilbao 3 gauge (30 km away) | 37,941 |
+| site | region | images | period of the images | tide at the mouth | pixels with an elevation | pixels on the map |
+|---|---|---|---|---|---|---|
+| Ría de Foz | Galicia | 140 | 2015-07-25 to 2019-12-31 | EOT20 and the Ferrol 2 gauge (80 km away) | 32,039 | 30,720 |
+| Ría del Eo | Galicia and Asturias | 114 | 2017-01-25 to 2023-12-30 | EOT20 and the Ferrol 2 gauge (98 km away) | 52,562 | 42,964 |
+| Ría de Villaviciosa | Asturias | 97 | 2023-01-06 to 2025-12-28 | EOT20 alone | 29,728 | 26,964 |
+| Ría de Mundaka (Urdaibai) | Basque Country | 197 | 2022-01-01 to 2026-10-31 | EOT20 and the Bilbao 3 gauge (30 km away) | 37,941 | 34,038 |
 
 * **Images:** the screened Sentinel-2 L2A scenes of each map's record. The periods
   differ between sites; each map describes its own period.
@@ -22,9 +20,13 @@
   is the mean of EOT20 and that IOC tide gauge, with the gauge's median removed (EOT20
   alone where the gauge record has gaps).
 * **Pixels:** 10 m pixels of 100 m² each.
-* **Delay:** at the Ría del Eo and the Marismas de Santoña every section has a delay of
-  0 min, and at the Bahía de Santander at most 1 min. There the maps use the tide at the
-  mouth unchanged.
+* **On the map:** the map viewer draws every layer only on the pixels with an elevation
+  inside an intertidal mask cleaned by hand by the second author, on the same 10 m grid.
+  The cleaning removes the water-detection noise at sea, around islands and along
+  channel edges. Gaps on the flats are pixels of that mask without an elevation: outside
+  the product's own mask, or a fit that failed a guard.
+* **Delay:** at the Ría del Eo every section has a delay of 0 min. There the map uses
+  the tide at the mouth unchanged.
 * **Villaviciosa:** the map is the product in
   [`products_marea/`](../products_marea/README.md), which
   [`REPRODUCE.md`](REPRODUCE.md) rebuilds bit for bit.
@@ -42,7 +44,10 @@
 MAREA estimates elevations only inside the intertidal mask: the pixels seen wet in 10 to
 90 % of more than 30 clear looks. Inside it, a pixel without an elevation failed a guard
 of the fit ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). The delay is
-defined on the whole mask.
+defined on the whole mask. The map viewer draws every layer, the delay included, only
+on the pixels on the map ([section 1](#1-the-four-sites)).
+
+The viewer's legend gives the emersion time as the % of hours out of the water.
 
 ## 3. Heights: NMMA and the constant C
 
@@ -69,8 +74,6 @@ spread over the images.
 | Ría del Eo | 0.3240 | 0.047 | Ferrol 2 |
 | Ría de Villaviciosa | 0.3778 | 0.055 | Ferrol 2 (91 of the 97 images) |
 | Ría de Mundaka (Urdaibai) | 0.3742 | 0.042 | Bilbao 3 |
-| Bahía de Santander | – | – | none yet: heights above the tide model's mean |
-| Marismas de Santoña | – | – | none yet: heights above the tide model's mean |
 
 * The poster rounds the Villaviciosa constant to 0.38 m.
 * The data files (the viewer's value images and the product files) keep the map's zero:
@@ -102,7 +105,8 @@ its high water is the mean of its two high waters, and likewise for its low wate
 spring tides are the tidal day of largest range in each fortnight, and the neap tides the
 tidal day of smallest range.
 
-The contours are drawn on MAREA's elevation, lightly smoothed (a Gaussian of one pixel
+The contours are drawn on MAREA's elevation on the pixels on the map
+([section 1](#1-the-four-sites)), lightly smoothed (a Gaussian of one pixel
 that ignores empty pixels, with holes of up to 9 pixels filled). Lines shorter than 100 m
 are dropped, and the rest are simplified to 2.5 m. A datum is drawn only where the map
 has values on both sides of it: between the 1st and the 99th percentiles of the mapped
@@ -117,12 +121,20 @@ MLWN −0.46, MSL +0.38, MHWN +1.19, MHWS +2.20 and HAT +2.79.
 **Lines of equal delay (Mundaka).** In the Ría de Mundaka the delay grows to more than
 an hour, so the **Delay** layer also draws lines of equal delay every 10 minutes: the
 places the tide reaches the same number of minutes after the mouth (co-tidal lines).
-They follow the delay of each pixel, from the same smooth profile of the section delays.
+They follow the delay of each pixel, from the same smooth profile of the section delays,
+on the pixels on the map only, so they stop at the channels. Pieces shorter than 20 m
+are dropped: no line is drawn beyond 50 min, where the flats of the inner reach are a few
+pixels wide.
 
-**Files.** For each site, `tide_lines.geojson` holds the contours (properties `datum`,
-`level_m` on the map's zero, and `length_m`), and `tide_levels.json` the seven levels and
-whether each is drawn. At Mundaka, `cotidal.geojson` holds the lines of equal delay
-(properties `tau_min`, `s_km` and `length_m`). Coordinates are WGS84, with 5 decimals.
+**Files.** For each site, `tide_lines.geojson` holds the contours, with the properties
+`datum`, `level_m` (on the map's zero), `level_nmma_m` (above NMMA), `units`, `label`
+(for example "MLWN −0.46 m", in NMMA), `length_m` (before simplification) and `source`,
+and a `metadata` block (the definitions, C, the licence and the attribution). The seven
+levels, and whether each is drawn, are in the site's `manifest.json`: the `tide_lines`
+layer, field `levels` (`id`, `name`, `level` on the map's zero, `nmma`, `drawn`). At
+Mundaka, `cotidal.geojson` holds the lines of equal delay, with the properties `tau_min`,
+`units`, `s_km` (where the delay first reaches that value, km from the mouth), `label`,
+`length_m` and `source`. Coordinates are WGS84, with 5 decimals.
 
 ## 5. The tide at each image
 
@@ -136,14 +148,16 @@ usable ones of the method's screening
 ## 6. Map viewer files
 
 * **Grid.** The layers of a site share one grid in Web Mercator (EPSG:3857), of about
-  6.89 m, which is 5 m on the ground at these latitudes. Each 10 m pixel of a product is
-  2 × 2 grid pixels; the values are not resampled.
+  6.89 m, which is 5 m on the ground at these latitudes, over the pixels on the map plus
+  200 m. Each 10 m pixel of a product is 2 × 2 grid pixels; the values are not
+  resampled.
 * **Overlay images.** Coloured RGBA PNG, for display only: at twice the grid's resolution
   (2.5 m on the ground), each overlay pixel interpolated bilinearly from the grid pixels
   around it that have a value, the edge of the data faded over one grid pixel, and
-  transparent where there is no value. Colours: ColorBrewer scales (elevation YlGnBu,
-  uncertainty Purples, emersion time Greens, delay Oranges). Overlays wider or taller
-  than 4096 pixels come in tiles. The readout uses the value images.
+  transparent where there is no value. Colours, those of the poster's maps: elevation
+  matplotlib's viridis (dark purple low, yellow high), uncertainty ColorBrewer Purples,
+  emersion time Greens, delay Oranges without its lightest 15 %. Overlays wider or
+  taller than 4096 pixels come in tiles. The readout uses the value images.
 * **Value images.** 8-bit RGB PNG that store the values for the pixel readout:
   code = 256 × R + G (B = 0), and value = offset + scale × code, with code 0 meaning no
   value. The offset and scale of each layer are in the site's `manifest.json`. The PNGs
@@ -243,8 +257,9 @@ Notebook [`01_marea_villaviciosa`](../notebooks/01_marea_villaviciosa.ipynb) use
   data (2015–2026)", processed with openEO on the Copernicus Data Space Ecosystem.
 * **EOT20:** Hart-Davis et al. (2021), DGFI-TUM; data on SEANOE,
   <https://doi.org/10.17882/79489>, CC BY 4.0. Its values are in the kit and the sample.
-* **Tide gauges:** IOC Sea Level Station Monitoring Facility (VLIZ, IOC-UNESCO); Ferrol 2,
-  Santander and Bilbao 3 are stations of Puertos del Estado.
+* **Tide gauges:** IOC Sea Level Station Monitoring Facility (VLIZ/IOC),
+  <https://doi.org/10.14284/482>, for non-commercial use (CC BY-NC 4.0); Ferrol 2 and
+  Bilbao 3 are stations of Puertos del Estado.
 * **Website basemaps:** PNOA orthophoto and IGN base map, © Instituto Geográfico
   Nacional de España, CC BY 4.0 (scne.es). They are loaded at run time from IGN's
   services and not redistributed.
@@ -252,17 +267,3 @@ Notebook [`01_marea_villaviciosa`](../notebooks/01_marea_villaviciosa.ipynb) use
   run time, with their attribution on the map.
 * **Website code:** the bundled libraries keep their licences, collected in
   [`docs/licenses/`](../docs/licenses/).
-
-## 10. Seagrass: ICE CREAMS
-
-ICE CREAMS classifies intertidal vegetation, seagrass included, from Sentinel-2. Its
-European intertidal seagrass map is not included here; it can be viewed and downloaded
-from the links below.
-
-* Viewer: <https://s2maxextenticecreams.projects.earthengine.app/view/europeanintertidalseagrass>
-* Paper: Davies, B. F. R., Oiry, S., Roca, M., Rosa, P., Zoffoli, M. L., Poursanidis, D.,
-  Dolch, T., Ondiviela, B., Galván, C., Brito, A. C., Lilley, R. J., Govers, L. L.,
-  Gade, M., Barillé, L., Gernez, P. (2026). An initial map of European intertidal
-  seagrass. *Remote Sensing of Environment* 333, 115116.
-  <https://doi.org/10.1016/j.rse.2025.115116>
-* Data: <https://doi.org/10.5281/zenodo.17523642> (CC BY 4.0).

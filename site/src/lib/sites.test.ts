@@ -7,7 +7,7 @@ describe('the site list contract (cg26-sites/1)', () => {
 
   it('accepts the generated site list', () => {
     expect(index.schema).toBe('cg26-sites/1')
-    expect(index.sites).toHaveLength(6)
+    expect(index.sites).toHaveLength(4)
   })
 
   it('lists the sites west to east', () => {
@@ -27,7 +27,7 @@ describe('the site list contract (cg26-sites/1)', () => {
         expect(s.heights.note.length).toBeGreaterThan(0)
       }
     }
-    expect(index.sites.filter((s) => s.heights.datum === 'model').map((s) => s.id)).toEqual(['santander', 'santona'])
+    expect(index.sites.filter((s) => s.heights.datum === 'model').map((s) => s.id)).toEqual([])
   })
 
   it('keeps every path relative to the data folder', () => {
@@ -49,5 +49,12 @@ describe('the site list contract (cg26-sites/1)', () => {
   it('recognises site ids', () => {
     expect(isSiteId('villaviciosa')).toBe(true)
     expect(isSiteId('urdaibai')).toBe(false)
+    expect(isSiteId('santander')).toBe(false)
+  })
+
+  it('needs a preliminary flag on every site', () => {
+    expect(index.sites.every((s) => s.preliminary === false)).toBe(true)
+    const bad = { ...indexJson, sites: [{ ...indexJson.sites[0], preliminary: 'no' }] }
+    expect(() => parseSitesIndex(bad)).toThrow(/preliminary/)
   })
 })

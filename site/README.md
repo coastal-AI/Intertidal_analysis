@@ -1,6 +1,6 @@
 # MAREA map viewer
 
-An interactive map of the MAREA results at six estuaries of northern Spain: elevation, uncertainty, emersion time,
+An interactive map of the MAREA results at four estuaries of northern Spain: elevation, uncertainty, emersion time,
 delay and tide lines over an orthophoto or a grey map, with a pixel readout and, on wide screens, a 3D view. It is the
 whole website: one full-screen page, a React + Tailwind CSS application around MapLibre GL JS, built with Vite into
 plain static files that GitHub Pages serves from the `docs/` folder of this branch.
@@ -89,11 +89,17 @@ All under `public/data/` (served at `<base>data/`), written by `scripts/data_lay
 python scripts/data_layers.py --layers <folder of the layer files>    # deterministic: a second run writes the same bytes
 ```
 
+Every layer of a site is drawn on one domain, named in the "domain" block of the layer folder's manifest: the pixels
+with an elevation inside an intertidal mask cleaned by hand ("hand-cleaned"), or inside a mask made by a rule
+("automatic"). The script refuses a layer folder without that block. A site with an automatic mask is listed with
+`"preliminary": true`, and the viewer writes "preliminary" next to its name in the site switcher and the info line.
+
 Code reads them with `dataUrl()` and `loadJSON()` from `src/lib/assets.ts`, never with a hand-written path.
 
 - `data/sites/index.json`: the site list (schema `cg26-sites/1`, checked by `useSitesIndex()` in `src/lib/sites.ts`):
   for each site, west to east, its names, images and period, centre and bounds, heights (`{datum: "NMMA", C, sigma,
-  source}` or `{datum: "model", C: null, note}`), thumbnail, manifest and layer ids. Paths are relative to `data/`.
+  source}` or `{datum: "model", C: null, note}`), thumbnail, manifest, layer ids and `preliminary` (true or false).
+  Paths are relative to `data/`.
 - `data/sites/<id>/manifest.json`: the site's grid, layers, legends and tide levels (schema `cg26-explorer-site/2`),
   with its overlay images, value images (code = 256 R + G, value = offset + scale × code, code 0 = no data), tide
   lines and, at Mundaka, lines of equal delay. The viewer draws whatever layers a manifest lists.
@@ -110,17 +116,17 @@ Code reads them with `dataUrl()` and `loadJSON()` from `src/lib/assets.ts`, neve
   `src/styles/contrast.test.ts` checks every text pair at 4.5:1 or more and every control pair at 3:1 or more, in both
   themes.
 - **Map colours**: one scale per layer, defined only in `src/features/explorer/ramps.json`, which colours the overlay
-  images and the legends alike: elevation ColorBrewer YlGnBu (low ground dark blue, high ground light yellow),
-  uncertainty Purples (one colour per class), emersion time Greens, delay Oranges; all sequential, light to dark (dark
-  to light for the elevation). This product includes color specifications and designs developed by Cynthia Brewer
-  (http://colorbrewer.org/).
+  images and the legends alike, with the colours of the poster's maps: elevation matplotlib's viridis (low ground
+  dark purple, high ground yellow), uncertainty ColorBrewer Purples (one colour per class), emersion time Greens,
+  delay Oranges without its lightest 15 %; all sequential, light to dark (dark to light for the elevation). This
+  product includes color specifications and designs developed by Cynthia Brewer (http://colorbrewer.org/).
 - **Theme**: the system preference, unless the visitor picks one with the toggle of the control panel (stored in
   `localStorage` when the browser allows it).
 - **Type**: Inter (variable); tabular figures for values.
 - **UI kit** (`src/components/ui`): `Button`, `ButtonAnchor`, `IconButton`, `Segmented` (native radio group), `Chip`,
-  `Badge`, `Slider`, `ColorBar` (legend ramp, OKLab where supported), `Notice`, `ExternalLink`, `Sheet` (the control
-  panel: bottom sheet on phones, floating card on wide screens), `Skeleton`. Components take layout classes through
-  `className`; size and colour come from props.
+  `Slider`, `ColorBar` (legend ramp, OKLab where supported), `Notice`, `ExternalLink`, `Sheet` (the control panel:
+  bottom sheet on phones, floating card on wide screens, with the readout in a footer that stays in view),
+  `Skeleton`. Components take layout classes through `className`; size and colour come from props.
 - **Accessibility**: labelled native inputs, a visible focus ring, `aria-live` for the readout, keyboard panning with
   a crosshair readout, a modal info panel (`<dialog>`), colour never the only cue, `lang="en"`.
 

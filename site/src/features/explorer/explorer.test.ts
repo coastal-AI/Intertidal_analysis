@@ -8,8 +8,6 @@ import indexJson from '../../../public/data/sites/index.json'
 import fozJson from '../../../public/data/sites/foz/manifest.json'
 import eoJson from '../../../public/data/sites/eo/manifest.json'
 import villaJson from '../../../public/data/sites/villaviciosa/manifest.json'
-import santanderJson from '../../../public/data/sites/santander/manifest.json'
-import santonaJson from '../../../public/data/sites/santona/manifest.json'
 import mundakaJson from '../../../public/data/sites/mundaka/manifest.json'
 import { lonLatToMercator, mercatorToLonLat, pixelOf, tileExtent, tileTouchesGrid } from './geo'
 import { DEFAULT_LAYER, formatHash, normaliseState, parseHash } from './hashState'
@@ -27,19 +25,18 @@ import {
   shadeDirection,
 } from './readout'
 import { compositeTile, decodeTerrarium, encodeTerrarium } from './terrarium'
-import { heightLayer, parseSiteManifest, type ContourLayer, type RasterLayer, type SiteManifest } from './types'
+import { heightLayer, parseSiteManifest, type ContourLayer, type MapHeights, type RasterLayer, type SiteManifest } from './types'
 import { codesFromRgba, failedChecks, valueAt, type ValueGrid } from './valueGrid'
 
 const MANIFESTS: Record<string, unknown> = {
   foz: fozJson,
   eo: eoJson,
   villaviciosa: villaJson,
-  santander: santanderJson,
-  santona: santonaJson,
   mundaka: mundakaJson,
 }
 const villa = parseSiteManifest(villaJson, 'villaviciosa')
-const santander = parseSiteManifest(santanderJson, 'santander')
+/** Heights of a site without an NMMA link (no such site in the data now; the format allows it). */
+const modelHeights: MapHeights = { datum: 'model', C: null, note: 'Heights above the tide model’s mean sea level.' }
 const layerOf = (s: SiteManifest, id: string) => s.layers.find((l) => l.id === id)!
 /** Formatted text with its no-break spaces (between numbers and units) written as plain spaces. */
 const plain = (text: string) => text.replace(/ /g, ' ')
@@ -68,9 +65,13 @@ describe('URL hash state', () => {
     expect(parseHash('#site=mundaka', 'villaviciosa').site).toBe('mundaka')
   })
 
+  it('opens the default site for a site the viewer no longer lists', () => {
+    expect(parseHash('#site=santander&layer=delay', 'villaviciosa').site).toBe('villaviciosa')
+  })
+
   it('writes the hash in one order and reads it back', () => {
-    const s = { site: 'santona' as const, layer: 'tide_lines', base: 'map' as const, threeD: false }
-    expect(formatHash(s)).toBe('site=santona&layer=tide_lines&base=map&3d=0')
+    const s = { site: 'mundaka' as const, layer: 'tide_lines', base: 'map' as const, threeD: false }
+    expect(formatHash(s)).toBe('site=mundaka&layer=tide_lines&base=map&3d=0')
     expect(parseHash(`#${formatHash(s)}`, 'foz')).toEqual(s)
   })
 
@@ -93,8 +94,8 @@ describe('Web Mercator and the site grid', () => {
   })
 
   it('finds the pixel of a point (same cell as a NumPy decode of the value image)', () => {
-    expect(pixelOf(villa.grid, -5.39555, 43.51387)).toEqual({ col: 1057, row: 857 })
-    expect(pixelOf(villa.grid, -5.395546248, 43.513906728)).toEqual({ col: 1057, row: 856 })
+    expect(pixelOf(villa.grid, -5.39555, 43.51387)).toEqual({ col: 668, row: 857 })
+    expect(pixelOf(villa.grid, -5.395546248, 43.513906728)).toEqual({ col: 668, row: 856 })
   })
 
   it('gives the corner pixels and nothing outside', () => {
@@ -186,7 +187,7 @@ describe('legend ticks and heights', () => {
     expect(niceStep(10)).toBe(2)
   })
 
-  it('says which way a scale runs (dark blue low ground to light yellow high ground; the others light to dark)', () => {
+  it('says which way a scale runs (dark purple low ground to yellow high ground; the others light to dark)', () => {
     expect(shadeDirection(ramps.elevation.stops)).toBe('dark to light')
     expect(shadeDirection(ramps.sigma.classes)).toBe('light to dark')
     expect(shadeDirection(ramps.emersion.stops)).toBe('light to dark')
@@ -195,10 +196,10 @@ describe('legend ticks and heights', () => {
 
   it('writes heights in NMMA where the site has C, else above the model mean', () => {
     expect(plain(formatHeight(-0.276, villa.heights))).toBe('+0.10 m NMMA')
-    expect(plain(formatHeight(-0.5, santander.heights))).toBe('−0.50 m')
+    expect(plain(formatHeight(-0.5, modelHeights))).toBe('−0.50 m')
     expect(plain(heightNote(villa.heights))).toContain('tide-model level + C, with C = 0.38 m')
     expect(heightNote(villa.heights)).toContain('Ferrol')
-    expect(heightNote(santander.heights)).toContain('no NMMA link')
+    expect(heightNote(modelHeights)).toContain('no NMMA link')
   })
 })
 
@@ -208,7 +209,7 @@ describe('tide levels', () => {
   it('runs from LAT to HAT with NMMA = level + C', () => {
     expect(lines.levels.map((l) => l.id)).toEqual(['LAT', 'MLWS', 'MLWN', 'MSL', 'MHWN', 'MHWS', 'HAT'])
     for (const l of lines.levels) expect(l.nmma! - l.level).toBeCloseTo(0.3778, 3)
-    expect(lines.levels.filter((l) => l.drawn).map((l) => l.id)).toEqual(['MLWS', 'MLWN', 'MSL', 'MHWN'])
+    expect(lines.levels.filter((l) => l.drawn).map((l) => l.id)).toEqual(['MLWN', 'MSL', 'MHWN'])
   })
 
   it('names the zone of a height', () => {
@@ -315,7 +316,11 @@ describe('generated data (scripts/data_layers.py)', () => {
     }
   })
 
-  it('writes six manifests that pass the explorer’s contract', () => {
+  it('lists no preliminary site: every map is drawn inside a hand-cleaned mask', () => {
+    expect(parseSitesIndex(indexJson).sites.map((s) => s.preliminary)).toEqual([false, false, false, false])
+  })
+
+  it('writes four manifests that pass the explorer’s contract', () => {
     for (const id of SITE_IDS) {
       const site = parseSiteManifest(MANIFESTS[id], id)
       expect(heightLayer(site)?.id).toBe('elevation')
@@ -326,16 +331,23 @@ describe('generated data (scripts/data_layers.py)', () => {
     }
   })
 
-  it('gives NMMA heights at four sites and model heights at Santander and Santoña', () => {
+  it('gives NMMA heights at the four sites', () => {
     const C = Object.fromEntries(SITE_IDS.map((id) => [id, parseSiteManifest(MANIFESTS[id], id).heights.C]))
-    expect(C).toEqual({ foz: 0.3151, eo: 0.324, villaviciosa: 0.3778, santander: null, santona: null, mundaka: 0.3742 })
+    expect(C).toEqual({ foz: 0.3151, eo: 0.324, villaviciosa: 0.3778, mundaka: 0.3742 })
+  })
+
+  it('writes the emersion legend in hours out of the water, its readout in %', () => {
+    for (const id of SITE_IDS) {
+      const e = layerOf(parseSiteManifest(MANIFESTS[id], id), 'emersion') as RasterLayer
+      expect([e.units, e.legendUnits]).toEqual(['%', '% of hours out of the water'])
+    }
   })
 
   it('draws lines of equal delay at Mundaka only, and notes where there is no delay', () => {
     for (const id of SITE_IDS) {
       const delay = layerOf(parseSiteManifest(MANIFESTS[id], id), 'delay') as RasterLayer
       expect(Boolean(delay.lines)).toBe(id === 'mundaka')
-      expect(Boolean(delay.note)).toBe(['eo', 'santona', 'santander'].includes(id))
+      expect(Boolean(delay.note)).toBe(id === 'eo')
     }
   })
 

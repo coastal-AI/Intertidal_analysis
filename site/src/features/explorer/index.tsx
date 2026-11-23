@@ -25,7 +25,7 @@ import { siteFileUrl, useLocationHash, useMediaQuery, useSiteManifest, useValueG
 import { Ladder, Legend } from './Legend'
 import { heightNote, heightOffset, readoutLine } from './readout'
 import { ExplorerMap, type MapInit, type PointerInfo } from './mapController'
-import { LayerChips, LayerList, MapToggles, Readout, SiteChips, SiteSelect } from './Panel'
+import { LayerChips, LayerList, MapToggles, PRELIMINARY, Readout, SiteChips, SiteSelect } from './Panel'
 import type { TerrainHeights } from './terrarium'
 import { heightLayer, rasterById, type MapLayer, type SiteManifest } from './types'
 import { valueAt } from './valueGrid'
@@ -45,9 +45,9 @@ function hasWebGL2(): boolean {
   }
 }
 
-/** "97 Sentinel-2 images, 2023–2025". */
-function imagesLine(site: Pick<SiteManifest, 'images' | 'years'>): string {
-  return `${fmtInt(site.images)} Sentinel-2 images, ${site.years}`
+/** "97 Sentinel-2 images, 2023–2025", and "· preliminary" for a site whose map is drawn inside an automatic mask. */
+function imagesLine(site: Pick<SiteManifest, 'images' | 'years'>, preliminary = false): string {
+  return `${fmtInt(site.images)} Sentinel-2 images, ${site.years}${preliminary ? ` · ${PRELIMINARY}` : ''}`
 }
 
 /** The map centre's target while the keyboard moves the map. */
@@ -245,6 +245,7 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
   const pickSite = (id: SiteId) => setState({ site: id })
   const pickLayer = (id: string) => setState({ layer: id })
   const layers = view?.layers ?? []
+  const preliminary = Boolean(view && sites?.find((s) => s.id === view.id)?.preliminary)
   // The opacity slider: only while a coloured image is on the map.
   const hasImage = layer?.kind === 'raster' || under !== null
   const opacityPct = Math.round(opacity * 100)
@@ -264,7 +265,7 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
     <div className="grid grid-cols-1 gap-1 pt-1 pb-2 pr-1">
       <BrandRow onInfo={() => setAbout(true)} />
       {sites ? <SiteSelect sites={sites} value={requested.site} onChange={pickSite} /> : <Skeleton className="h-11 w-full" />}
-      <p className="text-sm text-muted">{view ? imagesLine(view) : ' '}</p>
+      <p className="text-sm text-muted">{view ? imagesLine(view, preliminary) : ' '}</p>
     </div>
   ) : (
     <div ref={headRef} className="grid min-w-0 grid-cols-1 gap-2 py-1.5">
@@ -280,14 +281,13 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
       {layers.length > 0 && <LayerList layers={layers} value={layer?.id ?? ''} onChange={pickLayer} />}
       {view && layer && <Legend layer={layer} heights={view.heights} className="border-t border-line pt-4" />}
       {opacitySlider}
-      <Readout text={readout} className="border-t border-line pt-3" />
     </div>
   ) : (
     <div className="grid grid-cols-1 gap-3 pt-1">
       {failed && <Notice tone="warn">The map data could not be loaded.</Notice>}
       {view && (
         <p className="text-sm font-medium text-ink">
-          {view.longName} · {imagesLine(view)}
+          {view.longName} · {imagesLine(view, preliminary)}
         </p>
       )}
       {layer && <p className="text-sm text-muted">{layer.about}</p>}
@@ -324,7 +324,7 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
         threeD={state.threeD}
         on3d={(on) => setState({ threeD: on })}
       />
-      <Sheet label="Map controls" header={header}>
+      <Sheet label="Map controls" header={header} footer={wide ? <Readout text={readout} /> : undefined}>
         {body}
       </Sheet>
       <AboutDialog open={about} onClose={() => setAbout(false)} with3d={can3d} />

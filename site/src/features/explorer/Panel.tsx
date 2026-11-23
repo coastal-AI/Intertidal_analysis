@@ -1,6 +1,7 @@
 /**
  * The explorer's controls: site switcher, layer list, readout line and the map toggles (basemap, 2D/3D).
- * Wide screens get a select and a vertical list in a floating card; phones get rows of chips.
+ * Wide screens get a select and a vertical list in a floating card; phones get rows of chips. A site flagged
+ * preliminary in the site list gets that word next to its name.
  */
 import { clsx } from 'clsx'
 import { ChevronDown } from 'lucide-react'
@@ -11,6 +12,9 @@ import { BASEMAPS } from './basemaps'
 import type { BaseMap } from './hashState'
 import { CONTOUR_COLOUR } from './lineStyles'
 import type { MapLayer } from './types'
+
+/** The word shown next to the name of a site whose map is drawn inside an automatic mask (index.json: preliminary). */
+export const PRELIMINARY = 'preliminary'
 
 /** A small picture of a layer: its colours, or a line for tide lines. */
 function LayerIcon({ layer }: { layer: MapLayer }) {
@@ -48,7 +52,7 @@ export function SiteSelect({ sites, value, onChange }: { sites: Site[]; value: S
       >
         {sites.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.longName}
+            {s.preliminary ? `${s.longName} · ${PRELIMINARY}` : s.longName}
           </option>
         ))}
       </select>
@@ -76,6 +80,7 @@ export function SiteChips({ sites, value, onChange, className }: { sites: Site[]
       {sites.map((s) => (
         <Chip key={s.id} size="sm" selected={s.id === value} onClick={() => onChange(s.id)} className="shadow-card">
           {s.name}
+          {s.preliminary && <span className="text-xs font-normal opacity-80">{PRELIMINARY}</span>}
         </Chip>
       ))}
     </ChipRow>

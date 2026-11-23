@@ -20,15 +20,13 @@ These keep their own licences and must be attributed when you reuse what is deri
   (2021). EOT20: a global ocean tide model from multi-mission satellite altimetry. SEANOE,
   [doi:10.17882/79489](https://doi.org/10.17882/79489). CC BY 4.0. The tide levels in `replication/`, in the sample
   and in the website's data are values of this model.
-* **Tide-gauge records.** Where a product's tide at the mouth comes from a tide gauge (the Santander, Ferrol and
-  Bilbao gauges), the records are those of the IOC Sea Level Station Monitoring Facility (VLIZ/IOC); acknowledge the
+* **Tide-gauge records.** Where a product's tide at the mouth comes from a tide gauge (the Ferrol and Bilbao
+  gauges), the records are those of the IOC Sea Level Station Monitoring Facility (VLIZ/IOC); acknowledge the
   facility when you reuse them.
 * **Base maps.** The website loads the PNOA orthophoto and the IGN base map of the Instituto Geográfico Nacional
   (CC BY 4.0 scne.es) when it runs; they are not redistributed here.
 * **Terrain.** The website's 3D view loads Mapterhorn terrain tiles (built from open elevation models) when it runs;
   they are not redistributed here, and their attribution is shown on the map.
-* **ICE CREAMS.** The European intertidal seagrass map of Davies et al. (2026) is cited in `guide/DATA.md`, not
-  included.
 
 ## Third-party code bundled in the website
 

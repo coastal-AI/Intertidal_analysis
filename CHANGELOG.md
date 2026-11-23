@@ -6,8 +6,9 @@ First version of this branch: the companion repository of the poster *MAREA: a m
 topography using Sentinel-2 openEO data cubes*, presented at CARTOGRASS 2026 (Cartagena, 24-26 November 2026).
 
 * `pyintertidal/`: the 22 modules of the library that MAREA, the notebooks and the map layers use, with a shorter
-  `__init__.py`. The code is unchanged from the development library; only docstrings and comments were edited for
-  this edition.
+  `__init__.py`. The code is unchanged from the development library, except that the site descriptions of
+  `sites.py` were edited and `seal.py` keeps only its SHA-256 helper; elsewhere only docstrings and comments were
+  edited for this edition.
 * `configs/`: the settings `marea.reconstruct` reads (`m2.yaml`) and the known corrections of overpass times.
 * `replication/`, `products_marea/`, `products_villaviciosa/`, `scripts/`: the published 10 m product of the Ría de
   Villaviciosa (97 Sentinel-2 scenes, 2023-2025), its 10 m grid, the offline replication kit and the script that

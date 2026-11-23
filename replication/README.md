@@ -29,7 +29,7 @@ The source cube is `ndwi_cube_villaviciosa_grande_10y.nc` (sha256
 
 ## How it was made
 
-On 2026-10-27, on a Windows 10 laptop, at commit `67f80cf` of `main`, from
+On 2026-10-27, on a Windows 10 laptop, at a development commit (`67f80cf`, not published), from
 the repository root:
 
 ```bash

@@ -39,22 +39,23 @@ channel (zero at the mouth, never decreasing inland). It shifts the tide by that
 and only then fits the elevation of each pixel.
 
 The images come as openEO data cubes from the Copernicus Data Space Ecosystem. The tide
-comes from the global model EOT20, averaged at five of the six sites with the nearest
+comes from the global model EOT20, averaged at three of the four sites with the nearest
 tide gauge.
 Elevation and emersion time together are a base layer for the potential habitat of
 *Nanozostera noltei*. (*Marea* is Spanish for tide.)
 
 ## Explore the maps
 
-The map viewer shows MAREA's maps of six estuaries of northern Spain, from west to east:
-the Ría de Foz, the Ría del Eo, the Ría de Villaviciosa, the Bahía de Santander, the
-Marismas de Santoña and the Ría de Mundaka (Urdaibai).
+The map viewer shows MAREA's maps of four estuaries of northern Spain, from west to east:
+the Ría de Foz, the Ría del Eo, the Ría de Villaviciosa and the Ría de Mundaka (Urdaibai).
+Each map is drawn only inside an intertidal mask cleaned by hand, which removes the
+water-detection noise at sea and along the open coast.
 
 | layer | what it shows |
 |---|---|
-| Elevation | height of the ground, in m above NMMA (mean sea level at Alicante); above the tide model's mean at Santander and Santoña |
+| Elevation | height of the ground, in m above NMMA (mean sea level at Alicante) |
 | Uncertainty | width σ of each pixel's dry-to-wet transition, in m |
-| Emersion time | share of time the ground is out of the water, in % |
+| Emersion time | share of the hours the ground is out of the water, in % |
 | Delay | how many minutes after the mouth the tide reaches each pixel; at Mundaka, with lines of equal delay |
 | Tide lines | elevation contours at the tidal datums (MLWN, MSL, …) |
 
@@ -166,10 +167,10 @@ local preview.
 
 ## Code and data availability
 
-* **Code:** this branch, `CARTOGRASS26`, of
-  <https://github.com/coastal-AI/Intertidal_analysis>. Release and Zenodo DOI: to be
-  added.
-* **The maps of the six sites:** in the map viewer; their layer images and value images
+* **Code:** this branch, `CARTOGRASS26`:
+  <https://github.com/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26>. Release and
+  Zenodo DOI: to be added.
+* **The maps of the four sites:** in the map viewer; their layer images and value images
   are in [`site/public/data/`](site/public/data/) (formats in
   [`guide/DATA.md`](guide/DATA.md#6-map-viewer-files)). CC BY 4.0.
 * **The Villaviciosa product and its replication kit:**
@@ -192,13 +193,10 @@ local preview.
 * Contains modified Copernicus Sentinel data (2015–2026), processed with openEO on the
   Copernicus Data Space Ecosystem.
 * Tide model EOT20 (Hart-Davis et al. 2021), CC BY 4.0.
-* Tide gauges Ferrol 2, Santander and Bilbao 3: IOC Sea Level Station Monitoring
+* Tide gauges Ferrol 2 and Bilbao 3: IOC Sea Level Station Monitoring
   Facility (VLIZ, IOC-UNESCO); stations of Puertos del Estado.
 * Website basemaps: PNOA orthophoto and IGN base map, © Instituto Geográfico Nacional de
   España (CC BY 4.0, scne.es), loaded at run time.
-* Seagrass: the European intertidal seagrass map made with ICE CREAMS (Davies et al.
-  2026) is not redistributed here; links in
-  [`guide/DATA.md`](guide/DATA.md#10-seagrass-ice-creams).
 
 ## How to cite
 
@@ -245,13 +243,11 @@ The software and its data are described in [`CITATION.cff`](CITATION.cff).
 1. Bishop-Taylor, R. et al. (2019). Between the tides: modelling the elevation of
    Australia's exposed intertidal zone at continental scale. *Estuarine, Coastal and
    Shelf Science* 223, 115–128.
-2. Davies, B. F. R. et al. (2026). An initial map of European intertidal seagrass.
-   *Remote Sensing of Environment* 333, 115116. <https://doi.org/10.1016/j.rse.2025.115116>
-3. Granadeiro, J. P. et al. (2021). Using Sentinel-2 images to estimate topography,
+2. Granadeiro, J. P. et al. (2021). Using Sentinel-2 images to estimate topography,
    tidal-stage lags and exposure periods over large intertidal areas. *Remote Sensing*
    13(2), 320.
-4. Hart-Davis, M. G. et al. (2021). EOT20: a global ocean tide model from multi-mission
+3. Hart-Davis, M. G. et al. (2021). EOT20: a global ocean tide model from multi-mission
    satellite altimetry. *Earth System Science Data* 13, 3869–3884.
    <https://doi.org/10.5194/essd-13-3869-2021>
-5. Schramm, M. et al. (2021). The openEO API – harmonising the use of Earth observation
+4. Schramm, M. et al. (2021). The openEO API – harmonising the use of Earth observation
    cloud services using virtual data cube functionalities. *Remote Sensing* 13(6), 1125.

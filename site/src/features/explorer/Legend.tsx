@@ -111,7 +111,7 @@ export interface LegendProps {
 }
 
 export function Legend({ layer, heights, compact = false, className }: LegendProps) {
-  const units = layer.heights ? heightUnits(heights) : layer.units
+  const units = layer.heights ? heightUnits(heights) : (layer.legendUnits ?? layer.units)
   return (
     <div className={clsx('grid min-w-0 grid-cols-1', compact ? 'gap-1.5' : 'gap-2', className)}>
       <Title title={layer.title} units={units} />
