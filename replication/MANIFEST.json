@@ -1,0 +1,235 @@
+{
+ "kit": "MAREA replication kit, Ria de Villaviciosa, record 2023-2025",
+ "reproduces": "products_marea/ (steps 6-11) with scripts/reproduce_villaviciosa.py --from-kit replication",
+ "made_by": "python -X utf8 replication/build_kit.py --extract <marea_extract.npz> --tide-dir <tide_models> --cube <cube> --hash-cube",
+ "git_commit": "67f80cfd24ecefdf53d92bf8563113b00db5978c",
+ "made_utc": "2026-10-27T12:21:04Z",
+ "python": "3.13.3",
+ "packages": {
+  "numpy": "2.4.6",
+  "pandas": "2.3.3",
+  "pyTMD": "2.2.9.1",
+  "eo-tides": "0.10.4"
+ },
+ "conventions": "times UTC (datatake start); levels in m on the EOT20 scale (about mean sea level); shifts in min, the level read that many minutes earlier",
+ "files": {
+  "villaviciosa_record_2023-2025.npz": {
+   "sha256": "21e222759d6ea5f3e2cf955bdced9932a70b7c21f4401016d9f4b8f876e0fdde",
+   "bytes": 10997346,
+   "contents": "the 97 record rows of the extraction of the authors' cube (marea.extract), with keep, dates, shape, sea, inter, bbox (the registry polygon's box, which the production call passed), crs_wkt and the source cube's sha256",
+   "arrays": {
+    "Y": [
+     "float32",
+     [
+      97,
+      32120
+     ]
+    ],
+    "C": [
+     "bool",
+     [
+      97,
+      32120
+     ]
+    ],
+    "keep": [
+     "int64",
+     [
+      32120
+     ]
+    ],
+    "dates": [
+     "<U10",
+     [
+      97
+     ]
+    ],
+    "shape": [
+     "int64",
+     [
+      2
+     ]
+    ],
+    "sea": [
+     "bool",
+     [
+      915,
+      915
+     ]
+    ],
+    "inter": [
+     "bool",
+     [
+      915,
+      915
+     ]
+    ],
+    "bbox": [
+     "float64",
+     [
+      4
+     ]
+    ],
+    "crs_wkt": [
+     "<U835",
+     []
+    ],
+    "source_cube_sha256": [
+     "<U64",
+     []
+    ]
+   }
+  },
+  "villaviciosa_eot20_levels.npz": {
+   "sha256": "6d6f675c35ae1b411fc1ae34372d7b9c03da4890ace3447465be0bc80a6360ef",
+   "bytes": 97379,
+   "contents": "EOT20 at the registry centroid (43.509024, -5.416135) at the 97 record instants minus every whole-minute shift -45..180 (levels_m[i, j] = level at times[j] - shifts_min[i])",
+   "arrays": {
+    "times_ns": [
+     "int64",
+     [
+      97
+     ]
+    ],
+    "times_utc": [
+     "<U19",
+     [
+      97
+     ]
+    ],
+    "dates": [
+     "<U10",
+     [
+      97
+     ]
+    ],
+    "shifts_min": [
+     "int16",
+     [
+      226
+     ]
+    ],
+    "levels_m": [
+     "float64",
+     [
+      226,
+      97
+     ]
+    ],
+    "model": [
+     "<U5",
+     []
+    ],
+    "lat": [
+     "float64",
+     []
+    ],
+    "lon": [
+     "float64",
+     []
+    ]
+   }
+  },
+  "villaviciosa_eot20_10min_2023-2025.npz": {
+   "sha256": "d80ad559a9b373f5bd1a5e3da07a1bf7bc6a4339fc72a316f544d4198c19f488",
+   "bytes": 1379419,
+   "contents": "EOT20 at the same point every 10 min from 2022-12-31 21:00:00 to 2025-12-31 23:50:00 UTC (float32); the first 180 min are the margin for delays up to 180 min",
+   "arrays": {
+    "times_ns": [
+     "int64",
+     [
+      157842
+     ]
+    ],
+    "levels_m": [
+     "float32",
+     [
+      157842
+     ]
+    ],
+    "step_min": [
+     "int64",
+     []
+    ],
+    "margin_min": [
+     "int64",
+     []
+    ],
+    "model": [
+     "<U5",
+     []
+    ],
+    "lat": [
+     "float64",
+     []
+    ],
+    "lon": [
+     "float64",
+     []
+    ]
+   }
+  }
+ },
+ "inputs": {
+  "extraction": {
+   "file": "products_marea/marea_extract.npz (not public)",
+   "sha256": "68bfa4ae5c5e28779740a805f5b720236e83ef959adbda2aad5cac2cfd057a21",
+   "bytes": 142506141,
+   "scenes": 1379
+  },
+  "source_cube": {
+   "file": "ndwi_cube_villaviciosa_grande_10y.nc (not public)",
+   "sha256": "5f3ccb2bf9162037798111b86cc295e77fe39159480e665a4911a18c53aaa337",
+   "sha256_rechecked": true,
+   "crs_wkt_from": "the cube's crs variable, as marea.extract reads it"
+  },
+  "product": {
+   "result.json": "a1620b89cd51c0f42bf4400a023a59367fbded606990f7db462a5334160e80ae",
+   "marea.npz": "fe77587460b8c49e760e6576b264b90dfd699435c8fdc9798a3e1b5c163a4fe6",
+   "overpass_times.json": "3a26b84e1e10d28279dc2667c24e5cc72950bb00e5882692c1857c612cc61c1b"
+  },
+  "tide_model": {
+   "model": "EOT20",
+   "point_lat_lon": [
+    43.50902431610943,
+    -5.4161347517730505
+   ],
+   "point": "pyintertidal.sites.get('villaviciosa').centroid",
+   "files": [
+    "2N2_ocean_eot20.nc",
+    "J1_ocean_eot20.nc",
+    "K1_ocean_eot20.nc",
+    "K2_ocean_eot20.nc",
+    "M2_ocean_eot20.nc",
+    "M4_ocean_eot20.nc",
+    "MF_ocean_eot20.nc",
+    "MM_ocean_eot20.nc",
+    "N2_ocean_eot20.nc",
+    "O1_ocean_eot20.nc",
+    "P1_ocean_eot20.nc",
+    "Q1_ocean_eot20.nc",
+    "S1_ocean_eot20.nc",
+    "S2_ocean_eot20.nc",
+    "SA_ocean_eot20.nc",
+    "SSA_ocean_eot20.nc",
+    "T2_ocean_eot20.nc"
+   ]
+  }
+ },
+ "checks": {
+  "extract keep and shape equal products_marea/marea.npz": true,
+  "record dates equal products_marea/result.json record_dates": true,
+  "zero-shift range equals result.json rango_marea_m": true,
+  "per-shift EOT20 calls identical to the batched call": {
+   "-45": true,
+   "0": true,
+   "6": true,
+   "12": true,
+   "16": true,
+   "90": true,
+   "180": true
+  }
+ },
+ "licences": "Contains modified Copernicus Sentinel data (2023-2025). EOT20: Hart-Davis et al. (2021), SEANOE, doi:10.17882/79489, CC BY 4.0. Kit: CC BY 4.0 (LICENSE-docs.md).",
+ "doi": "to be added on release"
+}

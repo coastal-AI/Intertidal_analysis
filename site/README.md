@@ -1,0 +1,120 @@
+# MAREA map viewer
+
+An interactive map of the MAREA results at six estuaries of northern Spain: elevation, uncertainty, emersion time,
+delay and tide lines over an orthophoto or a grey map, with a pixel readout and, on wide screens, a 3D view. It is the
+whole website: one full-screen page, a React + Tailwind CSS application around MapLibre GL JS, built with Vite into
+plain static files that GitHub Pages serves from the `docs/` folder of this branch.
+
+## Run it
+
+Node 22 or newer (built with Node 24 and npm 11).
+
+```bash
+cd site
+npm ci              # once: installs the exact versions of package-lock.json
+npm run dev         # development server: http://localhost:5173/Intertidal_analysis/
+npm run build       # static site into ../docs (vite build, then scripts/postbuild.mjs)
+npm run preview     # serves the build: http://localhost:4173/Intertidal_analysis/
+npm run typecheck   # TypeScript, no output
+npm test            # unit tests (Vitest)
+```
+
+Every dependency is pinned to an exact version (`.npmrc`: `save-exact=true`); the versions were resolved with
+`npm install --before=2026-11-09`, so none was younger than two weeks when the site was built.
+
+## Build variables
+
+The base path is **one** variable. Every asset and data file is resolved from it, so the same code serves any host.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SITE_BASE` | `/Intertidal_analysis/` | Path the site is served under: `/Intertidal_analysis/` for the GitHub Pages site of this repository (`https://<owner>.github.io/Intertidal_analysis/`), `/<repository>/` for another repository, `/` for a custom domain |
+| `SITE_OUT_DIR` | `../docs` | Output folder (emptied first; it may not be the site folder or a folder above it) |
+| `SITE_PUBLIC_DIR` | `public` | Folder copied unchanged into the build; it replaces `public/` as a whole |
+| `SITE_CACHE_DIR` | `node_modules/.vite` | Vite's cache |
+| `VITE_REPO_URL` | `https://github.com/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26` | Repository page the info panel links to; its file links and the citation follow it |
+| `VITE_ENABLE_3D` | `desktop` | Where the viewer may show its 2D/3D toggle: `on`, `desktop` (wide screens only) or `off` |
+
+Examples:
+
+```bash
+npm run build                                                     # GitHub Pages of this repository
+SITE_BASE=/marea/ VITE_REPO_URL=https://github.com/<owner>/marea npm run build   # a separate repository
+SITE_BASE=/ npm run build                                         # a custom domain
+```
+
+On Windows PowerShell, set a variable first: `$env:SITE_BASE = '/marea/'; npm run build`. Git Bash rewrites a
+value that starts with `/` into a Windows folder before npm sees it; keep it as typed with
+`MSYS2_ENV_CONV_EXCL=SITE_BASE SITE_BASE=/marea/ npm run build`. The build refuses a base path that is a folder.
+
+## What the build writes
+
+`vite build` writes the page (`index.html`) and its assets into `SITE_OUT_DIR`; `scripts/postbuild.mjs` then adds
+`.nojekyll`, `licenses/` (the licence texts of the bundled packages, one file each and `THIRD-PARTY-NOTICES.txt`,
+linked from the info panel), and runs a scan of the text files for local folders, file URLs and IP addresses and a
+size report: the build fails on a hit, above 30 MB in all or above 5 MB for one file. The viewer keeps its state in
+the URL hash (`#site=<id>&layer=<id>&base=photo|map&3d=0|1`), so it needs no other page and no 404 fallback.
+
+## Code map
+
+```
+site/
+  index.html             the page; an inline script applies the theme before the first paint
+  vite.config.js         Vite, React, Tailwind, the "@" alias for src/, Vitest
+  scripts/
+    site-env.mjs         the build variables (shared by vite.config.js and postbuild.mjs)
+    postbuild.mjs        .nojekyll, licences, scan, sizes
+    data_layers.py       writes public/data/ from the folder of map layers (NumPy, Pillow)
+  public/                copied as is: favicon.svg, .nojekyll, data/
+  src/
+    main.tsx, App.tsx    entry; the full-screen frame that lazy-loads the viewer
+    config.ts            build-time configuration (base path, repository link, 3D setting)
+    content/site.ts      texts of the info panel: title, authors, data sources, citation
+    styles/index.css     design tokens (light on :root, dark on .dark) and base styles
+    styles/fonts.css     Inter, self-hosted (latin and greek subsets)
+    lib/                 assets.ts (URLs under the base path, cached JSON), format.ts (numbers, units),
+                         sites.ts (the site list contract), theme.ts, useResource.ts
+    components/ui/       the UI kit
+    components/layout/   ErrorBoundary, LogoMark
+    features/contracts.ts   the props App.tsx passes to the viewer
+    features/explorer/   the viewer (its own chunk, with MapLibre GL JS): map, panel, legend, readout, info panel
+```
+
+## Data files
+
+All under `public/data/` (served at `<base>data/`), written by `scripts/data_layers.py`:
+
+```bash
+python scripts/data_layers.py --layers <folder of the layer files>    # deterministic: a second run writes the same bytes
+```
+
+Code reads them with `dataUrl()` and `loadJSON()` from `src/lib/assets.ts`, never with a hand-written path.
+
+- `data/sites/index.json`: the site list (schema `cg26-sites/1`, checked by `useSitesIndex()` in `src/lib/sites.ts`):
+  for each site, west to east, its names, images and period, centre and bounds, heights (`{datum: "NMMA", C, sigma,
+  source}` or `{datum: "model", C: null, note}`), thumbnail, manifest and layer ids. Paths are relative to `data/`.
+- `data/sites/<id>/manifest.json`: the site's grid, layers, legends and tide levels (schema `cg26-explorer-site/1`),
+  with its overlay images, value images (code = 256 R + G, value = offset + scale × code, code 0 = no data), tide
+  lines and, at Mundaka, lines of equal delay. The viewer draws whatever layers a manifest lists.
+
+## Design system
+
+- **Colours**: the poster palette as tokens in `src/styles/index.css`, light on `:root` and dark on `.dark`, mapped
+  to Tailwind colours (`canvas`, `surface`, `raised`, `sunken`, `ink`, `muted`, `line`, `control`, `primary`, …).
+  `src/styles/contrast.test.ts` checks every text pair at 4.5:1 or more and every control pair at 3:1 or more, in both
+  themes.
+- **Theme**: the system preference, unless the visitor picks one with the toggle of the control panel (stored in
+  `localStorage` when the browser allows it).
+- **Type**: Inter (variable); tabular figures for values.
+- **UI kit** (`src/components/ui`): `Button`, `ButtonAnchor`, `IconButton`, `Segmented` (native radio group), `Chip`,
+  `Badge`, `Slider`, `ColorBar` (legend ramp, OKLab where supported), `Notice`, `ExternalLink`, `Sheet` (the control
+  panel: bottom sheet on phones, floating card on wide screens), `Skeleton`. Components take layout classes through
+  `className`; size and colour come from props.
+- **Accessibility**: labelled native inputs, a visible focus ring, `aria-live` for the readout, keyboard panning with
+  a crosshair readout, a modal info panel (`<dialog>`), colour never the only cue, `lang="en"`.
+
+## Licences
+
+The site's code is MIT and its data CC BY 4.0, as the rest of the repository. The bundled third-party code keeps its
+own licences, copied into `docs/licenses/` by the build. Basemaps (IGN) and terrain tiles are loaded from their
+services at run time and are not copied into the repository.

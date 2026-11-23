@@ -1,0 +1,64 @@
+cff-version: 1.2.0
+message: "If you use this software or its data, please cite them as below."
+title: "MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes (CARTOGRASS 2026 companion repository)"
+type: software
+version: "cartograss26"
+date-released: "2026-11-23"        # the day of the branch's first commit; update if it is made on another day
+authors:
+  - given-names: Jorge
+    family-names: "Alías Álvarez"
+    affiliation: "University of Oviedo, Spain"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # to fill
+  - given-names: Fernando
+    family-names: "García-González"
+    affiliation: "Instituto Español de Oceanografía (IEO-CSIC), Spain"
+    # orcid: to fill
+  - given-names: Pablo
+    family-names: "González"
+    affiliation: "University of Oviedo, Spain"
+    # orcid: to fill
+repository-code: "https://github.com/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26"
+# The website, when GitHub Pages serves it from this branch's docs/ folder; change it if it is hosted elsewhere.
+url: "https://coastal-ai.github.io/Intertidal_analysis/"
+license:
+  - MIT
+  - CC-BY-4.0
+keywords:
+  - intertidal topography
+  - emersion time
+  - Sentinel-2
+  - openEO
+  - tidal delay
+  - estuaries
+  - seagrass
+  - Zostera noltei
+abstract: >-
+  MAREA maps intertidal elevation, its uncertainty and emersion time at 10 m
+  from Sentinel-2 openEO data cubes. It reads from the images one delay of
+  the tide for each 3-km section along the channel (zero at the mouth, never
+  decreasing inland), shifts the tide at the mouth by that delay, and then
+  fits the elevation of every pixel. This branch is the companion repository
+  of the poster presented at CARTOGRASS 2026: the method's library, example
+  notebooks on real data, a small real sample with its tide, the offline
+  replication kit of the Villaviciosa product, and the interactive map
+  viewer.
+preferred-citation:
+  type: conference-paper
+  title: "MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes"
+  authors:
+    - given-names: Jorge
+      family-names: "Alías Álvarez"
+      affiliation: "University of Oviedo, Spain"
+    - given-names: Fernando
+      family-names: "García-González"
+      affiliation: "Instituto Español de Oceanografía (IEO-CSIC), Spain"
+    - given-names: Pablo
+      family-names: "González"
+      affiliation: "University of Oviedo, Spain"
+  year: 2026
+  conference:
+    name: "CARTOGRASS 2026, Simposio Ibérico de Cartografía y Seguimiento de Praderas Marinas"
+    city: "Cartagena"
+    country: "ES"
+    date-start: "2026-11-24"
+    date-end: "2026-11-26"

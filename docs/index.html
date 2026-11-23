@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>MAREA · Intertidal map viewer</title>
+    <meta name="description" content="Interactive maps of intertidal elevation, uncertainty, emersion time, tidal delay and tide lines at six estuaries of northern Spain, made by MAREA from the Sentinel-2 archive." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#F2F6F7" />
+    <link rel="icon" type="image/svg+xml" href="/Intertidal_analysis/favicon.svg" />
+    <script>
+      // Theme before the first paint: the visitor's stored choice, else the system preference (no flash).
+      // The key and the logic match src/lib/theme.ts.
+      (function () {
+        var stored = null;
+        try { stored = window.localStorage.getItem('marea-theme'); } catch (e) { stored = null; }
+        var prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var dark = stored === 'dark' || (stored !== 'light' && prefersDark);
+        var root = document.documentElement;
+        if (dark) root.classList.add('dark');
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#0D161A' : '#F2F6F7');
+      })();
+    </script>
+    <script type="module" crossorigin src="/Intertidal_analysis/assets/index-BUvlILjt.js"></script>
+    <link rel="stylesheet" crossorigin href="/Intertidal_analysis/assets/index-AhluqTsL.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <p style="font-family: system-ui, sans-serif; padding: 1rem">
+        MAREA: intertidal maps from Sentinel-2. This map viewer needs JavaScript.
+      </p>
+    </noscript>
+  </body>
+</html>

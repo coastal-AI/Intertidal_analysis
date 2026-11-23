@@ -1,0 +1,80 @@
+/* Map explorer: MapLibre's controls in the site's colours and themes, and room for the phone panel.
+ * --sheet-h (set on .cg26-map by the explorer) lifts the bottom controls above the phone panel; it is 0 on wide
+ * screens, where the panel floats at the top left. MapLibre's own stylesheet loads after this one, so the rules that
+ * override it carry one more class. */
+
+.cg26-map .maplibregl-ctrl-bottom-left,
+.cg26-map .maplibregl-ctrl-bottom-right {
+  bottom: var(--sheet-h, 0px);
+}
+
+/* Wide screens: the scale bar starts right of the floating panel (16 px margin + 320 px card + 8 px). */
+@media (min-width: 768px) {
+  .cg26-map .maplibregl-ctrl-bottom-left {
+    left: 344px;
+  }
+}
+
+.cg26-map .maplibregl-ctrl.maplibregl-ctrl-group {
+  background: var(--raised);
+  border-radius: 0.75rem;
+  box-shadow: var(--elev-float);
+  overflow: hidden;
+}
+.cg26-map .maplibregl-ctrl-group button {
+  width: 36px;
+  height: 36px;
+}
+.cg26-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--line);
+}
+.cg26-map .maplibregl-ctrl-group button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.dark .cg26-map .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+.cg26-map .maplibregl-ctrl.maplibregl-ctrl-attrib,
+.cg26-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  background-color: color-mix(in srgb, var(--raised) 90%, transparent);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.cg26-map .maplibregl-ctrl.maplibregl-ctrl-attrib a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cg26-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  border-radius: 0.75rem;
+}
+.cg26-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button {
+  background-color: transparent;
+}
+.dark .cg26-map .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}
+
+.cg26-map .maplibregl-ctrl.maplibregl-ctrl-scale {
+  background-color: color-mix(in srgb, var(--raised) 80%, transparent);
+  border-color: var(--ink);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.cg26-map .maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* Phones: the short tide-level list of the collapsed panel gives way to the full list when the panel is open. */
+.cg26-map section:has(button[aria-expanded='true']) .cg26-collapsed-only {
+  display: none;
+}

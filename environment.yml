@@ -1,0 +1,12 @@
+# conda/mamba environment (also what Binder builds when it finds this file at the root):
+#   mamba env create -f environment.yml && mamba activate marea-cartograss26
+# Then run everything from the repository root: the package reads configs/ next to itself, so it is used from the
+# checkout, not installed.
+name: marea-cartograss26
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+  - pip:
+      - -r requirements.txt

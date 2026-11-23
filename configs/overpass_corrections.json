@@ -1,0 +1,11 @@
+{
+  "_about": "Known errors in the downloader's overpass-time files (products_<site>_10m/overpass_times.json), corrected when the files are read (pyintertidal.overpass.load_overpass). The files themselves are left as they are. Each entry: the file, the date, the wrong instant, the right one and where it comes from.",
+  "products_urdaibai_10m/overpass_times.json": {
+    "2019-02-16": {
+      "was": "2019-02-16T22:26:01",
+      "time": "2019-02-16T11:11:29",
+      "why": "the catalogue search returned first a product of tile 01MAV (UTM zone 1, by the antimeridian) whose footprint wrongly crossed the box, and the downloader kept the first product of the day; the scene of the cube is Sentinel-2B's of relative orbit 137",
+      "source": "Copernicus Data Space STAC, metadata only, queried 2026-11-09: S2B_MSIL2A_20190216T111129_N0500_R137_T30TWP_20221129T174552 and _T30TWN_ (the same datatake); the wrong one S2A_MSIL2A_20190216T222601_N0500_R072_T01MAV_20221128T090754"
+    }
+  }
+}

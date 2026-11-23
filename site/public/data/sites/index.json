@@ -1,0 +1,215 @@
+{
+ "attribution": "MAREA products by the authors of the MAREA project (see CITATION.cff in the repository), CC BY 4.0. Contains modified Copernicus Sentinel-2 data processed in the Copernicus Data Space Ecosystem. Tide: EOT20 (Hart-Davis et al., 2021, Earth System Science Data 13, 3869-3884; CC BY 4.0) and, where stated, sea-level records of the IOC Sea Level Station Monitoring Facility (VLIZ/IOC-UNESCO).",
+ "licence": "CC BY 4.0",
+ "schema": "cg26-sites/1",
+ "sites": [
+  {
+   "bounds": [
+    -7.30203,
+    43.53051,
+    -7.21271,
+    43.60134
+   ],
+   "centre": [
+    -7.25742,
+    43.56594
+   ],
+   "firstImage": "2015-07-25",
+   "heights": {
+    "C": 0.3151,
+    "datum": "NMMA",
+    "sigma": 0.047,
+    "source": "Ferrol tide gauge (IOC fer2), 137 of 140 images"
+   },
+   "id": "foz",
+   "images": 140,
+   "lastImage": "2019-12-31",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Foz",
+   "manifest": "sites/foz/manifest.json",
+   "name": "Foz",
+   "region": "Galicia",
+   "thumb": "sites/foz/thumb.webp",
+   "years": "2015–2019"
+  },
+  {
+   "bounds": [
+    -7.09948,
+    43.43806,
+    -6.98052,
+    43.57218
+   ],
+   "centre": [
+    -7.0401,
+    43.50516
+   ],
+   "firstImage": "2017-01-25",
+   "heights": {
+    "C": 0.324,
+    "datum": "NMMA",
+    "sigma": 0.047,
+    "source": "Ferrol tide gauge (IOC fer2), 111 of 114 images"
+   },
+   "id": "eo",
+   "images": 114,
+   "lastImage": "2023-12-30",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría del Eo",
+   "manifest": "sites/eo/manifest.json",
+   "name": "Eo",
+   "region": "Galicia–Asturias",
+   "thumb": "sites/eo/thumb.webp",
+   "years": "2017–2023"
+  },
+  {
+   "bounds": [
+    -5.46104,
+    43.47151,
+    -5.34708,
+    43.55236
+   ],
+   "centre": [
+    -5.40401,
+    43.51194
+   ],
+   "firstImage": "2023-01-06",
+   "heights": {
+    "C": 0.3778,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Ferrol tide gauge (IOC fer2), 91 of 97 images"
+   },
+   "id": "villaviciosa",
+   "images": 97,
+   "lastImage": "2025-12-28",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Villaviciosa",
+   "manifest": "sites/villaviciosa/manifest.json",
+   "name": "Villaviciosa",
+   "region": "Asturias",
+   "thumb": "sites/villaviciosa/thumb.webp",
+   "years": "2023–2025"
+  },
+  {
+   "bounds": [
+    -3.88177,
+    43.35855,
+    -3.67863,
+    43.4814
+   ],
+   "centre": [
+    -3.7801,
+    43.42002
+   ],
+   "firstImage": "2023-01-06",
+   "heights": {
+    "C": null,
+    "datum": "model",
+    "note": "Heights above the mean sea level of the tide model at the site; no link to NMMA here."
+   },
+   "id": "santander",
+   "images": 51,
+   "lastImage": "2025-12-28",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Bahía de Santander",
+   "manifest": "sites/santander/manifest.json",
+   "name": "Santander",
+   "region": "Cantabria",
+   "thumb": "sites/santander/thumb.webp",
+   "years": "2023–2025"
+  },
+  {
+   "bounds": [
+    -3.50051,
+    43.39964,
+    -3.41942,
+    43.46041
+   ],
+   "centre": [
+    -3.45998,
+    43.43004
+   ],
+   "firstImage": "2023-01-03",
+   "heights": {
+    "C": null,
+    "datum": "model",
+    "note": "Heights above the mean sea level of the tide model at the site; no link to NMMA here."
+   },
+   "id": "santona",
+   "images": 116,
+   "lastImage": "2025-12-28",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Marismas de Santoña",
+   "manifest": "sites/santona/manifest.json",
+   "name": "Santoña",
+   "region": "Cantabria",
+   "thumb": "sites/santona/thumb.webp",
+   "years": "2023–2025"
+  },
+  {
+   "bounds": [
+    -2.73567,
+    43.30087,
+    -2.62414,
+    43.43539
+   ],
+   "centre": [
+    -2.67996,
+    43.36817
+   ],
+   "firstImage": "2022-01-01",
+   "heights": {
+    "C": 0.3742,
+    "datum": "NMMA",
+    "sigma": 0.042,
+    "source": "Bilbao tide gauge (IOC bil3), 184 of 197 images"
+   },
+   "id": "mundaka",
+   "images": 197,
+   "lastImage": "2026-10-31",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Mundaka (Urdaibai)",
+   "manifest": "sites/mundaka/manifest.json",
+   "name": "Mundaka",
+   "region": "Basque Country",
+   "thumb": "sites/mundaka/thumb.webp",
+   "years": "2022–2026"
+  }
+ ]
+}

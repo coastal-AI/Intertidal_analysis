@@ -1,0 +1,409 @@
+{
+ "attribution": "MAREA maps CC BY 4.0 · modified Copernicus Sentinel-2 data · tide: EOT20 and an IOC tide gauge",
+ "firstImage": "2017-01-25",
+ "grid": {
+  "bounds": [
+   -7.099477,
+   43.438062,
+   -6.980517,
+   43.57218
+  ],
+  "centre": [
+   -7.0401,
+   43.505158
+  ],
+  "corners": [
+   [
+    -7.0994767,
+    43.5721803
+   ],
+   [
+    -6.9805166,
+    43.5721803
+   ],
+   [
+    -6.9805166,
+    43.4380619
+   ],
+   [
+    -7.0994767,
+    43.4380619
+   ]
+  ],
+  "height": 2986,
+  "res": 6.8935812519205975,
+  "width": 1921,
+  "x0": -790310.1256509165,
+  "y0": 5399473.049057838
+ },
+ "heights": {
+  "C": 0.324,
+  "datum": "NMMA",
+  "gauge": "Ferrol",
+  "sigma": 0.047,
+  "source": "Ferrol tide gauge (IOC fer2), 111 of 114 images"
+ },
+ "id": "eo",
+ "images": 114,
+ "lastImage": "2023-12-30",
+ "layers": [
+  {
+   "about": "Height of the intertidal ground, from the tide level at which each pixel floods.",
+   "decimals": 2,
+   "heights": true,
+   "id": "elevation",
+   "kind": "raster",
+   "overlay": "elevation.png",
+   "scale": {
+    "domain": [
+     -2.2,
+     1.2
+    ],
+    "stops": [
+     "#6BBCBE",
+     "#3CABAF",
+     "#0098A0",
+     "#087E8C",
+     "#036677",
+     "#004F62",
+     "#02394A"
+    ],
+    "ticks": [
+     -2.0,
+     -1.0,
+     0.0,
+     1.0
+    ],
+    "type": "linear"
+   },
+   "title": "Elevation",
+   "units": "m",
+   "values": {
+    "check": [
+     [
+      189,
+      67,
+      39236
+     ],
+     [
+      1163,
+      779,
+      22596
+     ],
+     [
+      866,
+      1158,
+      16606
+     ],
+     [
+      508,
+      1512,
+      0
+     ],
+     [
+      909,
+      1613,
+      18603
+     ],
+     [
+      74,
+      2898,
+      36573
+     ]
+    ],
+    "file": "elevation_values.png",
+    "offset": -3.0001,
+    "scale": 0.0001
+   }
+  },
+  {
+   "about": "How sharply each pixel turns from dry to wet: a larger value is a less certain height.",
+   "decimals": 2,
+   "id": "sigma",
+   "kind": "raster",
+   "overlay": "sigma.png",
+   "scale": {
+    "classes": [
+     {
+      "color": "#95A0A7",
+      "value": 0.03
+     },
+     {
+      "color": "#838E95",
+      "value": 0.06
+     },
+     {
+      "color": "#717D83",
+      "value": 0.1
+     },
+     {
+      "color": "#5F6B71",
+      "value": 0.15
+     },
+     {
+      "color": "#4E5A61",
+      "value": 0.22
+     },
+     {
+      "color": "#3E4950",
+      "value": 0.32
+     },
+     {
+      "color": "#2E3940",
+      "value": 0.45
+     },
+     {
+      "color": "#1F2A30",
+      "value": 0.65
+     }
+    ],
+    "type": "classes"
+   },
+   "title": "Uncertainty",
+   "units": "m",
+   "values": {
+    "check": [
+     [
+      189,
+      67,
+      31
+     ],
+     [
+      1163,
+      779,
+      151
+     ],
+     [
+      866,
+      1158,
+      221
+     ],
+     [
+      508,
+      1512,
+      0
+     ],
+     [
+      909,
+      1613,
+      151
+     ],
+     [
+      74,
+      2898,
+      31
+     ]
+    ],
+    "file": "sigma_values.png",
+    "offset": -0.001,
+    "scale": 0.001
+   }
+  },
+  {
+   "about": "Share of the time each pixel is out of the water.",
+   "decimals": 0,
+   "id": "emersion",
+   "kind": "raster",
+   "overlay": "emersion.png",
+   "scale": {
+    "domain": [
+     0.0,
+     100.0
+    ],
+    "stops": [
+     "#71BF7D",
+     "#49AF5F",
+     "#329C4E",
+     "#258541",
+     "#196C34",
+     "#125528",
+     "#0C3E1C"
+    ],
+    "ticks": [
+     0.0,
+     20.0,
+     40.0,
+     60.0,
+     80.0,
+     100.0
+    ],
+    "type": "linear"
+   },
+   "title": "Emersion time",
+   "units": "%",
+   "values": {
+    "check": [
+     [
+      189,
+      67,
+      39974
+     ],
+     [
+      1163,
+      779,
+      13592
+     ],
+     [
+      866,
+      1158,
+      4204
+     ],
+     [
+      508,
+      1512,
+      0
+     ],
+     [
+      909,
+      1613,
+      6850
+     ],
+     [
+      74,
+      2898,
+      35028
+     ]
+    ],
+    "file": "emersion_values.png",
+    "offset": -0.002,
+    "scale": 0.002
+   }
+  },
+  {
+   "about": "How many minutes after the estuary mouth the tide reaches each pixel.",
+   "decimals": 0,
+   "id": "delay",
+   "kind": "raster",
+   "note": "No delay here: every section is 0 min.",
+   "overlay": "delay.png",
+   "scale": {
+    "domain": [
+     0.0,
+     5.0
+    ],
+    "stops": [
+     "#C9A060",
+     "#BA894A",
+     "#AA7234",
+     "#975E29",
+     "#804C22",
+     "#693C1C",
+     "#522D16"
+    ],
+    "ticks": [
+     0.0,
+     1.0,
+     2.0,
+     3.0,
+     4.0,
+     5.0
+    ],
+    "type": "linear"
+   },
+   "title": "Delay",
+   "units": "min",
+   "values": {
+    "check": [
+     [
+      152,
+      42,
+      1
+     ],
+     [
+      1113,
+      662,
+      1
+     ],
+     [
+      1279,
+      1042,
+      1
+     ],
+     [
+      1703,
+      1530,
+      0
+     ],
+     [
+      889,
+      1607,
+      1
+     ],
+     [
+      11,
+      2919,
+      1
+     ]
+    ],
+    "file": "delay_values.png",
+    "offset": -0.1,
+    "scale": 0.1
+   }
+  },
+  {
+   "about": "Where the ground meets each tidal level of the site.",
+   "features": 113,
+   "file": "tide_lines.geojson",
+   "heights": true,
+   "id": "tide_lines",
+   "kind": "contours",
+   "levels": [
+    {
+     "drawn": false,
+     "id": "LAT",
+     "level": -2.339,
+     "name": "Lowest astronomical tide",
+     "nmma": -2.015
+    },
+    {
+     "drawn": false,
+     "id": "MLWS",
+     "level": -1.793,
+     "name": "Mean low water springs",
+     "nmma": -1.469
+    },
+    {
+     "drawn": true,
+     "id": "MLWN",
+     "level": -0.813,
+     "name": "Mean low water neaps",
+     "nmma": -0.489
+    },
+    {
+     "drawn": true,
+     "id": "MSL",
+     "level": 0.0,
+     "name": "Mean sea level",
+     "nmma": 0.324
+    },
+    {
+     "drawn": true,
+     "id": "MHWN",
+     "level": 0.791,
+     "name": "Mean high water neaps",
+     "nmma": 1.115
+    },
+    {
+     "drawn": false,
+     "id": "MHWS",
+     "level": 1.765,
+     "name": "Mean high water springs",
+     "nmma": 2.089
+    },
+    {
+     "drawn": false,
+     "id": "HAT",
+     "level": 2.329,
+     "name": "Highest astronomical tide",
+     "nmma": 2.653
+    }
+   ],
+   "title": "Tide lines",
+   "units": "m"
+  }
+ ],
+ "longName": "Ría del Eo",
+ "name": "Eo",
+ "schema": "cg26-explorer-site/1",
+ "years": "2017–2023"
+}

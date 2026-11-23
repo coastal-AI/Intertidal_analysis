@@ -1,0 +1,60 @@
+# Ría de Villaviciosa (Asturias, Spain): the settings that reproduce
+# products_marea/ exactly. Do not change them: scripts/reproduce_villaviciosa.py
+# reads this file and checks its run against products_marea/.
+#
+# Paths are relative to the repository root. Times are UTC; heights are in
+# metres on the scale of the tide at the mouth (EOT20, about mean sea level).
+
+site: villaviciosa                 # short name, used in output file names
+key: villaviciosa                  # registry key (pyintertidal.sites): its polygon's centroid is the tide point
+polygon: null                      # [[lon, lat], ...]; not used: the frame is the bbox below
+bbox: [-5.46, 43.47, -5.35, 43.55] # [W, S, E, N] in degrees: the box the cube was downloaded with (wider than the registry polygon)
+
+period: ["2016-01-01", "2025-12-31"]   # [start, end], end exclusive as in openEO: the cube ends on 2025-12-29
+resolution: 10                     # metres
+
+cube: ndwi_cube_villaviciosa_grande_10y.nc   # 3.09 GB, 1379 scenes, B03/B08/SCL; on the authors' disks only
+per_year: false                    # the cube was one openEO job, not one job per year
+job_options: null                  # openEO job options (executor memory); none were used
+
+overpass_times: products_marea/overpass_times.json   # 1380 acquisition times, 2016-2025
+
+tide:
+  model: EOT20                     # pyTMD model name
+  directory: tide_models           # folder holding EOT20/ocean_tides/
+  point: centroid                  # the registry polygon's centroid (not the bbox centre)
+  n_gauges: null                   # no tide gauge: EOT20 alone
+  exclude: []                      # gauge codes never used
+  gauge_csv: null                  # your own gauge record (time, level_m)
+  cache_dir: null                  # gauge downloads (default <out_dir>/gauges)
+
+screening:                         # step 3: pyintertidal.reference_and_clouds + filter_dates
+  threshold: 0.0                   # a clear look is wet when NDWI > 0
+  bad_classes: [3, 8, 9, 10]       # SCL cloud shadow, cloud medium and high, thin cirrus
+  clean_scene_max_bad: 0.05        # a scene votes in the reference map below 5 % bad pixels
+  stable_threshold: 0.95           # 95 % of the votes agree: stable water or land
+  transition_buffer_px: 10         # halo around the transition zone (pixels)
+  cloud_threshold: 0.10            # usable: at most 10 % cloud over the transition zone
+
+record:                            # step 5
+  epoch_years: 3                   # epochs anchored at the end of the record
+  which: latest                    # the latest epoch: 2023-2025
+
+marea:                             # steps 7-10: pyintertidal.marea.reconstruct
+  mouth_side: any                  # the sea touches the frame on one side only
+  min_scenes: 40                   # the product's floor (reconstruct's own default is 80)
+  quality_min_bracket: 0           # the product predates the quality rule (reconstruct's default is 3)
+  band_km: 3.0                     # section length and smoothing bandwidth (km)
+  min_px_band: 500                 # thinner sections are merged
+  n_boot: 30                       # scene-bootstrap fits for the interval of each delay
+  region_mask: null                # one branch at a time (a GeoTIFF or .npy on the cube grid)
+
+export:                            # step 11
+  grid_reference: products_villaviciosa/hsr_eot20_2023-2025.tif   # the canonical 10 m grid (its values are not used)
+  emersion_step_min: 10            # tide grid of the emersion map (min)
+  emersion_period: ["2023-01-01", "2026-01-01"]   # end exclusive: the whole of 2023-2025
+  layers: [z, sigma, tau_px_min, s_km, band, emersion, n_clear]
+  cog: false                       # also write Cloud-Optimized GeoTIFFs
+  stac: false                      # also write STAC items
+
+out_dir: runs/villaviciosa_repro   # every output goes here, never into products_marea/

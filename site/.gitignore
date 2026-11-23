@@ -1,0 +1,5 @@
+# Dependencies and build caches of the website (the root .gitignore lists them too).
+node_modules/
+.vite/
+*.tsbuildinfo
+.env*.local

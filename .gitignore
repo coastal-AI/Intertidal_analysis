@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+# run outputs (the notebooks and the reproduction write here)
+runs/
+# large inputs that are never versioned: openEO cubes at the root or in cubes/, tide model files, gauge caches
+# (a small sample cube under data/ stays versionable)
+/*.nc
+cubes/
+*.zarr/
+tide_models/
+data_v4/
+# credentials and local configuration (openEO keeps its refresh tokens outside the repository; never copy them in)
+.env
+*.token
+# website: dependencies and build caches (the built site in docs/ is versioned)
+node_modules/
+site/node_modules/
+.vite/
+*.tsbuildinfo
+site/.env*.local
+coverage/
