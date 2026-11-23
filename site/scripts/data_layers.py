@@ -1,30 +1,42 @@
 # -*- coding: utf-8 -*-
-"""Copy the MAREA map layers into the website's data folder and write the files the map viewer reads.
+"""Write the website's data folder from the MAREA map layers: the files the map viewer reads.
 
 Run it from the site folder with any Python that has NumPy and Pillow:
 
     python scripts/data_layers.py --layers <folder of the layer files>
 
 The layer folder holds index.json (the sites), heights.json (each site's NMMA constant C) and one sub-folder per site
-(foz, eo, villaviciosa, santander, santona, mundaka). Each sub-folder has a manifest.json and, for every map layer,
-an RGBA overlay image (<layer>.png) and a value image (<layer>_values.png), on the site's Web Mercator grid; plus the
-tide lines (tide_lines.geojson, tide_levels.json) and, at Mundaka, the lines of equal delay (cotidal.geojson).
+(foz, eo, villaviciosa, santander, santona, mundaka). Each sub-folder has a manifest.json and, for every map layer, a
+value image (<layer>_values.png) on the site's Web Mercator grid; plus the tide lines (tide_lines.geojson,
+tide_levels.json) and, at Mundaka, the lines of equal delay (cotidal.geojson). The coloured images of the layer folder
+are not used: the overlays are drawn here, from the values, with the colour scales of src/features/explorer/ramps.json.
 
 It writes, under --out (default public/data, next to this script's folder):
 
     sites/index.json                the site list (schema cg26-sites/1)
-    sites/<id>/manifest.json        the site's map: grid, layers, legends and tide levels (schema cg26-explorer-site/1)
-    sites/<id>/<layer>.png          overlay images, copied byte for byte
+    sites/<id>/manifest.json        the site's map: grid, layers, legends and tide levels (schema cg26-explorer-site/2)
+    sites/<id>/<layer>.png          overlay images, drawn from the values (<layer>_<k>.png tiles where one image would
+                                    be too large)
     sites/<id>/<layer>_values.png   value images, copied byte for byte (code = 256 R + G, value = offset + scale code,
                                     code 0 = no data)
     sites/<id>/tide_lines.geojson   contours at the tidal levels, labelled with the real minus sign
     sites/<id>/cotidal.geojson      lines of equal delay (where the layer folder has them)
     sites/<id>/thumb.webp           a small picture of the elevation map, shown where a browser cannot draw the map
 
-The output is deterministic (sorted keys, LF line ends): a second run writes the same bytes. Files under sites/ that
-this run does not write are removed; nothing else under --out is touched. The script checks that every input is
-there, that the images match their grids, that the value images carry no colour profile (so a browser decodes them
-exactly) and that the files stay under the size caps of the website.
+The overlays are drawn at twice the grid's resolution (2.5 m on the ground) on the grid's own extent. Each overlay
+pixel interpolates bilinearly the four grid pixels around it, with the weights of those without a value dropped and the
+others scaled to sum to one, so it never shows a value beyond the data's; its opacity interpolates the data mask the
+same way, so the edge of the data fades across one grid pixel instead of ending in hard steps. Linear scales colour the
+interpolated value. The uncertainty has eight classes: their colours, not their values, are interpolated, so a blend
+between two classes never reads as a third. The map viewer draws the overlays with linear resampling; the readout keeps
+reading the value images, at the grid's own pixels. Where an overlay would be more than MAX_SIDE pixels wide or tall
+(the texture size that phones' graphics chips take), it is cut into tiles, each with its own corners, at rows and
+columns where the overlay hardly changes, so that the seams cannot be seen (see seam_steps).
+
+The output is deterministic (sorted keys, LF line ends, PNG written by Pillow at a fixed level): a second run writes
+the same bytes. Files under sites/ that this run does not write are removed; nothing else under --out is touched. The
+script checks that every input is there, that the value images match their grids and carry no colour profile (so a
+browser decodes them exactly), and that the files stay under the size caps of the website.
 """
 import argparse  # command line
 import hashlib  # file digests in the report
@@ -32,13 +44,13 @@ import io  # in-memory WebP encoding
 import json  # manifests
 import math  # Web Mercator
 import os  # paths
-import re  # gauge names
+import re  # gauge names and colours
 import shutil  # byte-for-byte copies
 import struct  # PNG chunk headers
 import sys  # exit codes
 
-import numpy as np  # value images
-from PIL import Image  # PNG reading, WebP writing
+import numpy as np  # value images and overlays
+from PIL import Image  # PNG reading and writing, WebP writing
 
 SITE_ORDER = ["foz", "eo", "villaviciosa", "santander", "santona", "mundaka"]  # west to east
 REGIONS = {  # the region line of each site card
@@ -54,7 +66,7 @@ REGIONS = {  # the region line of each site card
 RASTERS = [
     ("elevation", "Elevation", "Height of the intertidal ground, from the tide level at which each pixel floods.", 2),
     ("sigma", "Uncertainty", "How sharply each pixel turns from dry to wet: a larger value is a less certain height.", 2),
-    ("emersion", "Emersion time", "Share of the time each pixel is out of the water.", 0),
+    ("emersion", "Emersion time", "Share of the time each pixel is out of the water: the darker, the longer.", 0),
     ("delay", "Delay", "How many minutes after the estuary mouth the tide reaches each pixel.", 0),
 ]
 #: The tide-line layer: id, title, one sentence.
@@ -72,6 +84,12 @@ CAPS = {  # largest bytes per output file, by kind, and in all
     "total": 26_000_000,
 }
 THUMB_SIDE = 480  # longest side of the thumbnails (px)
+UPSAMPLE = 2  # overlay pixels per grid pixel, along each axis (the interpolation below is written for 2)
+MAX_SIDE = 4096  # largest width or height of one overlay image (px)
+STRIP = 256  # grid rows interpolated at a time, which bounds the memory the overlays take
+PNG_LEVEL = 9  # zlib level of the overlay images
+RAMPS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "src", "features", "explorer",
+                          "ramps.json")  # the colour scales, shared with the front end's tests
 
 
 def fail(msg):
@@ -123,6 +141,13 @@ def mercator_to_lonlat(x, y):
     return lon, lat
 
 
+def corners_of(left, top, right, bottom):
+    """[lon, lat] of the top-left, top-right, bottom-right and bottom-left corners of a north-up EPSG:3857 rectangle
+    (MapLibre's order), to 7 decimals."""
+    pts = [(left, top), (right, top), (right, bottom), (left, bottom)]
+    return [[round(v, 7) for v in mercator_to_lonlat(x, y)] for x, y in pts]
+
+
 def grid_of(manifest, site_id):
     """The site's web grid: size, top-left corner and pixel size in EPSG:3857, corners and bounds in degrees."""
     g = manifest["grid"]
@@ -136,8 +161,7 @@ def grid_of(manifest, site_id):
         fail(f"{site_id}: transform and bounds_3857 disagree")
     if abs(c + width * res - g["bounds_3857"][2]) > 0.01 or abs(f - height * res - g["bounds_3857"][1]) > 0.01:
         fail(f"{site_id}: grid size and bounds_3857 disagree")
-    corners = [mercator_to_lonlat(c, f), mercator_to_lonlat(c + width * res, f),
-               mercator_to_lonlat(c + width * res, f - height * res), mercator_to_lonlat(c, f - height * res)]
+    corners = corners_of(c, f, c + width * res, f - height * res)
     for (lon, lat), (lon2, lat2) in zip(corners, g["corners_4326"]):
         if abs(lon - lon2) > 2e-7 or abs(lat - lat2) > 2e-7:
             fail(f"{site_id}: corners_4326 do not match the grid")
@@ -147,7 +171,7 @@ def grid_of(manifest, site_id):
         "x0": c,
         "y0": f,
         "res": res,
-        "corners": [[round(lon, 7), round(lat, 7)] for lon, lat in corners],  # TL, TR, BR, BL (MapLibre order)
+        "corners": corners,  # TL, TR, BR, BL (MapLibre order)
         "bounds": [round(v, 6) for v in g["bounds_4326"]],
         "centre": [round(v, 6) for v in g["centre_4326"]],
     }
@@ -183,19 +207,238 @@ def check_samples(codes):
     return [[i % width, i // width, int(flat[i])] for i in sorted(set(picks))]
 
 
-def overlay_ok(path, width, height, site_id):
-    types, ihdr = png_chunks(path)
-    if ihdr is None or ihdr[:2] != (width, height) or ihdr[3] != 6:
-        fail(f"{site_id}: {os.path.basename(path)} is not an RGBA image of {width} x {height}")
+# ---------------------------------------------------------------------------------------------------- colour scales
+HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+# OKLab (Björn Ottosson, 2020): linear sRGB -> LMS -> cube root -> Lab.
+LMS_OF_RGB = np.array([[0.4122214708, 0.5363325363, 0.0514459929],
+                       [0.2119034982, 0.6806995451, 0.1073969566],
+                       [0.0883024619, 0.2817188376, 0.6299787005]])
+LAB_OF_LMS = np.array([[0.2104542553, 0.7936177850, -0.0040720468],
+                       [1.9779984951, -2.4285922050, 0.4505937099],
+                       [0.0259040371, 0.7827717662, -0.8086757660]])
+RGB_OF_LMS = np.linalg.inv(LMS_OF_RGB)
+LMS_OF_LAB = np.linalg.inv(LAB_OF_LMS)
 
 
-def thumbnail(overlay_png, out_path):
+def hex_rgb(colour):
+    """'#RRGGBB' as sRGB in [0, 1]."""
+    return np.array([int(colour[i:i + 2], 16) for i in (1, 3, 5)], dtype=np.float64) / 255.0
+
+
+def srgb_to_oklab(rgb):
+    """sRGB in [0, 1] (any leading shape, last axis 3) to OKLab."""
+    lin = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+    return np.cbrt(lin @ LMS_OF_RGB.T) @ LAB_OF_LMS.T
+
+
+def oklab_to_srgb(lab):
+    """OKLab to sRGB in [0, 1] (colours outside the sRGB gamut clipped)."""
+    lin = np.clip(((lab @ LMS_OF_LAB.T) ** 3) @ RGB_OF_LMS.T, 0.0, 1.0)
+    return np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * lin ** (1 / 2.4) - 0.055)
+
+
+def to_byte(x):
+    """[0, 1] to 0..255, rounded half up."""
+    return np.floor(np.clip(x, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+
+
+def load_ramps(path):
+    """The colour scales of ramps.json: {layer: {"stops": [...]} or {"classes": [...]}}, colours checked."""
+    ramps = read_json(path)
+    if ramps.get("schema") != "cg26-ramps/1":
+        fail(f"{os.path.basename(path)}: schema is not cg26-ramps/1")
+    for lid, _, _, _ in RASTERS:
+        ramp = ramps.get(lid)
+        colours = (ramp or {}).get("stops", (ramp or {}).get("classes"))
+        if not isinstance(colours, list) or len(colours) < 2 or not all(isinstance(c, str) and HEX.match(c)
+                                                                        for c in colours):
+            fail(f"{os.path.basename(path)}: no valid colours for {lid}")
+    return ramps
+
+
+def ramp_lut(stops, n=256):
+    """``n`` colours (uint8 RGB) evenly over a scale's stops, which are evenly spaced and interpolated in OKLab, as
+    the legend's colour bar draws them."""
+    labs = np.array([srgb_to_oklab(hex_rgb(c)) for c in stops])
+    t = np.linspace(0.0, 1.0, n) * (len(stops) - 1)
+    i = np.minimum(np.floor(t).astype(np.intp), len(stops) - 2)
+    f = (t - i)[:, None]
+    return to_byte(oklab_to_srgb(labs[i] * (1.0 - f) + labs[i + 1] * f))
+
+
+# ---------------------------------------------------------------------------------------------------- overlays
+def upsample2(p):
+    """Bilinear interpolation of grid rows at twice their resolution, between pixel centres.
+
+    ``p`` holds the rows to draw with one more row and column of the grid on each side. Overlay pixel (2i + a, 2j + b)
+    sits a quarter of a grid pixel from the centre of grid pixel (i, j), towards row i − 1 for a = 0 and row i + 1 for
+    a = 1 (columns alike), so on each axis it takes 3/4 of pixel (i, j) and 1/4 of that neighbour.
+    """
+    rows = np.empty((2 * (p.shape[0] - 2), p.shape[1]))
+    rows[0::2] = 0.25 * p[:-2] + 0.75 * p[1:-1]
+    rows[1::2] = 0.75 * p[1:-1] + 0.25 * p[2:]
+    out = np.empty((rows.shape[0], 2 * (p.shape[1] - 2)))
+    out[:, 0::2] = 0.25 * rows[:, :-2] + 0.75 * rows[:, 1:-1]
+    out[:, 1::2] = 0.75 * rows[:, 1:-1] + 0.25 * rows[:, 2:]
+    return out
+
+
+def padded(a):
+    """``a`` as float32 with its edge rows and columns repeated once: the frame of the grid ends the data with a
+    straight cut, so nothing outside the grid is read or faded in."""
+    return np.pad(np.asarray(a, dtype=np.float32), 1, mode="edge")
+
+
+def overlay_rgba(codes, values, scale, ramp, site_id, lid):
+    """The RGBA overlay (2 H x 2 W) of a layer from its codes (code 0 = no data) and values.
+
+    Linear scales: the interpolated value (only from grid pixels with a value, weights scaled to sum to one) coloured
+    with 256 steps of the ramp. Classes: the OKLab colours of the classes, interpolated the same way. Opacity: the
+    interpolated data mask. Pixels without opacity are (0, 0, 0, 0).
+    """
+    height, width = codes.shape
+    valid = codes > 0
+    mask_p = padded(valid)
+    if scale["type"] == "linear":
+        d0, d1 = scale["domain"]
+        lut = ramp_lut(ramp["stops"])
+        sums_p = [padded(np.where(valid, values, 0.0))]
+    else:
+        class_values = [c["value"] for c in scale["classes"]]
+        labs = np.array([srgb_to_oklab(hex_rgb(c)) for c in ramp["classes"]])
+        for c, lab in zip(ramp["classes"], labs):  # a class's own pixels must keep its exact colour
+            if not np.array_equal(to_byte(oklab_to_srgb(lab)), np.round(hex_rgb(c) * 255).astype(np.uint8)):
+                fail(f"{lid}: colour {c} does not survive OKLab")
+        index = np.full(codes.shape, -1, dtype=np.int8)
+        for k, v in enumerate(class_values):
+            index[valid & (np.abs(values - v) < 1e-6)] = k
+        if (index[valid] < 0).any():
+            fail(f"{site_id}/{lid}: values outside the classes {class_values}")
+        sums_p = [padded(np.where(valid, labs[index, axis], 0.0)) for axis in range(3)]
+        del index
+    rgba = np.zeros((UPSAMPLE * height, UPSAMPLE * width, 4), dtype=np.uint8)
+    for r0 in range(0, height, STRIP):
+        r1 = min(height, r0 + STRIP)
+        w = upsample2(mask_p[r0:r1 + 2])
+        alpha = to_byte(w)
+        shown = alpha > 0
+        sums = [upsample2(s[r0:r1 + 2]) for s in sums_p]
+        mean = [np.divide(s, w, out=np.zeros_like(s), where=w > 0) for s in sums]
+        if scale["type"] == "linear":
+            t = np.clip((mean[0] - d0) / (d1 - d0), 0.0, 1.0)
+            rgb = lut[np.floor(t * 255.0 + 0.5).astype(np.intp)]
+        else:
+            rgb = to_byte(oklab_to_srgb(np.stack(mean, axis=-1)))
+        block = rgba[UPSAMPLE * r0:UPSAMPLE * r1]
+        block[..., :3] = np.where(shown[..., None], rgb, 0)
+        block[..., 3] = alpha
+    return rgba
+
+
+def parts_of(size):
+    """The fewest equal parts of at most MAX_SIDE pixels that a side of ``size`` pixels splits into."""
+    n = -(-size // MAX_SIDE)
+    while size % n:
+        n += 1
+    return n
+
+
+def seam_steps(codes, axis):
+    """How much an overlay changes across each boundary between two of its rows (axis 0) or columns (axis 1).
+
+    Entry k − 1 is for the boundary between overlay rows k − 1 and k: grid pixels that differ between grid rows i and
+    i + 1 for k = 2 i + 2 (the overlay steps by half their difference there), half as many as differ between rows
+    i − 1 and i + 1 for k = 2 i + 1 (a quarter of their difference). The graphics card cannot interpolate across the
+    seam between two tiles, so a seam shows that step as it is. Where the grid rows on either side are the same (the
+    5 m grid repeats most rows of the 10 m product), the step is nothing and a seam there cannot be seen.
+    """
+    c = codes if axis == 0 else codes.T
+    steps = np.zeros(2 * c.shape[0] - 1)
+    steps[1::2] = (c[1:] != c[:-1]).sum(axis=1)
+    steps[2:-1:2] = 0.5 * (c[2:] != c[:-2]).sum(axis=1)
+    steps[0] = steps[-1] = np.inf  # never at the frame
+    return steps
+
+
+def tile_zoom(width, height, res):
+    """The zoom level of the tile grid on which MapLibre places an image of width x height pixels of ``res`` m
+    (EPSG:3857): the floor of −log2 of its larger side in world units (the world is 0 to 1). MapLibre rounds an image's
+    corners to that grid, so images that share it draw their common edges at one place, with no gap and no overlap."""
+    return math.floor(-math.log2(max(width, height) * res / (2.0 * math.pi * R_EARTH)))
+
+
+def image_zoom(corners):
+    """tile_zoom() of an image from its corners, as MapLibre computes it from the [lon, lat] it is given."""
+    xs = [(180.0 + lon) / 360.0 for lon, _ in corners]
+    ys = [(180.0 - math.degrees(math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)))) / 360.0
+          for _, lat in corners]
+    return math.floor(-math.log2(max(max(xs) - min(xs), max(ys) - min(ys))))
+
+
+def tiling(steps_y, steps_x, height, width, res):
+    """Row and column cuts of a height x width overlay of ``res`` m pixels: none where a side fits in MAX_SIDE; else
+    the cuts with the smallest steps (seam_steps, summed over the layers) that keep every tile within MAX_SIDE and
+    at one MapLibre zoom (equal parts, which always do, where a side needs more than two)."""
+    def options(steps, size):
+        n = parts_of(size)
+        if n == 1:
+            return [((), 0.0)]
+        equal = tuple(k * size // n for k in range(1, n))
+        if n > 2:
+            return [(equal, 0.0)]
+        ks = np.arange(size - MAX_SIDE, MAX_SIDE + 1)  # both parts within MAX_SIDE
+        best = ks[np.argsort(steps[ks - 1], kind="stable")[:200]]
+        return [((int(k),), float(steps[k - 1])) for k in best] + [(equal, float(steps[equal[0] - 1]))]
+
+    def zooms(ys, xs):
+        edges_y, edges_x = (0, *ys, height), (0, *xs, width)
+        return {tile_zoom(x1 - x0, y1 - y0, res) for y0, y1 in zip(edges_y, edges_y[1:])
+                for x0, x1 in zip(edges_x, edges_x[1:])}
+
+    pairs = sorted(((sy + sx, ys, xs) for ys, sy in options(steps_y, height) for xs, sx in options(steps_x, width)),
+                   key=lambda p: (p[0], p[1], p[2]))
+    for _, ys, xs in pairs:
+        if len(zooms(ys, xs)) == 1:
+            return list(ys), list(xs)
+    fail("no tiling keeps the overlay tiles at one zoom")
+
+
+def write_overlay(rgba, cuts, grid, out, lid, site_id):
+    """Write a layer's overlay (one image, or tiles of at most MAX_SIDE pixels a side, cut at ``cuts`` = (rows,
+    columns)) and return its entry."""
+    height, width = rgba.shape[:2]
+    rows, cols = [0, *cuts[0], height], [0, *cuts[1], width]
+    res = grid["res"] / UPSAMPLE  # overlay pixel (EPSG:3857 m)
+    # Tile edges from whole pixel counts: neighbours share the very same edge, and the last one is the grid's.
+    xs = [grid["x0"] + c * res for c in cols]
+    ys = [grid["y0"] - r * res for r in rows]
+    os.makedirs(out, exist_ok=True)
+    tiles, single = [], len(rows) == 2 and len(cols) == 2
+    for ty in range(len(rows) - 1):
+        for tx in range(len(cols) - 1):
+            name = f"{lid}.png" if single else f"{lid}_{len(tiles)}.png"
+            path = os.path.join(out, name)
+            tile = np.ascontiguousarray(rgba[rows[ty]:rows[ty + 1], cols[tx]:cols[tx + 1]])
+            if max(tile.shape[:2]) > MAX_SIDE:
+                fail(f"{site_id}/{lid}: an overlay tile over {MAX_SIDE} px")
+            Image.fromarray(tile).save(path, "PNG", compress_level=PNG_LEVEL)
+            WRITTEN.append(os.path.abspath(path))
+            tiles.append({"file": name, "width": tile.shape[1], "height": tile.shape[0],
+                          "corners": corners_of(xs[tx], ys[ty], xs[tx + 1], ys[ty + 1])})
+    if len({image_zoom(t["corners"]) for t in tiles}) != 1:
+        fail(f"{site_id}/{lid}: overlay tiles at different MapLibre zooms")
+    first, last = tiles[0]["corners"], tiles[-1]["corners"]
+    if first[0] != grid["corners"][0] or last[2] != grid["corners"][2]:
+        fail(f"{site_id}/{lid}: the overlay does not cover the grid")
+    return {"width": width, "height": height, "tiles": tiles}
+
+
+def thumbnail(rgba, out_path):
     """A WebP picture of the elevation overlay, at most THUMB_SIDE pixels on its longest side, alpha kept."""
-    with Image.open(overlay_png) as im:
-        rgba = im.convert("RGBA")
-    scale = THUMB_SIDE / max(rgba.size)
-    size = (max(1, round(rgba.width * scale)), max(1, round(rgba.height * scale)))
-    small = rgba.convert("RGBa").resize(size, Image.Resampling.LANCZOS, reducing_gap=3.0).convert("RGBA")
+    im = Image.fromarray(rgba)
+    scale = THUMB_SIDE / max(im.size)
+    size = (max(1, round(im.width * scale)), max(1, round(im.height * scale)))
+    small = im.convert("RGBa").resize(size, Image.Resampling.LANCZOS, reducing_gap=3.0).convert("RGBA")
     buf = io.BytesIO()
     small.save(buf, "WEBP", quality=82, alpha_quality=90, method=6)
     with open(out_path, "wb") as f:
@@ -269,15 +512,18 @@ def copy_bytes(src, dst):
     WRITTEN.append(os.path.abspath(dst))
 
 
-def scale_of(layer):
-    """The legend of a raster layer, from its colour scale."""
+def scale_of(layer, ramp):
+    """The legend of a raster layer: the layer folder's domain and ticks (or class values) with the ramp's colours."""
     cs = layer["colour_scale"]
-    if cs["type"] == "linear":
+    if cs["type"] == "linear" and "stops" in ramp:
         return {"type": "linear", "domain": [float(v) for v in cs["domain"]], "ticks": [float(v) for v in cs["ticks"]],
-                "stops": list(cs["anchors"])}
-    if cs["type"] == "categorical":
-        return {"type": "classes", "classes": [{"value": float(c["value"]), "color": c["colour"]} for c in cs["classes"]]}
-    fail(f"layer {layer['id']}: unsupported colour scale {cs['type']!r}")
+                "stops": list(ramp["stops"])}
+    if cs["type"] == "categorical" and "classes" in ramp:
+        if len(cs["classes"]) != len(ramp["classes"]):
+            fail(f"layer {layer['id']}: {len(cs['classes'])} classes, {len(ramp['classes'])} colours")
+        return {"type": "classes", "classes": [{"value": float(c["value"]), "color": colour}
+                                               for c, colour in zip(cs["classes"], ramp["classes"])]}
+    fail(f"layer {layer['id']}: its {cs['type']!r} scale does not match its ramp")
 
 
 def site_attribution(production):
@@ -285,7 +531,7 @@ def site_attribution(production):
     return f"MAREA maps CC BY 4.0 · modified Copernicus Sentinel-2 data · tide: {tide}"
 
 
-def build_site(site_id, layers_dir, heights_entry, out_dir):
+def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
     src = os.path.join(layers_dir, site_id)
     man = read_json(os.path.join(src, "manifest.json"))
     if man.get("site", {}).get("id") != site_id:
@@ -310,21 +556,32 @@ def build_site(site_id, layers_dir, heights_entry, out_dir):
             if lv["nmma"] is None or abs(lv["nmma"] - (lv["level"] + C)) > 6e-4:
                 fail(f"{site_id}: tide level {lv['id']} is not level + C in NMMA")
 
-    entries = []
-    for lid, title, about, decimals in RASTERS:
+    codes_of = {}  # the codes of every raster layer, read first: the overlay tiles are cut where none of them changes
+    for lid, _, _, _ in RASTERS:
         if lid not in by_id:
             fail(f"{site_id}: no {lid} layer")
-        layer = by_id[lid]
-        files = layer["files"]
-        overlay_src = os.path.join(src, files["overlay_png"])
-        values_src = os.path.join(src, files["values_png"])
-        overlay_ok(overlay_src, grid["width"], grid["height"], site_id)
-        codes = value_codes(values_src, grid["width"], grid["height"], site_id)
-        copy_bytes(overlay_src, os.path.join(out, f"{lid}.png"))
+        values_src = os.path.join(src, by_id[lid]["files"]["values_png"])
+        codes_of[lid] = value_codes(values_src, grid["width"], grid["height"], site_id)
         copy_bytes(values_src, os.path.join(out, f"{lid}_values.png"))
+    height, width = UPSAMPLE * grid["height"], UPSAMPLE * grid["width"]
+    steps_y = sum(seam_steps(c, 0) for c in codes_of.values()) if parts_of(height) > 1 else None
+    steps_x = sum(seam_steps(c, 1) for c in codes_of.values()) if parts_of(width) > 1 else None
+    cuts = tiling(steps_y, steps_x, height, width, grid["res"] / UPSAMPLE)
+
+    entries, thumb_size = [], None
+    for lid, title, about, decimals in RASTERS:
+        layer = by_id[lid]
+        codes = codes_of.pop(lid)
         v = layer["values"]
         if v.get("nodata_code") != 0:
             fail(f"{site_id}/{lid}: value images must use code 0 for no data")
+        scale = scale_of(layer, ramps[lid])
+        values = float(v["offset"]) + float(v["scale"]) * codes.astype(np.float64)
+        rgba = overlay_rgba(codes, values, scale, ramps[lid], site_id, lid)
+        overlay = write_overlay(rgba, cuts, grid, out, lid, site_id)
+        if lid == "elevation":
+            thumb_size = thumbnail(rgba, os.path.join(out, "thumb.webp"))
+            WRITTEN.append(os.path.abspath(os.path.join(out, "thumb.webp")))
         entry = {
             "id": lid,
             "kind": "raster",
@@ -332,10 +589,10 @@ def build_site(site_id, layers_dir, heights_entry, out_dir):
             "about": about,
             "units": layer["units"],
             "decimals": decimals,
-            "overlay": f"{lid}.png",
+            "overlay": overlay,
             "values": {"file": f"{lid}_values.png", "scale": float(v["scale"]), "offset": float(v["offset"]),
                        "check": check_samples(codes)},
-            "scale": scale_of(layer),
+            "scale": scale,
         }
         if lid == "elevation":
             entry["heights"] = True  # shown in the site's heights (NMMA = value + C where C exists)
@@ -350,7 +607,7 @@ def build_site(site_id, layers_dir, heights_entry, out_dir):
             elif int(cot.get("max_delay_min", 99)) <= 1 and cot.get("why_not"):
                 entry["note"] = cot["why_not"]
         entries.append(entry)
-        del codes
+        del codes, values, rgba
 
     cid, ctitle, cabout = CONTOURS
     levels_by_id = {lv["id"]: lv for lv in levels}
@@ -362,13 +619,10 @@ def build_site(site_id, layers_dir, heights_entry, out_dir):
     if not drawn:
         fail(f"{site_id}: no tide line drawn")
 
-    thumb_size = thumbnail(os.path.join(src, by_id["elevation"]["files"]["overlay_png"]), os.path.join(out, "thumb.webp"))
-    WRITTEN.append(os.path.abspath(os.path.join(out, "thumb.webp")))
-
     first, last = prod["record_first"], prod["record_last"]
     years = first[:4] if first[:4] == last[:4] else f"{first[:4]}–{last[:4]}"
     site_manifest = {
-        "schema": "cg26-explorer-site/1",
+        "schema": "cg26-explorer-site/2",
         "id": site_id,
         "name": man["site"]["name"],
         "longName": man["site"]["long_name"],
@@ -399,7 +653,7 @@ def build_site(site_id, layers_dir, heights_entry, out_dir):
         "layers": [e["id"] for e in entries],
     }
     return listed, {"grid": f"{grid['width']} x {grid['height']}", "thumb": thumb_size, "lines": n_lines,
-                    "drawn": drawn}
+                    "drawn": drawn, "cuts": cuts}
 
 
 def clean_stale(out_dir):
@@ -444,6 +698,7 @@ def main():
     args = ap.parse_args()
     layers_dir = os.path.abspath(args.layers)
     out_dir = os.path.abspath(args.out)
+    ramps = load_ramps(RAMPS_FILE)
     index_in = read_json(os.path.join(layers_dir, "index.json"))
     heights = read_json(args.heights or os.path.join(layers_dir, "heights.json"))
     ids = [s["id"] for s in index_in["sites"]]
@@ -453,7 +708,7 @@ def main():
     for site_id in SITE_ORDER:
         if site_id not in heights.get("sites", {}):
             fail(f"heights.json has no entry for {site_id}")
-        listed, rep = build_site(site_id, layers_dir, heights["sites"][site_id], out_dir)
+        listed, rep = build_site(site_id, layers_dir, heights["sites"][site_id], ramps, out_dir)
         sites.append(listed)
         report[site_id] = rep
     index = {"schema": "cg26-sites/1", "licence": index_in["licence"], "attribution": index_in["attribution"],
@@ -466,7 +721,9 @@ def main():
         with open(path, "rb") as f:
             digest.update(os.path.relpath(path, out_dir).replace("\\", "/").encode() + b"\0" + f.read())
     for site_id, rep in report.items():
-        print(f"{site_id:13s} grid {rep['grid']:11s} thumb {rep['thumb'][0]}x{rep['thumb'][1]}  "
+        rows, cols = rep["cuts"]
+        cut = f"cut at rows {rows} columns {cols}" if rows or cols else "one image"
+        print(f"{site_id:13s} grid {rep['grid']:11s} overlay {cut:30s} thumb {rep['thumb'][0]}x{rep['thumb'][1]}  "
               f"tide lines {rep['lines']} ({', '.join(rep['drawn'])})")
     print(f"{len(WRITTEN)} files, {total / 1e6:.2f} MB, {removed} stale removed; digest {digest.hexdigest()[:16]}")
     return 0

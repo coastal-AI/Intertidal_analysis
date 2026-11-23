@@ -1,0 +1,24 @@
+{
+ "about": "The colour scales of the map viewer's raster layers, defined only here. scripts/data_layers.py colours the overlay images with them and copies them into each site's manifest, from which the viewer draws its legends, so a legend shows the colours of its map. A scale of stops spreads them evenly over the layer's domain (the domain stays in the site's manifest) and interpolates between them in OKLab, as the legend's colour bar does; a scale of classes gives one colour to each class, in increasing order. The colours are ColorBrewer schemes: this product includes color specifications and designs developed by Cynthia Brewer (http://colorbrewer.org/).",
+ "schema": "cg26-ramps/1",
+ "elevation": {
+  "scheme": "ColorBrewer YlGnBu, 9 classes, reversed",
+  "reads": "dark blue is low ground, light yellow high ground",
+  "stops": ["#081D58", "#253494", "#225EA8", "#1D91C0", "#41B6C4", "#7FCDBB", "#C7E9B4", "#EDF8B1", "#FFFFD9"]
+ },
+ "sigma": {
+  "scheme": "ColorBrewer Purples, 9 classes, without the near-white first one",
+  "reads": "light is a sharp dry-to-wet transition, dark an uncertain one",
+  "classes": ["#EFEDF5", "#DADAEB", "#BCBDDC", "#9E9AC8", "#807DBA", "#6A51A3", "#54278F", "#3F007D"]
+ },
+ "emersion": {
+  "scheme": "ColorBrewer Greens, 9 classes",
+  "reads": "light is mostly under water, dark mostly out of it",
+  "stops": ["#F7FCF5", "#E5F5E0", "#C7E9C0", "#A1D99B", "#74C476", "#41AB5D", "#238B45", "#006D2C", "#00441B"]
+ },
+ "delay": {
+  "scheme": "ColorBrewer Oranges, 9 classes",
+  "reads": "light is no delay, dark the longest",
+  "stops": ["#FFF5EB", "#FEE6CE", "#FDD0A2", "#FDAE6B", "#FD8D3C", "#F16913", "#D94801", "#A63603", "#7F2704"]
+ }
+}

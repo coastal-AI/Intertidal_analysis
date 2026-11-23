@@ -64,7 +64,7 @@ site/
   scripts/
     site-env.mjs         the build variables (shared by vite.config.js and postbuild.mjs)
     postbuild.mjs        .nojekyll, licences, scan, sizes
-    data_layers.py       writes public/data/ from the folder of map layers (NumPy, Pillow)
+    data_layers.py       writes public/data/ from the map layers, drawing the overlays from the values (NumPy, Pillow)
   public/                copied as is: favicon.svg, .nojekyll, data/
   src/
     main.tsx, App.tsx    entry; the full-screen frame that lazy-loads the viewer
@@ -77,7 +77,8 @@ site/
     components/ui/       the UI kit
     components/layout/   ErrorBoundary, LogoMark
     features/contracts.ts   the props App.tsx passes to the viewer
-    features/explorer/   the viewer (its own chunk, with MapLibre GL JS): map, panel, legend, readout, info panel
+    features/explorer/   the viewer (its own chunk, with MapLibre GL JS): map, panel, legend, readout, info panel;
+                         ramps.json, the colour scales of the maps
 ```
 
 ## Data files
@@ -93,9 +94,14 @@ Code reads them with `dataUrl()` and `loadJSON()` from `src/lib/assets.ts`, neve
 - `data/sites/index.json`: the site list (schema `cg26-sites/1`, checked by `useSitesIndex()` in `src/lib/sites.ts`):
   for each site, west to east, its names, images and period, centre and bounds, heights (`{datum: "NMMA", C, sigma,
   source}` or `{datum: "model", C: null, note}`), thumbnail, manifest and layer ids. Paths are relative to `data/`.
-- `data/sites/<id>/manifest.json`: the site's grid, layers, legends and tide levels (schema `cg26-explorer-site/1`),
+- `data/sites/<id>/manifest.json`: the site's grid, layers, legends and tide levels (schema `cg26-explorer-site/2`),
   with its overlay images, value images (code = 256 R + G, value = offset + scale × code, code 0 = no data), tide
   lines and, at Mundaka, lines of equal delay. The viewer draws whatever layers a manifest lists.
+- Overlay images: drawn by `data_layers.py` from the value images, not copied: at twice the grid's resolution (2.5 m
+  on the ground), each pixel interpolated bilinearly from the grid pixels around it that have a value, the edge of the
+  data faded the same way, and coloured with `src/features/explorer/ramps.json`. The viewer draws them with linear
+  resampling; the readout reads the value images. An overlay over 4096 px a side comes in tiles, each with its own
+  corners, cut where the overlay hardly changes, so the seams do not show.
 
 ## Design system
 
@@ -103,6 +109,11 @@ Code reads them with `dataUrl()` and `loadJSON()` from `src/lib/assets.ts`, neve
   to Tailwind colours (`canvas`, `surface`, `raised`, `sunken`, `ink`, `muted`, `line`, `control`, `primary`, …).
   `src/styles/contrast.test.ts` checks every text pair at 4.5:1 or more and every control pair at 3:1 or more, in both
   themes.
+- **Map colours**: one scale per layer, defined only in `src/features/explorer/ramps.json`, which colours the overlay
+  images and the legends alike: elevation ColorBrewer YlGnBu (low ground dark blue, high ground light yellow),
+  uncertainty Purples (one colour per class), emersion time Greens, delay Oranges; all sequential, light to dark (dark
+  to light for the elevation). This product includes color specifications and designs developed by Cynthia Brewer
+  (http://colorbrewer.org/).
 - **Theme**: the system preference, unless the visitor picks one with the toggle of the control panel (stored in
   `localStorage` when the browser allows it).
 - **Type**: Inter (variable); tabular figures for values.

@@ -1,13 +1,14 @@
 /**
- * A site's map: data/sites/<id>/manifest.json, schema "cg26-explorer-site/1", written by scripts/data_layers.py.
+ * A site's map: data/sites/<id>/manifest.json, schema "cg26-explorer-site/2", written by scripts/data_layers.py.
  *
  * Paths inside it are relative to the manifest's folder. The explorer is generic: it draws whatever layers the
- * manifest lists, by kind ("raster": a coloured image with a value image for the readout; "contours": lines at the
- * tidal levels; "points": a GeoJSON of points coloured by one property), so a build with other data needs no code.
+ * manifest lists, by kind ("raster": a coloured image, in one or more tiles, with a value image for the readout;
+ * "contours": lines at the tidal levels; "points": a GeoJSON of points coloured by one property), so a build with
+ * other data needs no code.
  */
 import { isSiteId, type SiteId } from '@/lib/sites'
 
-export const SITE_SCHEMA = 'cg26-explorer-site/1'
+export const SITE_SCHEMA = 'cg26-explorer-site/2'
 
 /** A continuous colour scale: ``stops`` evenly spaced over ``domain`` (interpolated in OKLab, as the images are). */
 export interface LinearScale {
@@ -34,6 +35,28 @@ export interface ValueFile {
   check: [number, number, number][]
 }
 
+/** One image of an overlay, placed by its own corners. */
+export interface OverlayTile {
+  file: string
+  /** Size in pixels. */
+  width: number
+  height: number
+  /** [lon, lat] of the top-left, top-right, bottom-right and bottom-left corners. */
+  corners: [number, number][]
+}
+
+/**
+ * The coloured image of a raster layer, drawn from its values at twice the grid's resolution over the grid's extent:
+ * one image, or tiles side by side where one would be too large for a texture (row by row from the top left, in rows
+ * and columns that line up).
+ */
+export interface Overlay {
+  /** Size in pixels of the whole overlay. */
+  width: number
+  height: number
+  tiles: OverlayTile[]
+}
+
 /** Lines drawn with a raster layer (e.g. lines of equal delay over the delay map). */
 export interface LineOverlay {
   file: string
@@ -57,8 +80,8 @@ export interface RasterLayer extends LayerBase {
   kind: 'raster'
   /** Digits after the decimal point in the readout. */
   decimals: number
-  /** The coloured RGBA image on the site's grid. */
-  overlay: string
+  /** The coloured RGBA image(s) over the site's grid. */
+  overlay: Overlay
   values: ValueFile
   scale: ColourScale
   lines?: LineOverlay
@@ -160,6 +183,19 @@ function fail(id: string, reason: string): never {
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStr = (v: unknown): v is string => typeof v === 'string'
+const isLonLat = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v.every(isNum)
+
+function checkOverlay(id: string, layer: string, o: unknown): void {
+  const v = o as Record<string, unknown> | undefined
+  const tiles = v?.tiles as Record<string, unknown>[] | undefined
+  if (!v || !isNum(v.width) || !isNum(v.height) || !Array.isArray(tiles) || tiles.length === 0) fail(id, `${layer}: bad overlay`)
+  for (const t of tiles) {
+    const c = t.corners as unknown[]
+    if (!isStr(t.file) || !isNum(t.width) || !isNum(t.height) || !Array.isArray(c) || c.length !== 4 || !c.every(isLonLat)) {
+      fail(id, `${layer}: bad overlay tile`)
+    }
+  }
+}
 
 function checkScale(id: string, layer: string, s: unknown, linearOnly = false): void {
   const o = s as Record<string, unknown> | undefined
@@ -210,9 +246,8 @@ export function parseSiteManifest(json: unknown, expectedId?: string): SiteManif
     if (!isStr(raw.title) || !isStr(raw.units)) fail(id, `${lid}: title and units must be strings`)
     if (raw.kind === 'raster') {
       const v = raw.values as Record<string, unknown> | undefined
-      if (!isStr(raw.overlay) || !v || !isStr(v.file) || !isNum(v.scale) || !isNum(v.offset)) {
-        fail(id, `${lid}: bad raster files`)
-      }
+      if (!v || !isStr(v.file) || !isNum(v.scale) || !isNum(v.offset)) fail(id, `${lid}: bad raster files`)
+      checkOverlay(id, lid, raw.overlay)
       if (!Array.isArray(v.check)) fail(id, `${lid}: no check values`)
       checkScale(id, lid, raw.scale)
     } else if (raw.kind === 'contours') {

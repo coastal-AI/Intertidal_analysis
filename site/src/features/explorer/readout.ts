@@ -80,6 +80,15 @@ export function linearTicks(scale: LinearScale, offset = 0, roundShown = false):
   return out
 }
 
+/** How a colour scale runs from its low end to its high end: "light to dark" or "dark to light" (hex colours). */
+export function shadeDirection(colours: readonly string[]): string {
+  const luma = (hex: string) => {
+    const n = Number.parseInt(hex.slice(1, 7), 16)
+    return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)
+  }
+  return luma(colours[0]) >= luma(colours[colours.length - 1]) ? 'light to dark' : 'dark to light'
+}
+
 /** Labels of a classed bar: the first, middle and last classes, at the centres of their steps. */
 export function classTicks(scale: ClassScale, decimals = 2): ColorBarTick[] {
   const n = scale.classes.length

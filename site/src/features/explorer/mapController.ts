@@ -1,6 +1,7 @@
 /**
- * A thin wrapper around MapLibre GL JS for the explorer: one map, its basemaps, the site's coloured layer (an image
- * on the site's grid), tide lines, points, a probe marker and the optional 3D terrain.
+ * A thin wrapper around MapLibre GL JS for the explorer: one map, its basemaps, the site's coloured layer (an image,
+ * or tiles of one, over the site's grid, drawn with linear resampling), tide lines, points, a probe marker and the
+ * optional 3D terrain.
  *
  * React keeps the wanted view (update()); the wrapper applies only what changed, once the style has loaded.
  * MapLibre is imported here and in the files this one imports, so it stays in the map page's own chunk.
@@ -32,6 +33,9 @@ import type { LinearScale, MapLayer, RasterLayer, SiteManifest } from './types'
 
 // Bundled, MapLibre would look for its worker next to this chunk: give it the worker file's own URL.
 setWorkerUrl(workerUrl)
+
+/** Top-left, top-right, bottom-right and bottom-left [lon, lat] of an image. */
+type Corners = [[number, number], [number, number], [number, number], [number, number]]
 
 const TEXT_FONT = ['Arial', 'Helvetica', 'sans-serif']
 const EMPTY = { type: 'FeatureCollection' as const, features: [] }
@@ -258,6 +262,8 @@ export class ExplorerMap {
   private ready = false
   private want: MapView
   private have: Record<string, string | boolean | null> = {}
+  /** Ids of the overlay tiles on the map (each an image source and its raster layer). */
+  private rasterIds: string[] = []
   private nav: NavigationControl | null = null
   private hoverCapable: boolean
   private frame = 0
@@ -366,38 +372,54 @@ export class ExplorerMap {
     this.have[key] = url
   }
 
+  /** The coloured image: one image source and raster layer per overlay tile (marea-raster-0, -1, …). */
   private setRaster(layer: RasterLayer | null): void {
     const site = this.want.site
-    const url = layer && site ? this.init.urlOf(site.id, layer.overlay) : null
-    if (this.have.raster === url) return
-    this.have.raster = url
-    if (!url || !site) {
-      this.vis(['marea-raster'], false)
+    const tiles =
+      layer && site
+        ? layer.overlay.tiles.map((t) => ({ url: this.init.urlOf(site.id, t.file), coordinates: t.corners as Corners }))
+        : []
+    const key = tiles.length ? tiles.map((t) => t.url).join(' ') : null
+    if (this.have.raster === key) return
+    this.have.raster = key
+    if (!tiles.length) {
+      this.vis(this.rasterIds, false)
       return
     }
-    const coordinates = site.grid.corners as [[number, number], [number, number], [number, number], [number, number]]
-    const src = this.map.getSource<ImageSource>('marea-raster')
-    if (src) src.updateImage({ url, coordinates })
-    else {
-      this.map.addSource('marea-raster', { type: 'image', url, coordinates })
-      this.map.addLayer(
-        {
-          id: 'marea-raster',
-          type: 'raster',
-          source: 'marea-raster',
-          paint: { 'raster-opacity': this.want.opacity, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 },
-        },
-        'contours-casing',
-      )
-      this.have.opacity = String(this.want.opacity)
+    // A site with fewer tiles than the last one: drop the extra tiles.
+    while (this.rasterIds.length > tiles.length) {
+      const id = this.rasterIds.pop() as string
+      this.map.removeLayer(id)
+      this.map.removeSource(id)
     }
-    this.vis(['marea-raster'], true)
+    tiles.forEach(({ url, coordinates }, i) => {
+      const id = `marea-raster-${i}`
+      const src = this.map.getSource<ImageSource>(id)
+      if (src) src.updateImage({ url, coordinates })
+      else {
+        this.map.addSource(id, { type: 'image', url, coordinates })
+        this.map.addLayer(
+          {
+            id,
+            type: 'raster',
+            source: id,
+            // Linear: the overlay is drawn at twice the grid's resolution from the values; its colours and its faded
+            // edge blend smoothly between pixels instead of showing them as blocks.
+            paint: { 'raster-opacity': this.want.opacity, 'raster-resampling': 'linear', 'raster-fade-duration': 0 },
+          },
+          'contours-casing',
+        )
+        this.rasterIds.push(id)
+      }
+    })
+    this.have.opacity = null // new tiles take the current opacity in setOpacity()
+    this.vis(this.rasterIds, true)
   }
 
   private setOpacity(opacity: number): void {
     const key = String(opacity)
-    if (this.have.opacity === key || !this.map.getLayer('marea-raster')) return
-    this.map.setPaintProperty('marea-raster', 'raster-opacity', opacity)
+    if (this.have.opacity === key || this.rasterIds.length === 0) return
+    for (const id of this.rasterIds) this.map.setPaintProperty(id, 'raster-opacity', opacity)
     this.have.opacity = key
   }
 

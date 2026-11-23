@@ -5,7 +5,7 @@
 import { clsx } from 'clsx'
 import { ColorBar } from '@/components/ui'
 import { fmtNumber, NBSP } from '@/lib/format'
-import { classTicks, heightNote, heightOffset, heightUnits, linearTicks } from './readout'
+import { classTicks, heightNote, heightOffset, heightUnits, linearTicks, shadeDirection } from './readout'
 import { CONTOUR_COLOUR, contourDash, EQUAL_DELAY_COLOUR, EQUAL_DELAY_DASH } from './lineStyles'
 import type { ContourLayer, MapHeights, MapLayer, RasterLayer } from './types'
 
@@ -46,7 +46,7 @@ function rasterBar(layer: RasterLayer, heights: MapHeights) {
         stops={cls.map((c) => c.color)}
         stepped
         ticks={classTicks(layer.scale)}
-        label={`${layer.title}: ${cls.length} classes from ${fmtNumber(cls[0].value)} to ${fmtNumber(cls[cls.length - 1].value)}${NBSP}${units}, light to dark`}
+        label={`${layer.title}: ${cls.length} classes from ${fmtNumber(cls[0].value)} to ${fmtNumber(cls[cls.length - 1].value)}${NBSP}${units}, ${shadeDirection(cls.map((c) => c.color))}`}
       />
     )
   }
@@ -57,7 +57,7 @@ function rasterBar(layer: RasterLayer, heights: MapHeights) {
     <ColorBar
       stops={layer.scale.stops}
       ticks={linearTicks(layer.scale, offset, !!layer.heights)}
-      label={`${layer.title} from ${fmtNumber(d0 + offset, { decimals: dec })} to ${fmtNumber(d1 + offset, { decimals: dec })}${NBSP}${units}, light to dark`}
+      label={`${layer.title} from ${fmtNumber(d0 + offset, { decimals: dec })} to ${fmtNumber(d1 + offset, { decimals: dec })}${NBSP}${units}, ${shadeDirection(layer.scale.stops)}`}
     />
   )
 }

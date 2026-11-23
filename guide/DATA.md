@@ -137,8 +137,13 @@ usable ones of the method's screening
 
 * **Grid.** The layers of a site share one grid in Web Mercator (EPSG:3857), of about
   6.89 m, which is 5 m on the ground at these latitudes. Each 10 m pixel of a product is
-  drawn as 2 × 2 web pixels; the values are not resampled.
-* **Overlay images.** Coloured RGBA PNG, transparent where there is no value.
+  2 × 2 grid pixels; the values are not resampled.
+* **Overlay images.** Coloured RGBA PNG, for display only: at twice the grid's resolution
+  (2.5 m on the ground), each overlay pixel interpolated bilinearly from the grid pixels
+  around it that have a value, the edge of the data faded over one grid pixel, and
+  transparent where there is no value. Colours: ColorBrewer scales (elevation YlGnBu,
+  uncertainty Purples, emersion time Greens, delay Oranges). Overlays wider or taller
+  than 4096 pixels come in tiles. The readout uses the value images.
 * **Value images.** 8-bit RGB PNG that store the values for the pixel readout:
   code = 256 × R + G (B = 0), and value = offset + scale × code, with code 0 meaning no
   value. The offset and scale of each layer are in the site's `manifest.json`. The PNGs

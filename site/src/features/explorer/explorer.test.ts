@@ -1,6 +1,7 @@
 // Unit tests of the map explorer's pure parts: the URL hash, Web Mercator pixels, value-image decoding, legend
 // ticks in NMMA, the tide-level zone, readout lines, the 3D terrain encoding, and the generated data files
-// (public/data/sites, written by scripts/data_layers.py) against both data contracts.
+// (public/data/sites, written by scripts/data_layers.py) against both data contracts, the colour scales of
+// ramps.json and the overlay tiling.
 import { describe, expect, it } from 'vitest'
 import { parseSitesIndex, SITE_IDS } from '@/lib/sites'
 import indexJson from '../../../public/data/sites/index.json'
@@ -13,7 +14,18 @@ import mundakaJson from '../../../public/data/sites/mundaka/manifest.json'
 import { lonLatToMercator, mercatorToLonLat, pixelOf, tileExtent, tileTouchesGrid } from './geo'
 import { DEFAULT_LAYER, formatHash, normaliseState, parseHash } from './hashState'
 import { contourDash } from './lineStyles'
-import { classTicks, datumZone, formatHeight, heightNote, linearTicks, niceStep, NO_VALUE, readoutLine } from './readout'
+import ramps from './ramps.json'
+import {
+  classTicks,
+  datumZone,
+  formatHeight,
+  heightNote,
+  linearTicks,
+  niceStep,
+  NO_VALUE,
+  readoutLine,
+  shadeDirection,
+} from './readout'
 import { compositeTile, decodeTerrarium, encodeTerrarium } from './terrarium'
 import { heightLayer, parseSiteManifest, type ContourLayer, type RasterLayer, type SiteManifest } from './types'
 import { codesFromRgba, failedChecks, valueAt, type ValueGrid } from './valueGrid'
@@ -174,6 +186,13 @@ describe('legend ticks and heights', () => {
     expect(niceStep(10)).toBe(2)
   })
 
+  it('says which way a scale runs (dark blue low ground to light yellow high ground; the others light to dark)', () => {
+    expect(shadeDirection(ramps.elevation.stops)).toBe('dark to light')
+    expect(shadeDirection(ramps.sigma.classes)).toBe('light to dark')
+    expect(shadeDirection(ramps.emersion.stops)).toBe('light to dark')
+    expect(shadeDirection(ramps.delay.stops)).toBe('light to dark')
+  })
+
   it('writes heights in NMMA where the site has C, else above the model mean', () => {
     expect(plain(formatHeight(-0.276, villa.heights))).toBe('+0.10 m NMMA')
     expect(plain(formatHeight(-0.5, santander.heights))).toBe('−0.50 m')
@@ -317,6 +336,47 @@ describe('generated data (scripts/data_layers.py)', () => {
       const delay = layerOf(parseSiteManifest(MANIFESTS[id], id), 'delay') as RasterLayer
       expect(Boolean(delay.lines)).toBe(id === 'mundaka')
       expect(Boolean(delay.note)).toBe(['eo', 'santona', 'santander'].includes(id))
+    }
+  })
+
+  it('colours every map and legend with the scales of ramps.json', () => {
+    for (const id of SITE_IDS) {
+      for (const l of parseSiteManifest(MANIFESTS[id], id).layers) {
+        if (l.kind !== 'raster') continue
+        const ramp = ramps[l.id as keyof typeof ramps] as { stops?: string[]; classes?: string[] }
+        if (l.scale.type === 'linear') expect(l.scale.stops).toEqual(ramp.stops)
+        else expect(l.scale.classes.map((c) => c.color)).toEqual(ramp.classes)
+      }
+    }
+  })
+
+  it('draws each overlay at twice the grid, in tiles of at most 4096 px that cover the grid edge to edge', () => {
+    for (const id of SITE_IDS) {
+      const site = parseSiteManifest(MANIFESTS[id], id)
+      for (const l of site.layers) {
+        if (l.kind !== 'raster') continue
+        const o = l.overlay
+        expect([o.width, o.height]).toEqual([2 * site.grid.width, 2 * site.grid.height])
+        // Tiles come row by row: the first row's widths add up to the overlay's width.
+        let nx = 0
+        for (let w = 0; w < o.width; nx++) w += o.tiles[nx].width
+        const ny = o.tiles.length / nx
+        expect(Number.isInteger(ny)).toBe(true)
+        let height = 0
+        o.tiles.forEach((t, k) => {
+          expect(Math.max(t.width, t.height)).toBeLessThanOrEqual(4096)
+          expect(t.width).toBe(o.tiles[k % nx].width) // columns line up
+          expect(t.height).toBe(o.tiles[k - (k % nx)].height) // a row has one height
+          if (k % nx === 0) height += t.height
+          const right = (k % nx) + 1 < nx ? o.tiles[k + 1] : null
+          const below = k + nx < o.tiles.length ? o.tiles[k + nx] : null
+          if (right) expect([right.corners[0], right.corners[3]]).toEqual([t.corners[1], t.corners[2]])
+          if (below) expect([below.corners[0], below.corners[1]]).toEqual([t.corners[3], t.corners[2]])
+        })
+        expect(height).toBe(o.height)
+        expect(o.tiles[0].corners[0]).toEqual(site.grid.corners[0])
+        expect(o.tiles[o.tiles.length - 1].corners[2]).toEqual(site.grid.corners[2])
+      }
     }
   })
 })
