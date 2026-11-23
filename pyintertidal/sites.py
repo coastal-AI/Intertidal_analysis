@@ -7,16 +7,29 @@ instead of carrying a wall of coordinates. Coordinates written once and
 reused are coordinates that stay consistent from one notebook to the next.
 
 The registry ships the sites of this project (Cantabrian and Galician
-estuaries) and takes your own with :func:`register`. Nothing here is
+estuaries, plus test sites in Portugal, Denmark, the Netherlands and
+Germany) and takes your own with :func:`register`. Nothing here is
 special-cased in the library: a registered site is just an
 :class:`~pyintertidal.aoi.AOI`.
+
+How it fits: the scripts take the tide point of a site from its registry
+polygon (``tide: point: centroid`` in ``scripts/sites/villaviciosa.yaml``;
+the replication kit's EOT20 levels were computed there). Some entries are
+test sites of the project's development (their descriptions say so); they
+have no cube or product in this edition.
+
+Keys are lower-case ASCII without spaces (``"villaviciosa"``, ``"santona"``):
+:func:`get` folds case, spaces and "ñ" before looking a key up, so
+``get("Santoña")`` finds ``"santona"``.
 """
 
 from __future__ import annotations
 
 from .aoi import AOI
 
-#: Built-in study areas: ``key -> (name, polygon vertices, description)``.
+#: Built-in study areas: ``key -> {"name", "description", "polygon",
+#: "tide_model"}``. ``polygon`` is a list of ``(lon, lat)`` vertices in WGS84
+#: degrees; ``tide_model`` is the pyTMD model name the site uses.
 #: Polygons are deliberately generous — they include the surrounding land and
 #: open water, which the pipeline classifies away, so no intertidal fringe is
 #: clipped off by an over-tight boundary.
@@ -175,6 +188,16 @@ SITES = {
 def get(key, name=None):
     """Return a registered site as an :class:`~pyintertidal.aoi.AOI`.
 
+    Parameters
+    ----------
+    key : str
+        Registry key; case, spaces and "ñ" are folded first, so "Santoña"
+        finds "santona".
+    name : str, optional
+        Name of the returned AOI (default: the site's ``name``).
+
+    Raises ``KeyError`` listing the available keys.
+
     >>> aoi = sites.get("villaviciosa")
     """
     key = str(key).lower().replace(" ", "").replace("ñ", "n")
@@ -192,6 +215,8 @@ def tide_model(key, default="EOT20"):
     where the default's grid has no ocean cell nearby, say — says so once here
     instead of in every notebook that uses it. Check how far the model's
     nearest ocean cell is before overriding.
+
+    ``key`` is folded like :func:`get`'s; returns the pyTMD model name.
     """
     key = str(key).lower().replace(" ", "").replace("ñ", "n")
     if key not in SITES:
@@ -205,6 +230,24 @@ def register(key, name, polygon, description="", tide_model="EOT20"):
 
     Persist it by adding an entry to :data:`SITES` in this file — that is how
     a study area becomes reusable across notebooks and by other people.
+
+    Parameters
+    ----------
+    key : str
+        Lower-case ASCII without spaces (e.g. ``"sanvicente"``). The key is
+        stored lower-cased as given, but :func:`get` also removes spaces and
+        folds "ñ", so a key with a space or an "ñ" is never found: this call
+        then raises ``KeyError`` after adding the entry.
+    name : str
+        Display name.
+    polygon : sequence of (lon, lat)
+        Vertices in WGS84 degrees.
+    description : str
+        Free text, printed by :func:`describe`.
+    tide_model : str
+        pyTMD model name (see :func:`tide_model`).
+
+    Returns the new site as an AOI.
     """
     SITES[str(key).lower()] = {"name": name, "polygon": list(polygon),
                                "description": description,
@@ -213,7 +256,11 @@ def register(key, name, polygon, description="", tide_model="EOT20"):
 
 
 def describe(key=None):
-    """Print the registry (or one site) with descriptions and areas."""
+    """Print the registry (or one site) with descriptions and areas.
+
+    ``key`` must be the stored key (lower case): unlike :func:`get`, this
+    function does not fold spaces or "ñ". Returns the keys printed.
+    """
     keys = [key] if key else sorted(SITES)
     for k in keys:
         entry = SITES[str(k).lower()]

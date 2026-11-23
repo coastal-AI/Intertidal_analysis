@@ -17,6 +17,10 @@ GeoTIFFs into a catalogue that tools can index and colleagues can cite.
 Provenance is deliberately part of the metadata: the parameters that produced
 a product travel with it, so a file found six months later can still be
 traced back to its run.
+
+How it fits: publishing tools; no script or notebook of this edition calls
+them. Before publishing with them, read :func:`write_stac`: the collection's
+licence is written as "proprietary" and the asset links are local paths.
 """
 
 from __future__ import annotations
@@ -37,6 +41,25 @@ def to_cog(src_path, out_path=None, overview_levels=(2, 4, 8, 16),
     Adds internal tiling and pyramid overviews. The file stays a perfectly
     normal GeoTIFF — every GIS reads it — but remote readers can now fetch
     just the window they need.
+
+    Parameters
+    ----------
+    src_path : str
+        The GeoTIFF to rewrite (read whole into memory).
+    out_path : str, optional
+        Default: ``src_path`` with ".tif" replaced by "_cog.tif" (every
+        ".tif" in the path is replaced, folders included).
+    overview_levels : sequence of int
+        Overview decimation factors.
+    resampling : str
+        A ``rasterio.enums.Resampling`` name for the overviews ("average";
+        use "nearest" for class rasters).
+    compress : str; blocksize : int
+        Compression and internal tile size (pixels).
+    verbose : bool
+        Print the path and size written.
+
+    Returns ``out_path``.
     """
     from rasterio.enums import Resampling
     from rasterio.shutil import copy as rio_copy
@@ -67,12 +90,28 @@ def stac_item(raster_path, item_id=None, datetime_utc=None, aoi=None,
 
     Parameters
     ----------
+    raster_path : str
+        The product GeoTIFF; its footprint and grid are read from it.
+    item_id : str, optional
+        Default: the file name without extension.
+    datetime_utc : datetime or str, optional
+        The item's time (default: now). A string is either a date
+        'YYYY-MM-DD' or a full instant ending in 'Z'; a date-time string
+        WITHOUT the 'Z' comes out malformed ('...T10:00:00T00:00:00Z').
+    aoi : AOI, optional
+        Adds ``pyintertidal:site`` and ``pyintertidal:area_km2``.
+    collection : str
+        The collection id written into the item.
     properties : dict, optional
         Anything worth recording — thresholds, epoch, method, software
         version. This is where provenance lives.
     assets : dict, optional
         Extra files belonging to the same item (uncertainty layer, quicklook),
         as ``{key: path}``.
+
+    Asset ``href`` values are ABSOLUTE local paths: rewrite them to relative
+    paths or public URLs before publishing. ``processing:software`` is
+    written as version "0.1.0" (the package's ``__version__``).
     """
     with rasterio.open(raster_path) as src:
         bounds = src.bounds
@@ -130,6 +169,24 @@ def write_stac(items, out_dir, collection="pyintertidal",
 
     Result: a folder that is both the data and its catalogue — enough for a
     colleague to load it, or for a data portal to ingest it.
+
+    Parameters
+    ----------
+    items : list of dict
+        :func:`stac_item` results (at least one).
+    out_dir : str
+        Where ``<id>.json`` per item and ``collection.json`` are written.
+    collection, description : str
+        The collection's id and description.
+    verbose : bool
+        Print the path of the collection.
+
+    The Collection's ``license`` is written as "proprietary". For products
+    released under CC BY 4.0, as this repository's are, set it to
+    "CC-BY-4.0" in ``collection.json`` before publishing (and fix the local
+    asset paths, see :func:`stac_item`).
+
+    Returns ``(collection_path, item_paths)``.
     """
     os.makedirs(out_dir, exist_ok=True)
     written = []

@@ -26,8 +26,8 @@ and the inner reach. Across it, the delay MAREA applied grows from 5 to 15 minut
 | `tide_level_delayed` | t, delay (226: −45 to 180 min) | the same level read `delay` minutes before the overpass, m: what a pixel whose water is that many minutes late sees |
 | `intertidal` | y, x | 1 on the 15,064 pixels of this block that MAREA's product inverted |
 | `z_marea` | y, x | the product's elevation, m, on the scale of the EOT20 levels (about mean sea level); 14,171 pixels hold a value |
-| `sigma_marea` | y, x | the product's width of the fitted wet/dry transition, m, read as the uncertainty of z |
-| `delay_marea` | y, x | the delay the product applied to each pixel, min: 5 to 15 here, 0 on the pixels not connected to the mouth |
+| `sigma_marea` | y, x | the product's width of the fitted flooding curve, m, shown as the uncertainty of z (not a standard error) |
+| `delay_marea` | y, x | the delay the product applied to each pixel, min, from a smooth curve through the section delays: 5 to 15 here, 0 on the pixels not connected to the mouth |
 | `s_km` | y, x | distance from the mouth along the water, km |
 | `band_marea` | y, x | the 3-km section of each pixel, −1 where it has no distance |
 | `band_centre_km`, `band_delay_min`, `band_delay_lo_min`, `band_delay_hi_min` | band (3) | the product's section delays and their 95 % scene-bootstrap interval; section 0 is the mouth, pinned at 0 |
@@ -96,8 +96,8 @@ for d in np.unique(delay):
 `notebooks/01_marea_villaviciosa.ipynb` runs this and more. The delay fit of check 4 uses the settings of
 `configs/m2.yaml`: sigma0 0.20 m, sigma profile 0.06, 0.10, 0.15, 0.22, 0.32 and 0.45 m, 60 elevation points, at
 most 1200 pixels per section, delays bounded to −45 to 180 min, monotone, and the random generator seeded with
-20260850. The shifted levels of the 16 delays of the bank (−45 to 180 min every 15) are columns of
-`tide_level_delayed`.
+20260850. The delay fit reads the tide at 16 delays (−45 to 180 min, every 15 min) and interpolates between them;
+those levels are columns of `tide_level_delayed` too.
 
 ## Caveats
 

@@ -13,6 +13,16 @@ implementation detail of the satellite download:
   only ever see their polygon, and neighbouring tiles butt together with no
   overlap artefacts.
 
+How it fits: every function of the package that takes an area calls
+:func:`as_aoi`, so an :class:`AOI`, a shapely Polygon, a list of
+``(lon, lat)`` vertices or a ``{"west", "south", "east", "north"}`` dict all
+work. :mod:`pyintertidal.sites` returns AOIs for the registered study areas.
+
+Coordinate order — a common trap: vertices and :func:`parse_dms` use
+``(lon, lat)`` (longitude first, as shapely does), while
+:attr:`AOI.centroid` returns ``(lat, lon)`` (latitude first, as the tide
+models take it). All coordinates are WGS84 decimal degrees.
+
 Examples
 --------
 >>> aoi = AOI.from_bbox(-5.46, 43.47, -5.35, 43.55, name="Villaviciosa")
@@ -38,6 +48,18 @@ def parse_dms(text):
     Accepts the format field surveys and nautical charts use, e.g.
     ``'43°30\\'24.99"N 5°25\\'32.06"W'``. Returns Shapely order (lon, lat) —
     the order every geometry function in this package expects.
+
+    Parameters
+    ----------
+    text : str
+        One latitude and one longitude, each as degrees°minutes'seconds"
+        followed by N, S, E or W, in either order.
+
+    Returns
+    -------
+    (lon, lat) : tuple of float
+        Decimal degrees; S and W are negative. Raises ``ValueError`` when the
+        text does not hold exactly one N/S and one E/W coordinate.
     """
     pattern = r'(\d+)°(\d+)\'([\d.]+)"([NSEW])'
     found = re.findall(pattern, str(text))
@@ -56,7 +78,12 @@ def parse_dms(text):
 
 @dataclass(frozen=True)
 class AOI:
-    """A named study area defined by a WGS84 polygon."""
+    """A named study area defined by a WGS84 polygon.
+
+    Build one with :meth:`from_polygon`, :meth:`from_bbox` or
+    :meth:`from_dms` (or :func:`pyintertidal.sites.get`). The object is
+    frozen: tiling or clipping returns new AOIs.
+    """
 
     polygon: Polygon                 # WGS84 (lon, lat)
     name: str = "site"
@@ -64,7 +91,12 @@ class AOI:
     # ── constructors ────────────────────────────────────────────────────────
     @classmethod
     def from_polygon(cls, coords, name="site"):
-        """Build from a list of ``(lon, lat)`` vertices or a shapely Polygon."""
+        """Build from a list of ``(lon, lat)`` vertices or a shapely Polygon.
+
+        ``coords`` are WGS84 degrees, longitude first. A self-intersecting
+        polygon is repaired with ``buffer(0)``, which can change its shape
+        slightly. ``name`` is used in file names and messages.
+        """
         poly = coords if isinstance(coords, Polygon) else Polygon(coords)
         if not poly.is_valid:
             poly = poly.buffer(0)    # standard shapely fix for self-intersections
@@ -72,7 +104,11 @@ class AOI:
 
     @classmethod
     def from_bbox(cls, west, south, east, north, name="site"):
-        """Build from a decimal-degree bounding box (rectangular polygon)."""
+        """Build from a decimal-degree bounding box (rectangular polygon).
+
+        ``west, south, east, north`` are WGS84 degrees (west < east,
+        south < north).
+        """
         return cls(polygon=box(west, south, east, north), name=name)
 
     @classmethod
@@ -93,7 +129,10 @@ class AOI:
 
     @property
     def centroid(self):
-        """``(lat, lon)`` centroid — the default tide-prediction point."""
+        """``(lat, lon)`` centroid — the default tide-prediction point.
+
+        Latitude FIRST, unlike the polygon's ``(lon, lat)`` vertices.
+        """
         c = self.polygon.centroid
         return (c.y, c.x)
 
@@ -110,6 +149,19 @@ class AOI:
 
         The polygon is reprojected from WGS84 into the grid CRS first, so it
         works directly on the UTM grids the pipeline produces.
+
+        Parameters
+        ----------
+        transform : affine.Affine
+            The grid's affine transform (e.g. ``SentinelCube.grid[0]``).
+        crs : rasterio CRS or str
+            The grid's CRS (e.g. ``"EPSG:32630"``).
+        shape : (rows, cols)
+            The grid's shape.
+
+        Returns
+        -------
+        (rows, cols) bool array, True inside the polygon.
         """
         from rasterio.features import geometry_mask
         from pyproj import Transformer
@@ -197,6 +249,10 @@ def as_aoi(value, name="site"):
 
     Accepts an AOI, a shapely Polygon, a vertex list, or a bbox dict — so
     every function in the package can simply call ``as_aoi(user_input)``.
+
+    A bounding box must be a dict with ``west``, ``south``, ``east`` and
+    ``north``: a plain 4-tuple is read as a list of vertices and fails.
+    ``name`` is used only when a new AOI is built.
     """
     if isinstance(value, AOI):
         return value

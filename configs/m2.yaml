@@ -1,6 +1,17 @@
 # Phase M2 — interior-tide estimators. Nothing hardwired: every threshold
 # with its rationale, so the method is explainable and citable (not a black
 # box).
+#
+# Which keys are read. pyintertidal.marea.reconstruct reads only five of
+# them, for the delay search (step 8 of guide/METHOD.md): seed, sigma0_m,
+# sigma_perfil_m, z_puntos and max_px_banda.m2a. The other keys (epoca_min,
+# n_bandas, sd_nivel_m, taus_banco_min, tau_malla_min, alpha_limites,
+# tau_limites_min, max_px_banda.m2b and .m2d, m2c_min_cobertura, plantado,
+# puerta, datos) record the development study and are not used: the sections
+# are 3 km long (reconstruct's band_km), the delay grid and its bounds are
+# marea.BANK_TAUS and marea.TAU_BOUNDS (-45 to 180 min), and the files under
+# datos are not part of this repository. The file is read from the source
+# tree, so reconstruct needs a checkout of the repository.
 
 epoca_min: 2023          # the epoch with REAL overpass hour verified via
                          # STAC (11:21 UTC ± jitter); the cube only stores

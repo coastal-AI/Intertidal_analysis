@@ -36,6 +36,15 @@ The second is what a physical transfer operator needs, because propagation up
 an estuary happens constituent by constituent: each has its own frequency, and
 friction and convergence act differently on each.
 
+MAREA itself only calls ``levels``. Its times are UTC instants in ascending
+order — naive, as MAREA passes them, or tz-aware UTC — and the datum of the
+levels is the datum of every elevation derived from them (EOT20: about mean
+sea level; a gauge: its own zero, unless demeaned as :func:`make_boundary`
+does). The providers used with MAREA are :class:`PyTMDBoundary` (a tide
+model), :class:`GaugeBoundary` (a record), and :func:`make_boundary` (a
+model, the nearest gauges, or their consensus); the replication kit adds
+``TableBoundary`` in ``scripts/marea_tools.py``.
+
 What a sun-synchronous archive can and cannot see
 -------------------------------------------------
 Sentinel-2 crosses at essentially the same solar time every pass, so a
@@ -149,7 +158,27 @@ class BoundaryProvider:
     name = "boundary"
 
     def levels(self, times):
-        """Water level in metres at the given instants (array-like of datetimes)."""
+        """Water level in metres at the given instants (array-like of datetimes).
+
+        Parameters
+        ----------
+        times : array-like of datetimes
+            UTC instants in ascending order, naive (as MAREA passes them) or
+            tz-aware UTC.
+
+        Returns
+        -------
+        (len(times),) float array
+            Metres, NaN where the provider has no value. Their datum is the
+            datum of every elevation MAREA derives from them.
+
+        Notes
+        -----
+        :class:`PyTMDBoundary` and :class:`GaugeBoundary` drop a time zone
+        WITHOUT converting it (``tz_localize(None)``): an instant given as
+        12:04+01:00 is read as 12:04 UTC, one hour off. Convert first, e.g.
+        ``pd.DatetimeIndex(t).tz_convert("UTC").tz_localize(None)``.
+        """
         raise NotImplementedError
 
     def harmonics(self):
@@ -187,6 +216,21 @@ class PyTMDBoundary(BoundaryProvider):
         self.directory = directory
 
     def levels(self, times):
+        """Model tide (m, the model's datum: about mean sea level) at ``times``.
+
+        One eo-tides prediction per call, which re-reads the model's
+        constituent files (seconds per call): :func:`pyintertidal.marea.reconstruct`
+        calls it 16 times for the bank and once per distinct non-zero pixel
+        delay.
+        The values come back sorted by time, so ``times`` must be in
+        ascending order to line up with them. ``times`` are naive UTC (see
+        :meth:`BoundaryProvider.levels`).
+
+        Examples
+        --------
+        >>> tide = PyTMDBoundary("EOT20", 43.50902, -5.41613)      # doctest: +SKIP
+        >>> tide.levels(pd.date_range("2024-01-01", periods=3, freq="1h"))  # doctest: +SKIP
+        """
         import pandas as pd
 
         idx = pd.DatetimeIndex(pd.to_datetime(times))
@@ -227,6 +271,31 @@ class GaugeBoundary(BoundaryProvider):
     kind of object. A transfer operator fitted with a gauge at the mouth is
     then free of ocean-model error entirely, which is the cleanest boundary
     available and the one to prefer wherever a gauge exists.
+
+    Parameters
+    ----------
+    times : array-like of datetimes
+        The instants of the record, UTC (see :meth:`BoundaryProvider.levels`);
+        any order, they are sorted here.
+    levels : array-like of float
+        The water level at each instant (m), in the record's own datum:
+        elevations MAREA derives from it come out in that datum.
+        :func:`make_boundary` subtracts each gauge's median first.
+    name : str
+        A label for messages and result files.
+    max_gap : str
+        A pandas time offset: an instant farther than this from both of its
+        neighbouring samples reads NaN (default ``"1h"``).
+
+    Examples
+    --------
+    The EOT20 series every 10 minutes stored in the notebook sample, as a
+    record:
+
+    >>> import xarray as xr                                          # doctest: +SKIP
+    >>> s = xr.open_dataset("data/villaviciosa_sample.nc")          # doctest: +SKIP
+    >>> tide = GaugeBoundary(s["series_time"].values, s["tide_series"].values,
+    ...                      name="EOT20 every 10 min")              # doctest: +SKIP
     """
 
     def __init__(self, times, levels, name="gauge", max_gap="1h"):
@@ -253,6 +322,11 @@ class GaugeBoundary(BoundaryProvider):
         return cls(df["time"], df["level_m"], name=name or str(path))
 
     def levels(self, times):
+        """The record at ``times`` (naive UTC), by linear interpolation.
+
+        In the order given; NaN outside the record and where both
+        neighbouring samples are farther than ``max_gap``.
+        """
         import pandas as pd
 
         idx = pd.DatetimeIndex(pd.to_datetime(times))
@@ -287,6 +361,7 @@ class EnsembleBoundary(BoundaryProvider):
         self.name = name
 
     def levels(self, times):
+        """The mean of the members' levels at ``times``, ignoring NaN."""
         stack = np.vstack([p.levels(times) for p in self.providers])
         return np.nanmean(stack, axis=0)
 
@@ -405,7 +480,13 @@ IOC_BASE = "http://www.ioc-sealevelmonitoring.org/service.php"
 
 def nearest_gauges(lat, lon, n, stations_path="data_v4/gauges/ioc_stations.json",
                    max_km=400.0):
-    """The ``n`` IOC stations closest to (lat, lon): [(code, name, km)]."""
+    """The ``n`` IOC stations closest to (lat, lon): [(code, name, km)].
+
+    ``stations_path`` is a JSON list of the IOC sea-level stations (keys
+    ``Code``, ``Location``, ``Lat``, ``Lon``). This edition of the repository
+    does not ship the default file: without it the call raises
+    ``FileNotFoundError``. Only stations within ``max_km`` are returned.
+    """
     import json
 
     with open(stations_path, encoding="utf-8") as f:
@@ -510,6 +591,19 @@ def make_boundary(aoi, tide_model="EOT20", n_gauges=None,
     ``exclude``     gauge codes never used, however near — the judges a
                     validation holds out (e.g. the inner gauge of an estuary).
     Returns a provider with ``.levels(times)`` and ``.harmonics()``.
+
+    The point is the centroid of ``aoi`` (anything
+    :func:`~pyintertidal.aoi.as_aoi` accepts: an AOI, a shapely Polygon, a
+    vertex list or a bbox dict). Each gauge record is despiked and its median
+    subtracted, so gauges and model share a datum near mean sea level; a
+    gauge with fewer than 1,000 samples in ``period`` is skipped.
+    ``n_gauges`` needs the IOC station list of :func:`nearest_gauges`, which
+    this edition does not ship.
+
+    Examples
+    --------
+    >>> from pyintertidal import sites                                # doctest: +SKIP
+    >>> tide = make_boundary(sites.get("villaviciosa"), tide_model="EOT20")   # doctest: +SKIP
     """
     from .aoi import as_aoi
 

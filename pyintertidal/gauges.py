@@ -9,8 +9,14 @@ the only way to know how large that error is at your site.
 
 Typical use: download the record of the nearest gauge (in Spain, PORTUS /
 REDMAR from Puertos del Estado), load it here, predict the same instants with
-a tide model (:class:`pyintertidal.boundary.PyTMDBoundary`), and look at the
-residuals.
+a tide model (a :class:`pyintertidal.boundary.PyTMDBoundary`; see
+:func:`compare_with_model` for how to pair them in this edition), and look at
+the residuals.
+
+How it fits: :mod:`pyintertidal.boundary` uses :func:`load_gauge` (a gauge
+record as the tide at the mouth, ``GaugeBoundary``), :func:`despike` and
+:func:`load_cached_ioc` (IOC gauges, ``make_boundary``). Records are tidy
+DataFrames with ``time`` (UTC) and ``level_m`` (metres).
 
 What the residuals tell you
 ---------------------------
@@ -36,6 +42,20 @@ def load_gauge(path, time_column="fecha", level_column="nivel_m", skiprows=0,
     (``fecha``/``nivel_m``); pass your own for other providers. The result is
     normalised to two columns, ``time`` (datetime) and ``level_m`` (float),
     sorted and free of missing values.
+
+    Parameters
+    ----------
+    path : str
+        A ``.csv``, ``.xlsx`` or ``.xls`` file.
+    time_column, level_column : str
+        Column names of the instants and of the level (metres).
+    skiprows : int
+        Lines to skip before the header (e.g. comment lines).
+    sheet : int or str
+        Excel sheet.
+
+    Raises ``KeyError`` naming the columns found when either column is
+    missing. Times are taken as written: give them in UTC.
     """
     import pandas as pd
 
@@ -57,6 +77,18 @@ def load_gauge(path, time_column="fecha", level_column="nivel_m", skiprows=0,
 def compare_with_model(gauge, tide_service, aoi, verbose=True):
     """Predict the gauge's timestamps with a tide model and pair them up.
 
+    Not usable with this edition alone: it needs the ``TideService`` of the
+    full development library (an object with ``_tide_model()`` and
+    ``_point(aoi)``). With this edition, pair a gauge with a boundary by
+    hand — :func:`load_gauge` returns the times sorted, and
+    ``PyTMDBoundary.levels`` returns its levels in time order::
+
+        g = load_gauge("gauge.csv", time_column="time", level_column="level_m")
+        model = PyTMDBoundary("EOT20", lat, lon, directory="tide_models")
+        cmp = pd.DataFrame({"time": g["time"], "observed_m": g["level_m"],
+                            "modelled_m": model.levels(g["time"])})
+        gauge_metrics(cmp)
+
     Parameters
     ----------
     gauge : DataFrame
@@ -68,6 +100,8 @@ def compare_with_model(gauge, tide_service, aoi, verbose=True):
     aoi : AOI
         Study area — its centroid (or the service's explicit location) is the
         prediction point.
+    verbose : bool
+        Passed to the service's model loader.
 
     Returns a DataFrame with ``time``, ``observed_m``, ``modelled_m`` and
     ``residual_m`` (observed − modelled).
@@ -94,6 +128,11 @@ def gauge_metrics(comparison, remove_offset=True):
     difference — is removed before computing RMSE/MAE, so the numbers
     describe how well the model reproduces the tide's SHAPE rather than
     which zero it is referenced to. The offset itself is always reported.
+
+    ``comparison`` is a DataFrame with ``observed_m`` and ``modelled_m``
+    (metres). Sign: ``datum_offset_m`` is median(modelled − observed), the
+    opposite of :func:`compare_with_model`'s ``residual_m``. With fewer than
+    3 valid pairs only ``{"n": ...}`` is returned.
     """
     from scipy.stats import pearsonr
 
@@ -122,6 +161,9 @@ def compare_models(gauge, services, aoi, verbose=False):
     ``services`` is ``{label: TideService}``. Returns a list of metric dicts
     (one per model, each with a ``model`` key) — ready for a DataFrame and a
     table in the paper.
+
+    Needs the ``TideService`` of the full development library, like
+    :func:`compare_with_model`; ``aoi`` and ``verbose`` are passed to it.
     """
     rows = []
     for label, service in services.items():
@@ -148,6 +190,11 @@ def despike(df, window="61min", max_dev_m=0.75, max_abs_m=6.0,
       than ``harmonic_cap_m`` from the record's own harmonic fit — a cap
       on surge, which in these seas stays well inside 2.5 m. The fit is
       done twice, the second time without the first pass's outliers.
+
+    ``df`` is a tidy frame (``time``, ``level_m`` in metres), as
+    :func:`load_gauge` or :func:`load_cached_ioc` return it. The harmonic
+    step runs only when more than 5,000 samples pass the spike rule; shorter
+    records get the spike rule alone. ``harmonic_cap_m=None`` skips it.
 
     Returns the tidy frame (time, level_m) without those rows."""
     import pandas as pd
@@ -182,10 +229,14 @@ def despike(df, window="61min", max_dev_m=0.75, max_abs_m=6.0,
 def load_cached_ioc(code, cache_dir="data_v4/gauges"):
     """One cached IOC sea-level record as a tidy frame (time, level_m).
 
-    The campaign caches raw IOC JSON chunks per station code; this is the
-    single loader every comparison uses (three near-copies were folded here
-    at delivery time). Keeps the majority sensor when a station reports
+    :func:`pyintertidal.boundary.fetch_ioc` caches the raw IOC JSON of a
+    station as ``ioc_<code>_<t0>_<t1>.json`` in ``cache_dir``; this reads
+    EVERY cached file of that station, whatever its period, and drops
+    duplicate times. Keeps the majority sensor when a station reports
     several. Returns None when the code has no cached chunks.
+
+    ``code`` is the IOC station code (e.g. ``"vlis"``); ``cache_dir`` is
+    relative to the working directory unless absolute.
     """
     import glob
     import json

@@ -26,19 +26,27 @@
   channel edges. Gaps on the flats are pixels of that mask without an elevation: outside
   the product's own mask, or a fit that failed a guard.
 * **Delay:** at the Ría del Eo every section has a delay of 0 min. There the map uses
-  the tide at the mouth unchanged.
-* **Villaviciosa:** the map is the product in
-  [`products_marea/`](../products_marea/README.md), which
-  [`REPRODUCE.md`](REPRODUCE.md) rebuilds bit for bit.
+  the tide at the mouth unchanged. At the Ría de Mundaka the four sections have delays of
+  0, 9.6, 23.4 and 96.7 min; the delays of the pixels, read from a smooth curve through
+  them, reach 80 min, so the map shows less delay in the inner reach than the last
+  section's fit ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)).
+* **Villaviciosa:** the map is drawn from the product in
+  [`products_marea/`](../products_marea/README.md), inside the hand-cleaned mask and on
+  the viewer's grid. [`REPRODUCE.md`](REPRODUCE.md) rebuilds that product array by array.
+* **What this branch can rebuild.** Only the Villaviciosa product. The maps of Foz, Eo
+  and Mundaka, the hand-cleaned masks, the constants C, the tidal datums and their
+  contours, and the emersion layers of the viewer were made with the same library
+  outside this branch, and are published here as results. `site/scripts/data_layers.py`
+  only turns them into the viewer's files.
 
 ## 2. The layers
 
 | layer | units | what it is |
 |---|---|---|
 | Elevation, z | m | The water level at which the pixel turns from dry to wet, read on the tide that reaches it: the tide at the mouth, delayed by the pixel's τ. |
-| Uncertainty, σ | m | The width of the pixel's dry-to-wet transition: one of eight values, 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m. A larger σ is a less sharp transition. It is not an accuracy measured against a survey. |
+| Uncertainty, σ | m | The width of the pixel's dry-to-wet transition: one of eight values, 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m. A larger σ is a less sharp transition. It is neither a standard error of z nor an accuracy measured against a survey. |
 | Emersion time | % of time | The share of the map's period during which the pixel is out of the water: how often its delayed tide, h(t − τ), stays at or below z, with the tide taken every minute. |
-| Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, smoothed along that distance (Gaussian kernel of 3 km), 0 at the mouth, rounded to the minute. Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
+| Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, then a smooth curve through the section delays and a point of 0 min at the mouth (Gaussian weights 3 km wide), never decreasing inland and rounded to the minute. Pixels near the mouth already receive about a minute; the innermost pixels receive less than the last section's fitted delay ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
 | Tide lines | m | Contours of the elevation at the tidal datums ([section 4](#4-tide-lines)). |
 
 MAREA estimates elevations only inside the intertidal mask: the pixels seen wet in 10 to
@@ -66,7 +74,8 @@ Puertos del Estado tide gauge whose zero is tied to NMMA, as the 25-hour mean of
 difference between the gauge and the map's tide around the image. C is the mean over the
 map's images that have gauge data. Its 1σ uncertainty combines the tie of the gauge to
 NMMA, the geoid model (EGM08-REDNAP), the transfer from the gauge to the estuary and the
-spread over the images.
+spread over the images. C was computed outside this branch, from gauge records that the
+branch does not redistribute; the library does not compute it.
 
 | site | C (m) | 1σ (m) | gauge of the tie |
 |---|---|---|---|
@@ -88,7 +97,7 @@ layer, and, at Mundaka, lines of equal delay, with the **Delay** layer.
 joins the places whose elevation equals that level: the ground below it is covered for
 longer, the ground above it for less. The datums come from the EOT20 model at each map's
 tide point, every 10 minutes over the 19 years 2007–2025, longer than the 18.6-year cycle
-of the Moon's orbit.
+of the Moon's orbit. They and the contours were computed outside this branch.
 
 | datum | name | definition used here |
 |---|---|---|
@@ -169,6 +178,39 @@ usable ones of the method's screening
 * **In this branch.** The files are in [`site/public/data/`](../site/public/data/), and
   the built copy the viewer serves is under [`docs/data/`](../docs/data/).
 
+**A layer as a GeoTIFF.** From the repository root, this turns a value image into a
+GeoTIFF on the viewer's grid, with the elevations in NMMA:
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from rasterio.transform import from_origin
+
+from pyintertidal.raster import write_geotiff
+
+site, layer_id = "villaviciosa", "elevation"           # sites: foz, eo, villaviciosa, mundaka
+folder = f"site/public/data/sites/{site}"
+manifest = json.load(open(f"{folder}/manifest.json", encoding="utf-8"))
+layer = next(L for L in manifest["layers"] if L["id"] == layer_id)
+v = layer["values"]
+rgb = np.asarray(Image.open(f"{folder}/{v['file']}").convert("RGB"), np.int64)
+code = 256 * rgb[..., 0] + rgb[..., 1]                 # 0 means no value
+for col, row, expected in v["check"]:                  # the manifest's own probes
+    assert code[row, col] == expected
+value = np.where(code > 0, v["offset"] + v["scale"] * code, np.nan).astype(np.float32)
+if layer.get("heights"):                               # elevations: on the map's zero, + C for NMMA
+    value = value + np.float32(manifest["heights"]["C"])
+g = manifest["grid"]
+transform = from_origin(g["x0"], g["y0"], g["res"], g["res"])   # top-left corner, Web Mercator metres
+Path("runs").mkdir(exist_ok=True)                      # git ignores runs/
+write_geotiff(f"runs/{site}_{layer_id}.tif", value, transform, "EPSG:3857")
+```
+
+The GeoTIFF keeps the viewer's 6.89 m Web Mercator grid; reproject it for other uses.
+
 ## 7. The Villaviciosa product files
 
 [`products_marea/`](../products_marea/README.md) holds the 10 m MAREA product of the Ría
@@ -190,7 +232,7 @@ gives their flat row-major indices in the frame `shape` = (915, 915).
 | `keep`, `shape` | index, px | flat index of each intertidal pixel; the frame (rows, columns) |
 | `tau_min`, `tau_usado_min` | min | fitted and applied delay of each section (*usado*: applied) |
 | `tau_lo_min`, `tau_hi_min`, `tau_boot_min` | min | 95 % interval of each section's delay, and the 30 bootstrap fits |
-| `hyp_z`, `hyp_area`, `hyp_lo`, `hyp_hi` | m, km² | hypsometric curve (area below each level) and its σ envelope |
+| `hyp_z`, `hyp_area`, `hyp_lo`, `hyp_hi` | m, km² | hypsometric curve (area below each level) and its envelope: the 5 to 95 % range of 30 curves with each z moved at random by its σ, a sensitivity band rather than a confidence interval |
 
 **`result.json`.** The run in numbers. Its keys are partly in Spanish: `sitio` (site),
 `estado` (status), `n_escenas` (scenes in the record), `n_px` (intertidal pixels),

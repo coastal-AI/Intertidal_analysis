@@ -1,29 +1,39 @@
 """
-geometry.py — The estuary's shape, measured from the archive itself (fase M1)
-=============================================================================
+geometry.py — Where the mouth is and how far each pixel is from it
+==================================================================
 
-Everything the interior-tide estimators need to know about the basin's shape
-comes from four objects, all derived from the imagery with no external map:
+MAREA needs one coordinate per pixel: ``s``, the distance from the mouth
+travelling only through ground water can occupy (permanent water and
+intertidal pixels). It is not the distance to the nearest channel — it is
+"how far into the estuary am I". The delay of the tide is measured section
+by section along s and applied to every pixel along s. Everything here is
+derived from the images; no map or survey is used.
 
-* the ALONG-ESTUARY coordinate ``s``: geodesic distance from the mouth,
-  travelling only through pixels water can occupy. This is not the distance
-  to the nearest channel — it is "how far into the estuary am I", the axis
-  every transfer profile lives on;
-* the THALWEG: the skeleton of the permanent-water mask, for display and for
-  sanity checks (s must grow monotonically along it);
-* WIDTH(s, h): how wide the wetted estuary is at each along-coordinate for
-  each tide level — a lateral-storage observable that is measured, not
-  inferred, which is what breaks the circularity with the target
-  bathymetry;
-* the CONVERGENCE γ_c(s) = −d ln(width)/ds: how fast the funnel narrows,
-  the quantity hydraulic closures trade against friction.
+Used by MAREA (``marea.reconstruct``, step 7)
+---------------------------------------------
+:func:`mouth_seeds`
+    The mouth: the permanent-water pixels on the image border.
+:func:`along_distance`
+    s, in metres, from those seeds (NaN where water cannot reach).
 
-Level masks come from tide-binned composites of the archive: a pixel counts
-as wet at a level if it was wet in at least half of its usable observations
-within that tide bin. Uncertainty is by bootstrap over SCENES (not pixels —
-scenes are the independent unit here).
+Tools for describing an estuary's shape (not used by MAREA)
+-----------------------------------------------------------
+:func:`water_pieces`, :func:`pieces_by_size`
+    The connected pieces of water-occupiable ground, and which reach the
+    mouth.
+:func:`thalweg`
+    The centreline (skeleton) of permanent water, for display and checks
+    (s should grow along it).
+:func:`width_profile`, :func:`convergence`
+    How wide the wetted estuary is along s, and how fast it narrows:
+    γ_c(s) = −d ln(width)/ds.
+:func:`level_masks`, :func:`wet_fraction_by_bin`
+    Wet masks per tide level, from looks binned by tide: a pixel counts as
+    wet at a level when it was wet in at least half of its looks in that bin.
+:func:`flood_threshold`
+    The level at which each pixel first floods along a path from the sea.
 
-No survey data is used anywhere, and every random seed is explicit.
+Grids are 2-D ``(H, W)`` arrays on the cube grid, rows north to south.
 """
 
 from __future__ import annotations
@@ -34,14 +44,29 @@ import numpy as np
 def mouth_seeds(sea, side="any"):
     """The seaward opening: permanent-water pixels touching the image border.
 
-    Verified for Villaviciosa at adoption: the open-sea component reaches the
-    border (canal.py, 2026-08-18); an estuary clipped away from the sea would
-    yield no seeds, which is a loud error and should be.
+    Every permanent-water pixel on the chosen edge(s) counts as mouth. An
+    estuary clipped away from the sea yields no seeds, which is a loud error
+    and should be (at Villaviciosa the open sea reaches the border).
 
-    ``side`` restricts the border to one edge ("west", "east", "north",
-    "south", or several joined by "+") for a box the estuary crosses — the
-    Westerschelde leaves the frame on the east too, and measuring distance
-    from both ends would put the inner reach next to a second "mouth".
+    Parameters
+    ----------
+    sea : (H, W) bool
+        Permanent water (``marea.extract``: wet in at least 90 % of the
+        clear looks).
+    side : str
+        Which borders count: ``"any"`` (all four), or ``"west"``,
+        ``"east"``, ``"north"``, ``"south"``, several joined by ``"+"``
+        (e.g. ``"west+north"``). Use one side for a box the estuary crosses —
+        the Westerschelde leaves the frame on the east too, and measuring
+        distance from both ends would put the inner reach next to a second
+        "mouth".
+
+    Returns
+    -------
+    (H, W) bool, True on the mouth pixels. Raises ``ValueError`` (the
+    message is in Spanish: "the permanent sea does not touch the image
+    border: there is no mouth to measure s from") when no permanent water
+    touches the chosen border.
     """
     sea = np.asarray(sea, bool)
     border = np.zeros_like(sea)
@@ -68,6 +93,23 @@ def along_distance(reachable, seeds, pixel_m):
 
     NaN where water cannot reach at all — hydraulically isolated pixels,
     which is a finding, not a nuisance.
+
+    Parameters
+    ----------
+    reachable : (H, W) bool
+        Ground water can occupy (MAREA: permanent water | intertidal).
+    seeds : (H, W) bool
+        The mouth (:func:`mouth_seeds`).
+    pixel_m : float
+        Pixel size in metres (10 for MAREA).
+
+    Returns
+    -------
+    (H, W) float, metres: the shortest path through ``reachable`` moving
+    between pixels that share an edge or a corner (8-connected; a diagonal
+    step counts √2 pixels; scikit-image ``MCP_Geometric``); NaN where no
+    such path exists (a pond, a marsh behind a gate, a channel narrower
+    than a pixel).
     """
     from skimage.graph import MCP_Geometric
 
@@ -140,21 +182,45 @@ def water_pieces(reachable, seeds):
 
 
 def thalweg(sea):
-    """Skeleton of the permanent-water mask — the channel's centreline."""
+    """Skeleton of the permanent-water mask — the channel's centreline.
+
+    ``sea`` (H, W) bool; returns an (H, W) bool line one pixel wide.
+    """
     from skimage.morphology import skeletonize
 
     return skeletonize(np.asarray(sea, bool))
 
 
 def level_masks(wet_frac_by_bin, sea, min_frac=0.5):
-    """Wet mask per tide bin: permanent water plus reliably-wet intertidal."""
+    """Wet mask per tide bin: permanent water plus reliably-wet intertidal.
+
+    ``wet_frac_by_bin`` is a list of (H, W) wet fractions, one per tide bin
+    (:func:`wet_fraction_by_bin`); ``sea`` (H, W) bool; a pixel is wet in a
+    bin when its fraction is at least ``min_frac``. Returns a list of (H, W)
+    bool masks.
+    """
     return [np.asarray(sea, bool) | (wf >= min_frac)
             for wf in wet_frac_by_bin]
 
 
 def wet_fraction_by_bin(store_keep, wet_counts, obs_counts, shape,
                         min_obs=3):
-    """Per-pixel wet fraction on the full grid from per-bin counts."""
+    """Per-pixel wet fraction on the full grid from per-bin counts.
+
+    Parameters
+    ----------
+    store_keep : (P,) int
+        Flat indices (``row * W + col``) of the P pixels the counts belong
+        to (like ``marea.extract``'s ``keep``).
+    wet_counts, obs_counts : (P,) int
+        Wet looks and clear looks of each pixel in one tide bin.
+    shape : (H, W)
+        The full grid.
+    min_obs : int
+        Fewer clear looks than this gives NaN.
+
+    Returns an (H, W) float32 grid, NaN outside the P pixels.
+    """
     out = np.full(shape, np.nan, np.float32)
     frac = np.where(obs_counts >= min_obs,
                     wet_counts / np.maximum(obs_counts, 1), np.nan)
@@ -167,6 +233,24 @@ def width_profile(mask, s_m, band_m=250.0, s_max=None):
 
     Width = wetted area in the band / band length — the standard estuarine
     definition, robust to a sinuous channel.
+
+    The pixel area is FIXED at 100 m², i.e. a 10 m grid: on a 20 m grid
+    multiply the widths by 4.
+
+    Parameters
+    ----------
+    mask : (H, W) bool
+        The wetted area (e.g. one of :func:`level_masks`).
+    s_m : (H, W) float
+        Distance from the mouth, metres (:func:`along_distance`).
+    band_m : float
+        Length of each band along s, metres.
+    s_max : float, optional
+        Upper end of the profile, metres (default: the largest s in mask).
+
+    Returns
+    -------
+    (centres_m, widths_m) : two 1-D float arrays, metres.
     """
     mask = np.asarray(mask, bool)
     s = np.asarray(s_m, float)
@@ -177,7 +261,7 @@ def width_profile(mask, s_m, band_m=250.0, s_max=None):
     for a, b in zip(edges, edges[1:]):
         sel = mask & (s >= a) & (s < b)
         centers.append(0.5 * (a + b))
-        widths.append(float(sel.sum()) * 100.0 / band_m)   # px de 10 m
+        widths.append(float(sel.sum()) * 100.0 / band_m)   # assumes 10 m pixels (100 m² each)
     return np.asarray(centers), np.asarray(widths)
 
 
@@ -186,10 +270,22 @@ def flood_threshold(z_map, sea, valid):
 
     Minimax elevation over paths from the sea — exactly what grayscale
     depression filling returns. A pixel in a pit gets a threshold ABOVE its
-    own elevation; the bathtub model cannot express that. Promoted from the
-    2026-08-18 lamina prototype into the package for phase B6: the spill
-    surface is what the wet/dry archive actually OBSERVES for pit pixels,
-    so the DEM must declare terrain-vs-spill per pixel.
+    own elevation; the bathtub model cannot express that. For a pit pixel
+    the wet/dry archive observes this spill level, not the ground, which is
+    why a DEM made from it should say, pixel by pixel, which of the two it
+    holds.
+
+    Parameters
+    ----------
+    z_map : (H, W) float
+        Elevations, metres.
+    sea : (H, W) bool
+        Where water enters (the seeds of the filling).
+    valid : (H, W) bool
+        Pixels with an elevation; the others are treated as higher than
+        every elevation (+1 m above the maximum).
+
+    Returns an (H, W) float grid, metres, NaN outside ``valid``.
     """
     from skimage.morphology import reconstruction
 
@@ -207,6 +303,13 @@ def convergence(s_centers_m, width_m, smooth=None):
 
     scipy's smoothing spline is the penalised-spline tool used here.
     Returns (gamma_per_km, efold_km, spline).
+
+    ``s_centers_m`` and ``width_m`` are :func:`width_profile`'s output
+    (metres); only bands with a finite, positive width are used, so the
+    returned arrays may be shorter than the input. ``smooth`` is the
+    spline's smoothing factor (default ``n × var(ln width) × 0.1``). The
+    spline maps s in km to ln(width); ``efold_km`` is infinite where the
+    estuary does not narrow.
     """
     from scipy.interpolate import UnivariateSpline
 

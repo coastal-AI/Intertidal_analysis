@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """The overpass times: the known errors of the downloader's files are put right when they are read (configs/
 overpass_corrections.json), a correction refuses a file that no longer holds the wrong instant, and the catalogue search
-ignores a product whose tile lies in a far UTM zone (the one that gave Urdaibai's 2019-02-16 a time of 22:26 UTC)."""
+ignores a product whose tile lies in a far UTM zone (the one that gave Urdaibai's 2019-02-16 a time of 22:26 UTC).
+
+These tests read pyintertidal.overpass.load_overpass, which applies the corrections; scripts/marea_tools.load_overpass
+reads the same files without them. No network: the catalogue search itself is not called."""
 import json                                                            # the files
 import os                                                              # paths
 import sys                                                             # the repository on the path
@@ -10,12 +13,13 @@ import pandas as pd                                                    # instant
 import pytest                                                          # the test runner
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # the repository's root
-sys.path.insert(0, ROOT)                                               # import its package
+sys.path.insert(0, ROOT)                                               # import its package (also done by conftest.py)
 
 from pyintertidal import overpass as ov  # noqa: E402  the module under test
 
 
 def write(path, obj):
+    """Write ``obj`` as a small JSON file (a stand-in overpass-time file)."""
     with open(path, "w", encoding="utf-8") as f:                       # a small JSON file
         json.dump(obj, f)
 

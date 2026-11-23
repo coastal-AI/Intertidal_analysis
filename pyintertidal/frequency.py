@@ -11,6 +11,11 @@ The **intertidal window** ``low ≤ WF ≤ high`` (applied inside the transition
 zone of the reference map) removes the residual noise at both ends. The
 window can be pinned by hand or calibrated from the data with
 :func:`multiotsu_window` — the notebook decides, visibly.
+
+How it fits: this module serves ``elevation.fit_hsr``/``fit_step`` and
+exploratory maps. MAREA does not use it: ``marea.extract`` computes its own
+water frequency and window (pixels with more than 30 clear looks, wet in
+more than 10 % and less than 90 % of them).
 """
 
 from __future__ import annotations
@@ -32,16 +37,24 @@ def water_frequency(
 
     Parameters
     ----------
+    cube : SentinelCube
+        The cached cube to stream.
     dates : list, optional
         Restrict to the cloud-filtered dates (recommended: pass the output of
         :func:`pyintertidal.stability.filter_dates`).
+    threshold : float
+        Index value above which a clear look is wet.
+    clear_classes : tuple of int
+        SCL classes counted as clear.
     min_obs : int
         Pixels with fewer clear observations than this are NaN — not enough
         evidence to state a frequency.
+    chunk : int, optional
+        Dates per streamed block.
 
     Returns
     -------
-    float32 raster in [0, 1] with NaN where evidence is insufficient.
+    (H, W) float32 raster in [0, 1] with NaN where evidence is insufficient.
     """
     H, Wd = cube.shape
     all_dates = cube.dates
@@ -77,6 +90,14 @@ def multiotsu_window(wf, transition_mask,
     almost-always-wet (subtidal). Multi-Otsu finds the two valleys that
     separate them; the result is clipped to sane bounds as a guard against
     degenerate histograms. Returns ``(low, high)``.
+
+    ``wf`` is :func:`water_frequency`'s raster; ``transition_mask`` an
+    (H, W) bool (``reference_map == 0``); ``bounds_low``/``bounds_high`` the
+    ranges each threshold is clipped to.
+
+    Falls back to ``(0.05, 0.85)`` WITHOUT a warning when fewer than 500
+    finite values lie in the transition zone, or when multi-Otsu fails: check
+    the sample size before trusting the window.
     """
     from skimage.filters import threshold_multiotsu
 
@@ -96,6 +117,10 @@ def intertidal_mask(wf, reference_map, low, high, aoi_mask=None):
 
     ``aoi_mask`` (optional) additionally clips to the study polygon so
     contiguous production tiles never overlap.
+
+    ``wf`` (H, W) water frequency; ``reference_map`` (H, W) 0/1/2 from
+    :func:`pyintertidal.stability.reference_and_clouds`; ``low``/``high`` the
+    window (both ends included). Returns an (H, W) bool mask.
     """
     out = (reference_map == 0) & (wf >= low) & (wf <= high)
     if aoi_mask is not None:

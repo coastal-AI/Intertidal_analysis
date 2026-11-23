@@ -19,6 +19,10 @@ That distinction matters: the satellite samples the tide unevenly (see
 :mod:`pyintertidal.coverage`), so using acquisition dates would inherit that
 bias, while an hourly model series represents the real tidal regime.
 
+How it fits: MAREA's emersion time (step 11) is ``1 - hydroperiod(z, h)``,
+computed by ``scripts/marea_tools.emersion_time`` for each pixel's delay,
+with h the tide at the mouth read that many minutes earlier every 10 minutes.
+
 Do not confuse this with water frequency
 ----------------------------------------
 Water frequency (:mod:`pyintertidal.frequency`) is the fraction of
@@ -38,16 +42,18 @@ def hydroperiod(elevation, tide_heights):
 
     Parameters
     ----------
-    elevation : 2-D array
-        DEM in the same vertical datum as the tide series (the output of
-        :mod:`pyintertidal.elevation` already is).
+    elevation : array, any shape
+        Elevations (m) in the same vertical datum as the tide series
+        (MAREA's z is on the scale of the tide at the mouth, as its tide
+        series are). ``marea_tools.emersion_time`` passes 1-D pixel arrays.
     tide_heights : array
         Continuous tide series, ideally hourly over a full year or more so
         that spring/neap cycles are represented.
 
     Returns
     -------
-    2-D float array, NaN where the DEM is NaN.
+    Float array of ``elevation``'s shape: the share of the series strictly
+    above each elevation; NaN where the elevation is NaN.
     """
     z = np.asarray(elevation, dtype=float)
     tides = np.asarray(tide_heights, dtype=float)
@@ -68,6 +74,11 @@ def exposure_time(elevation, tide_heights, hours_per_sample=1.0,
     The complement of the hydroperiod, in the units ecologists usually work
     in. Desiccation stress — the main control on the upper limit of most
     intertidal species — scales with this.
+
+    ``elevation`` and ``tide_heights`` as in :func:`hydroperiod`. ``per``:
+    "year" (8760 h), "month" (730 h) or "day" (24 h). ``hours_per_sample``
+    is NOT used: the result depends only on the share of the series above
+    each elevation, so the sampling interval does not enter.
     """
     submerged = hydroperiod(elevation, tide_heights)
     exposed = 1.0 - submerged
@@ -93,6 +104,11 @@ def zonation(elevation, tide_heights, bands=None):
 
     Returns ``(classes, labels)`` where ``classes`` is an integer raster
     (NaN → 0) and ``labels`` maps the codes to names.
+
+    ``elevation`` and ``tide_heights`` as in :func:`hydroperiod`; ``bands``
+    a list of ``(lo, hi, name)`` submergence fractions, each zone being
+    ``lo < hydroperiod <= hi``; codes follow the list order from 1.
+    ``classes`` is uint8 of ``elevation``'s shape.
     """
     if bands is None:
         bands = [(0.90, 1.01, "subtidal"), (0.50, 0.90, "lower intertidal"),
@@ -113,6 +129,10 @@ def zone_areas(classes, labels, transform):
     The headline table of a habitat study: how much of the estuary is
     mudflat, how much is pioneer marsh, and how those shares change between
     epochs.
+
+    ``classes`` and ``labels`` from :func:`zonation`; ``transform`` the
+    grid's affine transform (only the pixel area is used). Percentages are
+    of the classified pixels (code > 0). Returns one dict per zone.
     """
     px_km2 = abs(transform.a * transform.e) / 1e6
     total = int((classes > 0).sum())
@@ -134,7 +154,10 @@ def inundation_curve(elevation, tide_heights, n_levels=50):
     Practical uses: reading off how much habitat a storm surge would cover,
     and comparing the flooding behaviour of different estuaries.
 
-    Returns ``(levels, area_km2)``.
+    Returns ``(levels, n_pixels)`` — NOT an area: ``levels`` (n_levels,) m,
+    evenly spaced over the finite range of ``tide_heights``; ``n_pixels``
+    (n_levels,) float, the number of DEM pixels at or below each level.
+    Multiply by the pixel area (1e-4 km² at 10 m) to get km².
     """
     z = np.asarray(elevation, dtype=float)
     valid = np.isfinite(z)

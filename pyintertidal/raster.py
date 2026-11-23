@@ -14,6 +14,9 @@ Two families:
 * **Scenes** — :func:`read_rgb`, :func:`read_scl` and :func:`is_valid_tif`
   handle the per-date Sentinel-2 files downloaded by
   :mod:`pyintertidal.scenes` for visual inspection.
+
+How it fits: :func:`write_geotiff` writes every GeoTIFF of the package,
+``scripts/marea_tools.export_geotiffs`` (step 11) included.
 """
 
 from __future__ import annotations
@@ -32,7 +35,22 @@ def write_geotiff(path, array, transform, crs, dtype="float32", nodata=np.nan):
     """Write a single-band, deflate-compressed GeoTIFF.
 
     Use ``nodata=None`` for class/uint8 rasters (writes no nodata tag).
-    Returns the path, so it composes: ``plot(write_geotiff(...))``.
+    Returns the path, so the call can be passed straight to a reader.
+
+    Parameters
+    ----------
+    path : str
+        The file to write (overwritten if it exists).
+    array : (H, W) array
+        Cast to ``dtype`` before writing.
+    transform : affine.Affine
+        The grid's transform (e.g. ``SentinelCube.grid[0]``).
+    crs : rasterio CRS or str
+        E.g. ``"EPSG:32630"``.
+    dtype : str
+        Output data type.
+    nodata : number or None
+        The nodata tag (NaN for float products, e.g. -1 for int16 layers).
     """
     array = np.asarray(array)
     profile = {
@@ -52,6 +70,8 @@ def read_band(path, band=1, nodata_to_nan=True):
 
     Returns ``(array, transform, crs)``. The file's nodata value becomes NaN
     unless ``nodata_to_nan=False``.
+
+    ``path`` a GeoTIFF; ``band`` 1-based; the array is (H, W) float32.
     """
     with rasterio.open(path) as src:
         arr = src.read(band).astype(np.float32)
@@ -61,7 +81,10 @@ def read_band(path, band=1, nodata_to_nan=True):
 
 
 def grid_of(path):
-    """``(transform, crs, shape)`` of a raster — handy to align products."""
+    """``(transform, crs, shape)`` of a raster — handy to align products.
+
+    ``path`` is any raster rasterio opens; ``shape`` is ``(rows, cols)``.
+    """
     with rasterio.open(path) as src:
         return src.transform, src.crs, src.shape
 
@@ -76,6 +99,8 @@ def is_valid_tif(path):
     OpenEO occasionally returns a technically valid GeoTIFF that is entirely
     zeros or NaN (e.g. the AOI fell outside the granule). Checking this
     before analysis avoids silently averaging empty scenes into a product.
+
+    ``path`` a GeoTIFF; only band 1 is read. An unreadable file is False.
     """
     try:
         with rasterio.open(path) as src:
@@ -94,6 +119,9 @@ def percentile_normalize(band, low=2, high=98):
     Percentile (rather than min–max) stretching is what makes satellite RGB
     look natural: a handful of specular or cloud pixels would otherwise
     compress everything else into darkness.
+
+    ``low``/``high`` are percentiles (0-100) of the finite values; returns
+    float32 of the band's shape (all zeros for an empty or flat band).
     """
     band = np.asarray(band, dtype=np.float32)
     finite = band[np.isfinite(band)]
@@ -110,6 +138,10 @@ def read_rgb(path, normalize=True, low=2, high=98):
 
     With ``normalize=True`` each band is percentile-stretched for display.
     Returns ``None`` when the file is missing or empty.
+
+    ``path`` e.g. from :func:`pyintertidal.scenes.download_rgb`; ``low`` and
+    ``high`` the stretch percentiles. Without ``normalize`` the values are
+    the file's reflectances, float32.
     """
     if not os.path.exists(path) or not is_valid_tif(path):
         return None
@@ -127,6 +159,9 @@ def read_scl(path):
 
     Returns ``None`` when the file is missing or empty. See
     :data:`pyintertidal.water.SCL_CLASSES` for what the class numbers mean.
+
+    ``path`` e.g. from :func:`pyintertidal.scenes.download_scl`; NaN becomes
+    class 0 (no data); returns (H, W) int16.
     """
     if not os.path.exists(path) or not is_valid_tif(path):
         return None
@@ -141,6 +176,8 @@ def scene_coverage(path):
     cover part of the study area. Use this to drop partial scenes before
     they bias a composite. Pixels that are NaN or exactly zero count as
     no-data (that is how OpenEO pads outside the granule).
+
+    ``path`` a GeoTIFF; only band 1 is read.
     """
     with rasterio.open(path) as src:
         data = src.read(1).astype(np.float32)
@@ -155,6 +192,10 @@ def tifs_to_png(paths, out_dir, low=2, high=98, scl=False):
     RGB files are percentile-stretched; with ``scl=True`` the class raster is
     written as-is (nearest-neighbour, no stretching) so classes stay exact.
     Returns the list of written paths.
+
+    ``paths`` GeoTIFF scenes; ``out_dir`` the folder for ``<name>.png``;
+    ``low``/``high`` the stretch percentiles. Missing or empty scenes are
+    skipped.
     """
     from PIL import Image
 

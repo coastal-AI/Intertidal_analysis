@@ -47,10 +47,12 @@ def sample():
 
 
 def test_clear_looks_are_the_scl_rule(sample):
+    """The sample's stored clear looks are marea.CLEAR (SCL 4-7), not water.CLEAR_CLASSES."""
     assert np.array_equal(sample["clear"], sample["clear_stored"])  # SCL 4, 5, 6 or 7
 
 
 def test_ndwi_and_looks_equal_marea_extract(sample):
+    """NDWI and clear looks computed by hand equal marea.extract's on the sample."""
     from pyintertidal import marea
 
     ex = marea.extract(SAMPLE)  # MAREA's own streaming extraction on the sample
@@ -63,6 +65,7 @@ def test_ndwi_and_looks_equal_marea_extract(sample):
 
 
 def test_stored_delays_reproduce_z_and_sigma(sample):
+    """Inverting every pixel on its stored delayed tide gives the stored z and sigma bit for bit."""
     from pyintertidal import marea
 
     rows, cols = np.nonzero(sample["intertidal"])  # the product's pixels in this block, row by row

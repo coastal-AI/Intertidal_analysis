@@ -8,7 +8,7 @@ Jorge Alías Álvarez¹, Fernando García-González², Pablo González¹.
 ¹ University of Oviedo, Spain · ² Instituto Español de Oceanografía (IEO-CSIC), Spain.
 
 * Format: A0 portrait, 841 × 1189 mm.
-* PDF: to be added.
+* PDF: not public yet.
 
 The maps on the poster can be explored on the website, and the method is run in the
 notebooks of this repository: see the [main README](../README.md).

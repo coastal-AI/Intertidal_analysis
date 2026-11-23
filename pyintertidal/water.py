@@ -2,10 +2,19 @@
 water.py — Water detection: one registry, four detectors, clear guidance
 ========================================================================
 
-Every stage that needs to know "is this pixel wet in this scene?" calls this
-registry, so changing the detector is ONE parameter (``water="ndwi"``)
-everywhere — stability, frequency and elevation all follow automatically, and
-no stage can silently disagree with another.
+The stages that stream a :class:`~pyintertidal.cube.SentinelCube` and need
+to know "is this pixel wet in this scene?" call this registry: the cube's
+band list, :mod:`~pyintertidal.stability` (the screening, step 3),
+:mod:`~pyintertidal.frequency`, ``elevation.fit_hsr``/``fit_step`` and
+:func:`calibrate_threshold`. For them, changing the detector is ONE
+parameter (``water="ndwi"``).
+
+MAREA's looks do NOT go through this registry: ``marea.extract`` (step 4)
+computes NDWI itself, with its own clear classes (SCL 4 to 7,
+``marea.CLEAR``), a look being wet when NDWI > 0, and its own intertidal
+window. So the screening counts SCL 4, 5 and 6 as clear (see
+:data:`CLEAR_CLASSES`) while the looks also count class 7; the published
+Villaviciosa product was made this way.
 
 Which detector should I use?
 ----------------------------
@@ -23,9 +32,13 @@ Which detector should I use?
     12 = flooded vegetation). 20 m, binary. Kept for comparison studies and
     as the CLOUD mask for every detector (that role never changes).
 
-All detectors share the same cloud handling: an observation only counts when
-its SCL class is in ``CLEAR_CLASSES`` — so swapping detectors is a fair A/B
-comparison by construction.
+All detectors of this registry share the same cloud handling: an
+observation only counts when its SCL class is in ``CLEAR_CLASSES`` — so
+swapping detectors is a fair A/B comparison by construction.
+
+Blocks are dicts ``{band: (t, y, x) array}`` as
+:meth:`~pyintertidal.cube.SentinelCube.stream` yields them; reflectances may
+be digital numbers (0-10000) or 0-1, the indices are ratios either way.
 """
 
 from __future__ import annotations
@@ -34,7 +47,9 @@ import numpy as np
 
 #: Sentinel-2 L2A Scene Classification, with the colours used in figures.
 #: Class 12 is a project extension: salt-marsh vegetation that SCL labels as
-#: dry vegetation but which is actually flooded.
+#: dry vegetation but which is actually flooded. Sentinel-2 itself writes
+#: classes 0-11 only, and no function in this edition writes class 12, so in
+#: practice CLEAR_CLASSES is (4, 5, 6) and SCL_WATER_CLASSES is (6,).
 SCL_CLASSES = {
     0: ("No data", "#000000"),
     1: ("Saturated / defective", "#ff0000"),
@@ -53,7 +68,8 @@ SCL_CLASSES = {
 
 #: Sentinel-2 L2A SCL classes treated as cloud/bad in every stage.
 BAD_CLASSES = (3, 8, 9, 10)
-#: SCL classes accepted as a usable ("clear") observation.
+#: SCL classes accepted as a usable ("clear") observation by the stages of
+#: this registry (not by marea.extract, which uses SCL 4-7: marea.CLEAR).
 CLEAR_CLASSES = (4, 5, 6, 12)
 #: SCL classes counted as water when ``water="scl"``.
 SCL_WATER_CLASSES = (6, 12)
@@ -68,7 +84,11 @@ REQUIRED_BANDS = {
 
 
 def bands_for(water):
-    """Bands to download for a detector (cloud-mask SCL always included)."""
+    """Bands to download for a detector (cloud-mask SCL always included).
+
+    ``water`` is one of ``"ndwi"``, ``"mndwi"``, ``"awei"``, ``"scl"``;
+    returns e.g. ``("B03", "B08", "SCL")`` for ``"ndwi"``.
+    """
     if water not in REQUIRED_BANDS:
         raise ValueError(f"unknown water detector {water!r}; "
                          f"choose from {sorted(REQUIRED_BANDS)}")
@@ -78,7 +98,8 @@ def bands_for(water):
 def index_block(water, blocks):
     """Water index for a block dict ``{band: (t, y, x) array}``.
 
-    Returns float32, or ``None`` for the categorical ``"scl"`` detector.
+    Returns float32 ``(t, y, x)``, NaN where the denominator is 0, or
+    ``None`` for the categorical ``"scl"`` detector.
     """
     if water == "scl":
         return None
@@ -108,6 +129,11 @@ def water_land_masks(water, blocks, threshold, clear_classes=CLEAR_CLASSES):
     ``clear`` always comes from SCL (the cloud mask); wet/dry are the clear
     observations above/below the index threshold — or the SCL water/land
     classes for the categorical detector.
+
+    ``blocks`` as :meth:`~pyintertidal.cube.SentinelCube.stream` yields them;
+    ``threshold`` is the index value above which a clear look is wet;
+    ``clear_classes`` the SCL classes counted as clear. The three masks are
+    ``(t, y, x)`` bool.
     """
     scl = np.nan_to_num(np.asarray(blocks["SCL"]), nan=0.0).astype(np.int16)
     clear = np.isin(scl, list(clear_classes))
@@ -129,6 +155,9 @@ def scene_quality(scl, bad_classes=BAD_CLASSES):
     is the full class histogram. Use it to inspect why a particular date was
     accepted or rejected — the pipeline decides with ``bad_fraction``, but
     the histogram tells you whether the problem was cloud, shadow or snow.
+
+    ``scl`` is one scene's SCL array (any shape); fractions are of all its
+    pixels, 0-1.
     """
     scl = np.nan_to_num(np.asarray(scl), nan=0.0).astype(np.int16)
     total = max(scl.size, 1)
@@ -149,6 +178,9 @@ def otsu_threshold(index_samples, clip=(-0.4, 0.25)):
     trusted.
 
     Feed it a representative sample — :func:`calibrate_threshold` builds one.
+
+    ``index_samples`` is any array of index values (NaN ignored). With fewer
+    than 100 finite values it returns 0.0 without a warning.
     """
     from skimage.filters import threshold_otsu
 
@@ -177,6 +209,11 @@ def calibrate_threshold(cube, n_scenes=12, max_pixels=400_000, chunk=None,
     and you should set the threshold yourself.
 
     Returns ``(threshold, diagnostics)``.
+
+    ``cube`` is a cached SentinelCube; ``n_scenes`` the number of clearest
+    scenes pooled; ``max_pixels`` the size of the pooled sample; ``chunk``
+    is not used (kept for a uniform signature). Not used by MAREA, whose
+    threshold is fixed at NDWI 0.
     """
     from .cube import open_cube
 

@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 .ipynb_checkpoints/
+*.nbconvert.ipynb
 .pytest_cache/
 # run outputs (the notebooks and the reproduction write here)
 runs/

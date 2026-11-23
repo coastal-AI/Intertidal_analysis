@@ -5,8 +5,31 @@ No code in the library builds the record, writes the emersion map, exports
 the GeoTIFFs or checks a reproduction; this module does, by calling public
 pyintertidal functions only. It adds no algorithm.
 
-The 11 processing steps (the same numbers and names in every page, script
-and notebook):
+Who uses it: ``scripts/reproduce_villaviciosa.py``, ``replication/build_kit.py``,
+notebooks 01 and 03, and ``scripts/quickstart.py``, whose
+``map_estuary(cube_path, tide, out_dir, ...)`` is the one-call route for a
+new estuary (it runs steps 2-11 with these helpers). Import it with
+``sys.path.insert(0, "scripts"); import marea_tools as mt``; importing it puts
+the repository root on ``sys.path``, so ``import pyintertidal`` then finds
+this repository's package.
+
+What is here, by step
+---------------------
+* (3) :func:`screen` — the reference map and the usable scenes.
+* (5) :func:`build_record` (with :func:`record_rows`) — the record.
+* (6) :func:`site_boundary`, :class:`TableBoundary` (the replication kit's
+  tabulated tide), :class:`TideSeries` (a regular series).
+* (11) :func:`emersion_time`, :func:`export_geotiffs`.
+* Checks: :func:`compare_products`, :func:`overlap_summary`,
+  :func:`qa_table`, :func:`coverage`; environment and provenance:
+  :func:`check_env`, :func:`provenance`.
+* Files: :func:`load_site` (a site YAML file), :func:`load_overpass`,
+  :func:`load_extraction` / :func:`save_extraction`, :func:`write_npz`,
+  :func:`write_json`.
+
+The 11 processing steps (the same numbers and names in the guide, the
+scripts and the notebooks; the code comments of notebook 03 number its own
+sub-steps):
 
  (1) Download the Sentinel-2 cube
  (2) Get the acquisition time of every scene
@@ -23,7 +46,8 @@ and notebook):
 Conventions: times are UTC (the datatake start); heights are metres on the
 scale of the tide at the mouth; the delay tau is in minutes, positive when
 the water inside is later than at the mouth; sections are numbered from 0
-at the mouth; a look is wet when NDWI > 0.
+at the mouth (in the code and the products a section is a "band"); a look
+is wet when NDWI > 0.
 """
 from __future__ import annotations
 
@@ -41,8 +65,11 @@ from pathlib import Path
 
 import numpy as np
 
+#: the repository root (the folder above scripts/)
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
+    # so that ``import pyintertidal`` finds this repository's package,
+    # wherever the calling script or notebook runs from
     sys.path.insert(0, str(ROOT))
 
 #: the 11 processing steps, verbatim
@@ -76,10 +103,12 @@ PACKAGES = (
 )
 #: the full pinned environment
 PINNED_FILE = ROOT / "requirements.txt"
+#: the Python version the product was made and checked with
 PYTHON_PINNED = "3.13.3"
 
-#: file name of each layer in export_geotiffs
+#: file name of each layer in export_geotiffs, when it differs from the layer
 LAYER_FILE = {"tau_px_min": "tau_px"}
+#: layers written as int16 with -1 as no-data (the others: float32, NaN)
 INT_LAYERS = ("band", "n_clear")
 
 
@@ -93,7 +122,11 @@ def step(k):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def sha256(path):
-    """SHA-256 of a file's bytes (hex), read in 1 MiB chunks."""
+    """SHA-256 of a file's bytes (hex), read in 1 MiB chunks.
+
+    The same digest as ``pyintertidal.seal._sha256``, ``sha256sum`` and
+    ``certutil -hashfile <file> SHA256``.
+    """
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -124,7 +157,11 @@ def short_path(path):
 
 
 def resolve(path):
-    """A path from a site file: absolute as given, else from the repo root."""
+    """A path from a site file: absolute as given, else from the repo root.
+
+    ``~`` is expanded; None gives None. Returns a ``Path``. :func:`load_site`
+    leaves the paths of a site file as written, so pass them through this.
+    """
     if path is None:
         return None
     p = Path(os.path.expanduser(str(path)))
@@ -132,7 +169,11 @@ def resolve(path):
 
 
 def guard_out_dir(out_dir):
-    """Refuse an output folder inside products_marea/ or products_villaviciosa/."""
+    """Refuse an output folder inside products_marea/ or products_villaviciosa/.
+
+    Returns ``out_dir`` as an absolute ``Path`` (not created); exits with
+    ``SystemExit`` and a message for a folder inside a published product.
+    """
     out = Path(out_dir).resolve()
     for p in PROTECTED:
         if out == p or p in out.parents:
@@ -142,7 +183,11 @@ def guard_out_dir(out_dir):
 
 
 def format_table(rows, columns):
-    """Rows (sequences) as a fixed-width text table with a header line."""
+    """Rows (sequences) as a fixed-width text table with a header line.
+
+    ``rows`` are sequences of values (None prints empty); ``columns`` the
+    header names, one per value. Returns the table as one string.
+    """
     rows = [[("" if v is None else str(v)) for v in r] for r in rows]
     width = [max([len(c)] + [len(r[i]) for r in rows]) for i, c in enumerate(columns)]
     line = lambda r: "  ".join(v.ljust(w) for v, w in zip(r, width)).rstrip()
@@ -152,6 +197,7 @@ def format_table(rows, columns):
 
 
 def _json_default(o):
+    """What ``json.dump`` cannot write itself: numpy values, arrays, paths."""
     if isinstance(o, np.bool_):
         return bool(o)
     if isinstance(o, (np.integer,)):
@@ -176,7 +222,14 @@ def write_json(path, obj):
 #  Site configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-#: every key of a site file and its default (None = required or unset)
+#: every key of a site file and its default (None = required or unset).
+#: In this edition only some keys are acted on: scripts/reproduce_villaviciosa.py
+#: and notebook 01 read key, overpass_times, out_dir, tide.model, screening.*,
+#: record.* and marea.* (except region_mask); site_boundary() also reads
+#: polygon, bbox, period and the other tide.* keys, but no script calls it.
+#: resolution, cube, per_year, job_options, marea.region_mask and every
+#: export.* key are validated, so a site file keeps one format, but nothing
+#: here acts on them (setting export.cog to true, for example, writes nothing).
 SITE_DEFAULTS = {
     "site": None,
     "key": None,
@@ -214,14 +267,20 @@ def load_site(yaml_path):
     Parameters
     ----------
     yaml_path : str or Path
-        A file like ``scripts/sites/TEMPLATE.yaml``. Relative paths inside
-        it are read from the repository root.
+        A file like ``scripts/sites/villaviciosa.yaml``.
 
     Returns
     -------
     dict
         Every key of :data:`SITE_DEFAULTS`, plus ``_yaml`` (the file read).
         Raises ``ValueError`` naming the key for any invalid or unknown key.
+
+    Paths inside the file (``cube``, ``overpass_times``, ``out_dir``, ...)
+    are returned AS WRITTEN, not resolved: they are meant relative to the
+    repository root, so pass them through :func:`resolve` (code that runs
+    from the repository root, as the notebooks do, can use them directly).
+    ``period`` values come back as strings. See :data:`SITE_DEFAULTS` for
+    which keys this edition acts on.
     """
     import pandas as pd
     import yaml
@@ -292,7 +351,10 @@ def load_site(yaml_path):
 
 
 def site_aoi(cfg):
-    """The frame of a site as an AOI: polygon, else bbox, else the registry."""
+    """The frame of a site as an AOI: polygon, else bbox, else the registry.
+
+    ``cfg`` is :func:`load_site`'s dict; the AOI is named after ``site``.
+    """
     import pyintertidal as pit
 
     name = cfg["site"]
@@ -310,6 +372,9 @@ def tide_point(cfg):
     (as for the published Villaviciosa product), else the frame's centroid;
     ``bbox_centre`` is the centre of the frame's bounding box (what
     reconstruct uses when no boundary is passed); ``[lat, lon]`` as given.
+
+    ``cfg`` is :func:`load_site`'s dict; returns floats in degrees, latitude
+    first.
     """
     import pyintertidal as pit
 
@@ -335,6 +400,13 @@ def site_boundary(cfg, out_dir=None, tide_dir=None, verbose=True):
       ``<out_dir>/gauges`` so the run folder keeps them; with
       ``tide.model: null``, the gauges alone.
     * otherwise the model at :func:`tide_point` (``PyTMDBoundary``).
+
+    ``cfg`` is :func:`load_site`'s dict; ``out_dir`` the run folder (for the
+    gauge downloads); ``tide_dir`` overrides ``tide.directory`` (the folder
+    holding ``EOT20/ocean_tides/``). Downloading IOC gauges needs a network.
+    No script or notebook of this edition calls this function: the
+    reproduction builds its boundary directly (``PyTMDBoundary`` or
+    :class:`TableBoundary`).
     """
     import pyintertidal as pit
     from pyintertidal.boundary import (EnsembleBoundary, GaugeBoundary,
@@ -387,6 +459,14 @@ def load_overpass(path):
 
     Returns ``{'YYYY-MM-DD': pandas.Timestamp}`` (UTC, the datatake start),
     sorted by date.
+
+    Not the same as ``pyintertidal.overpass.load_overpass``: this reads the
+    file AS IT IS — the corrections of ``configs/overpass_corrections.json``
+    are not applied — and returns only the dict, whereas the library's
+    function applies them and returns ``(times, changed)``. No correction is
+    listed for Villaviciosa, so both give the same times for
+    ``products_marea/overpass_times.json``; for any other site use the
+    library's function.
     """
     import pandas as pd
 
@@ -406,6 +486,9 @@ def cube_info(cube_path):
     ``transform``, ``crs``, ``bands`` {name: (stored dtype, fill)}, ``bbox``
     (the frame in degrees, from the pixel-centre extremes as
     marea.extract computes it) and ``institution`` (the backend that wrote it).
+
+    ``cube_path`` is an openEO netCDF cube with a ``B03`` band and a ``crs``
+    variable (as the Copernicus back-end writes them).
     """
     import pyproj
     import xarray as xr
@@ -431,7 +514,12 @@ def cube_info(cube_path):
 
 
 def open_cached_cube(cube_path, name=None):
-    """A ``SentinelCube`` over an existing netCDF file (never downloads)."""
+    """A ``SentinelCube`` over an existing netCDF file (never downloads).
+
+    The cube is opened with ``water="ndwi"`` (bands B03, B08, SCL) and an AOI
+    built from the file's own frame, named ``name`` (default: the file
+    name). Raises ``FileNotFoundError`` when the file cannot be read.
+    """
     import pyintertidal as pit
 
     info = cube_info(cube_path)
@@ -500,6 +588,12 @@ def record_rows(dates, usable_dates, times, boundary=None, epoch_years=3,
 
     Returns ``(rows, record_dates, label)``: row indices into ``dates``, the
     dates themselves and the epoch label (e.g. '2023-2025').
+
+    ``dates`` are the extraction's dates (one per row); ``usable_dates`` the
+    scenes kept by :func:`screen`; ``times`` ``{date: timestamp}``;
+    ``boundary`` any object with ``levels(times)`` (None skips the level
+    check); ``which`` is "latest" or "all" (every usable date). With no
+    usable date: empty rows and label None.
     """
     import pandas as pd
     from pyintertidal import epochs
@@ -541,6 +635,8 @@ def build_record(ex, usable_dates, times, boundary, epoch_years=3, which="latest
         dropped.
     epoch_years : int
         Length of an epoch in years; the latest one is kept.
+    which : str
+        "latest" (the latest epoch, as the product) or "all".
 
     Returns
     -------
@@ -548,6 +644,9 @@ def build_record(ex, usable_dates, times, boundary, epoch_years=3, which="latest
         The extraction with Y, C and dates restricted to the record rows
         (``ex_rec['record_epoch']`` holds the epoch label), and the dates.
         For Villaviciosa it returns exactly ``result.json`` record_dates.
+        The other keys of ``ex`` (keep, sea, inter, bbox, ...) are passed on
+        unchanged; pass ``ex_rec`` to ``marea.reconstruct`` as
+        ``extraction``.
     """
     rows, rec, label = record_rows(ex["dates"], usable_dates, times, boundary,
                                    epoch_years, which)
@@ -557,7 +656,13 @@ def build_record(ex, usable_dates, times, boundary, epoch_years=3, which="latest
 
 
 def save_extraction(ex, path):
-    """Cache an extraction (step 4) as a compressed npz."""
+    """Cache an extraction (step 4) as a compressed npz.
+
+    ``ex`` is ``marea.extract``'s dict; ``path`` the ``.npz`` to write
+    (returned). :func:`load_extraction` reads it back. No script or notebook
+    of this edition calls it; use it to avoid a second pass over a large
+    cube.
+    """
     np.savez_compressed(path, Y=ex["Y"], C=ex["C"], keep=ex["keep"],
                         dates=np.asarray(ex["dates"]), shape=np.asarray(ex["shape"]),
                         sea=ex["sea"], inter=ex["inter"],
@@ -572,6 +677,11 @@ def load_extraction(path):
 
     Returns the dict ``pyintertidal.marea.reconstruct`` accepts as
     ``extraction`` (``shape`` a tuple, ``bbox`` a dict in degrees).
+
+    ``path`` e.g. ``replication/villaviciosa_record_2023-2025.npz``: ``Y``
+    (T, P) float32 NDWI, ``C`` (T, P) bool clear looks, ``keep`` (P,) flat
+    pixel indices, ``dates``, ``shape``, ``sea``/``inter`` (H, W) masks,
+    ``bbox``, ``crs_wkt`` (and, in the kit, ``source_cube_sha256``).
     """
     with np.load(path, allow_pickle=False) as d:
         ex = {k: d[k] for k in d.files}
@@ -587,7 +697,11 @@ def load_extraction(path):
 
 
 def n_clear(ex_rec):
-    """Clear looks of each pixel in the record: (P,) int16."""
+    """Clear looks of each pixel in the record: (P,) int16.
+
+    ``ex_rec`` is :func:`build_record`'s extraction; the result is the
+    ``n_clear`` layer of :func:`export_geotiffs` (pass it in ``extra``).
+    """
     return np.asarray(ex_rec["C"]).sum(axis=0).astype(np.int16)
 
 
@@ -595,6 +709,8 @@ def n_clear(ex_rec):
 #  Tide at the mouth, from tabulated values (the offline kit)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# The two classes below are boundary providers (anything with ``levels`` and
+# ``harmonics``); they subclass the library's base class when it imports.
 try:
     from pyintertidal.boundary import BoundaryProvider as _Provider
 except Exception:                                  # pragma: no cover
@@ -616,6 +732,9 @@ class TableBoundary(_Provider):
         A file with ``times_ns`` (T,) int64 UTC instants, ``shifts_min``
         (S,) and ``levels_m`` (S, T) float64: the level at
         ``times - shift``.
+
+    Attributes ``name`` (the model, e.g. "EOT20"), ``lat``, ``lon`` (the
+    tabulated point), ``times_ns`` and ``shifts_min`` come from the file.
     """
 
     def __init__(self, npz_path):
@@ -634,6 +753,11 @@ class TableBoundary(_Provider):
             raise ValueError(f"{npz_path}: repeated instants in the table")
 
     def levels(self, times):
+        """Levels (m) at exactly these instants, in the order given.
+
+        ``times``: any datetime-like sequence (naive = UTC). ``KeyError``
+        for an instant not in the table.
+        """
         import pandas as pd
 
         idx = pd.DatetimeIndex(pd.to_datetime(times))
@@ -650,6 +774,7 @@ class TableBoundary(_Provider):
         return np.array([self._table[v] for v in ns], float)
 
     def harmonics(self, constituents=None):
+        """None: a table of levels has no harmonic description."""
         return None
 
 
@@ -659,6 +784,9 @@ class TideSeries(_Provider):
     ``levels(times)`` interpolates between samples and raises ``ValueError``
     for an instant outside the series. Used for emersion time, where the
     tide is needed every 10 minutes over years.
+
+    ``times`` (N,) datetime-like (naive = UTC) and ``levels`` (N,) metres,
+    in any order (sorted here); ``name`` labels the series.
     """
 
     def __init__(self, times, levels, name="series"):
@@ -681,10 +809,15 @@ class TideSeries(_Provider):
 
     @property
     def span(self):
+        """``(first, last)`` instants of the series, as pandas Timestamps (UTC)."""
         import pandas as pd
         return pd.Timestamp(int(self._x[0])), pd.Timestamp(int(self._x[-1]))
 
     def levels(self, times):
+        """Levels (m) at these instants, by linear interpolation, in the order given.
+
+        ``ValueError`` when an instant lies outside :attr:`span`.
+        """
         import pandas as pd
 
         idx = pd.DatetimeIndex(pd.to_datetime(times))
@@ -699,11 +832,12 @@ class TideSeries(_Provider):
         return np.interp(q, self._x, self._y)
 
     def harmonics(self, constituents=None):
+        """None: the series is used as it is, not as harmonics."""
         return None
 
 
 def _level_source(src):
-    """Anything with ``levels(times)``, a path to a series npz, or (times, levels)."""
+    """A level source from anything with ``levels(times)``, a series npz path, or (times, levels)."""
     if hasattr(src, "levels"):
         return src
     if isinstance(src, (str, Path)):
@@ -738,6 +872,9 @@ def emersion_time(z, tau_px, boundary_or_series, start, end, step_min=10):
     Returns
     -------
     (P,) float32 in 0-1 (multiply by 24 for hours per day).
+
+    The source must cover the grid minus the largest delay: the kit's 10-min
+    series starts 180 min before 2023-01-01 for that reason.
     """
     import pandas as pd
     from pyintertidal.hydroperiod import hydroperiod
@@ -761,7 +898,11 @@ def emersion_time(z, tau_px, boundary_or_series, start, end, step_min=10):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def grid_reference(ref):
-    """``(transform, crs, (H, W))`` from a GeoTIFF, a netCDF cube or a tuple."""
+    """``(transform, crs, (H, W))`` from a GeoTIFF, a netCDF cube or a tuple.
+
+    A path ending in ".nc" is read with :func:`cube_info`, any other path
+    with ``pyintertidal.raster.grid_of``; a 3-tuple is returned as it is.
+    """
     if isinstance(ref, (tuple, list)) and len(ref) == 3:
         return ref
     ref = str(ref)
@@ -787,9 +928,11 @@ def export_geotiffs(product_dir, grid_ref, out_dir, site, period,
     out_dir : str or Path
         Where to write (never products_marea/ or products_villaviciosa/).
     site, period : str
-        Used in the names ``marea_<site>_<period>_<layer>.tif``; ``marea_site.py
-        export`` passes the record's epoch label (``record.json`` ``epoch``,
-        e.g. ``2023-2025``), so the docs write ``marea_<site>_<epoch>_<layer>.tif``.
+        Used in the names ``marea_<site>_<period>_<layer>.tif``. Pass the
+        record's epoch label as ``period`` — ``ex_rec['record_epoch']`` from
+        :func:`build_record` (e.g. ``2023-2025``), as
+        ``scripts/quickstart.py`` does — so the files are named
+        ``marea_<site>_<epoch>_<layer>.tif`` as in the guide.
     layers : sequence of str
         Arrays of marea.npz or keys of ``extra``. ``tau_px_min`` is written
         as ``tau_px`` (minutes).
@@ -839,10 +982,18 @@ def export_geotiffs(product_dir, grid_ref, out_dir, site, period,
 #: arrays of marea.npz that a replication must reproduce bit for bit
 IDENTICAL = ("keep", "shape", "z", "sigma", "s_km", "band", "tau_px_min",
              "hyp_z", "hyp_area", "hyp_lo", "hyp_hi", "band_km")
-#: (array, tolerance in minutes)
+#: (array, tolerance in minutes): the section delays, fitted and applied
 CLOSE = (("tau_min", 1e-6), ("tau_usado_min", 1e-6))
+#: (array, tolerance in minutes): the bootstrap delays and their interval,
+#: skipped by a --fast run (n_boot 0)
 BOOT = (("tau_boot_min", 0.01), ("tau_lo_min", 0.01), ("tau_hi_min", 0.01))
-#: result.json keys compared exactly (floats within 1e-9)
+#: result.json keys compared exactly (floats within 1e-9). The keys are partly
+#: Spanish (sitio = site, estado = status, n_escenas = scenes in the record,
+#: n_px_cota = pixels with an elevation, centros_km = section centres,
+#: tau_usado_min = the delay applied, con_operador = a delay was applied,
+#: veto_fisico = a negative delay was set to 0, rango_marea_m = the mouth tide's
+#: range over the record, hipsometria = the hypsometry); the full glossary is in
+#: guide/DATA.md (result.json).
 RESULT_KEYS = ("sitio", "estado", "n_escenas", "n_px", "record_dates",
                "min_scenes", "overpass_source", "n_px_cota", "s_max_km",
                "band_km", "min_px_band", "centros_km", "tau_px_median_min",
@@ -851,11 +1002,13 @@ RESULT_KEYS = ("sitio", "estado", "n_escenas", "n_px", "record_dates",
 
 
 def _short(v, n=48):
+    """``v`` as text of at most ``n`` characters, for a check table."""
     s = json.dumps(v, default=_json_default) if not isinstance(v, str) else v
     return s if len(s) <= n else s[:n - 3] + "..."
 
 
 def _same(a, b, tol=1e-9):
+    """Equal JSON values, numbers within ``tol`` (nested dicts and lists too)."""
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_same(a[k], b[k], tol) for k in a)
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
@@ -868,6 +1021,7 @@ def _same(a, b, tol=1e-9):
 
 
 def _has_float(v):
+    """True when a JSON value holds a float anywhere (its check gets a tolerance)."""
     if isinstance(v, bool):
         return False
     if isinstance(v, float):
@@ -890,7 +1044,8 @@ def compare_products(dir_a, dir_b, expected_cube_sha=None, fast=False):
         The reference, e.g. products_marea/.
     expected_cube_sha : str, optional
         The sha256 that ``inputs_sha.cube`` of the run must report (the kit
-        record in Route A, the authors' cube in Route B).
+        record in Route A, the authors' cube in Route B; the routes are those
+        of guide/REPRODUCE.md).
     fast : bool
         The run had no bootstrap (``n_boot`` 0): the intervals are skipped.
 
@@ -983,6 +1138,9 @@ def overlap_summary(dir_a, dir_b):
 
     For a run from a re-downloaded cube (Route C): no verdict, only facts.
     Returns a dict.
+
+    ``dir_a`` (the run) and ``dir_b`` (the reference) hold ``marea.npz``;
+    pixels are matched by their flat index (``keep``) and |dz| is in metres.
     """
     A = np.load(Path(dir_a) / "marea.npz")
     B = np.load(Path(dir_b) / "marea.npz")
@@ -998,10 +1156,14 @@ def overlap_summary(dir_a, dir_b):
 
 
 def qa_table(run_dir):
-    """The quality checks of a run (NEW_SITE step 7), from its outputs.
+    """The quality checks of a run (the quality table of notebook 03), from its outputs.
 
     Returns rows of (check, where, found, fine when). Facts about the run
     only; nothing here compares with a measurement.
+
+    ``run_dir`` is a ``marea.reconstruct`` output folder (result.json,
+    marea.npz, and coverage.json when :func:`coverage` wrote one). A run
+    that did not end "ok" gives the status row only.
     """
     run_dir = Path(run_dir)
     res = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
@@ -1022,8 +1184,11 @@ def qa_table(run_dir):
          f"{len(res['centros_km'])} at " + ", ".join(f"{c:.2f}" for c in res["centros_km"]) + " km",
          "one per 3 km of estuary"),
     ]
+    # 179.5 min: the 180-min end of marea.TAU_BOUNDS and of the shift bank (a
+    # delay there was not measured); 0.03 and 0.65 m: the ends of marea.SG_GRID
+    # (a sigma pinned at an end was not resolved)
     lo_i, hi_i = np.asarray(res["tau_lo_min"], float), np.asarray(res["tau_hi_min"], float)
-    width = ", ".join("-" if not np.isfinite(a) else f"{b - a:.1f}"
+    width =", ".join("-" if not np.isfinite(a) else f"{b - a:.1f}"
                       for a, b in zip(lo_i, hi_i))
     rows += [
         ("interval width per section (min)", "result.json tau_lo_min, tau_hi_min",
@@ -1058,6 +1223,12 @@ def coverage(record_levels, boundary, start, end, out_dir=None, every_hours=1):
     ``record_levels`` are the levels at the record instants; the reference
     is the boundary every ``every_hours`` hours from ``start`` to ``end``.
     Writes ``coverage.json`` in ``out_dir`` when given; returns the verdict.
+
+    A wrapper of the module ``pyintertidal.coverage`` (same name, imported
+    here as ``cv``), with that module's default thresholds. No script or
+    notebook of this edition calls it; :func:`qa_table` reads the
+    coverage.json it writes. ``boundary`` is any object with
+    ``levels(times)``; ``end`` is exclusive.
     """
     import pandas as pd
     from pyintertidal import coverage as cv
@@ -1081,6 +1252,7 @@ def coverage(record_levels, boundary, start, end, out_dir=None, every_hours=1):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _pins():
+    """``{package (lower case): version}`` from the ``name==version`` lines of requirements.txt."""
     pins = {}
     if PINNED_FILE.exists():
         for line in PINNED_FILE.read_text(encoding="utf-8").splitlines():
@@ -1092,6 +1264,7 @@ def _pins():
 
 
 def _installed(dist):
+    """The installed version of a distribution, or None."""
     from importlib import metadata
     try:
         return metadata.version(dist)
@@ -1128,6 +1301,7 @@ def check_env():
 
 
 def _git(*args):
+    """The output of ``git -C <repository root> <args>``, or None when git cannot run."""
     try:
         return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True,
                               text=True, timeout=30).stdout.strip()
@@ -1153,6 +1327,11 @@ def provenance(out_dir, inputs, params, started=None):
     Returns
     -------
     dict
+        ``git_commit``, ``git_dirty`` (tracked files changed since that
+        commit; None outside a git checkout), ``python``, ``os``,
+        ``packages``, ``inputs``, ``parameters``, ``started_utc``,
+        ``ended_utc``. Input paths inside the repository are written
+        relative to its root.
     """
     now = _dt.datetime.now(_dt.timezone.utc)
     started = started or now
@@ -1169,8 +1348,12 @@ def provenance(out_dir, inputs, params, started=None):
             inp[label] = {"path": None if p is None else str(p), "sha256": h}
     commit = _git("rev-parse", "HEAD")
     status = _git("status", "--porcelain", "--untracked-files=no")
-    if status:     # the executed tutorials rewrite themselves while they are built: not a code change
-        status = "\n".join(l for l in status.splitlines()
+    # The executed tutorials rewrite themselves while they are built, which is
+    # not a code change. NOTE: notebooks/tutorials/ does not exist in this
+    # edition (the notebooks are in notebooks/), so this filter matches nothing
+    # here and a notebook re-executed in place marks the run git_dirty.
+    if status:
+        status ="\n".join(l for l in status.splitlines()
                            if not re.search(r"notebooks/tutorials/[^/]+\.ipynb$", l))
     prov = {
         "git_commit": commit or None,
@@ -1198,6 +1381,9 @@ def write_npz(path, arrays):
     ``numpy.savez_compressed`` stamps the current time into the zip, so the
     sha256 of a rebuilt file changes; this writes a fixed timestamp. The
     file reads with ``numpy.load`` as usual (no pickle).
+
+    ``path`` the ``.npz`` to write (returned); ``arrays`` ``{name: array}``
+    — object arrays are refused.
     """
     from numpy.lib import format as npf
 

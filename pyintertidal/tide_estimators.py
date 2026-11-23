@@ -1,52 +1,82 @@
 """
-tide_estimators.py — Interior-tide estimators of phase M2
-=========================================================
+tide_estimators.py — The delay of the tide along the estuary
+============================================================
 
-The four spec'd estimators. All consume the M1 along-mouth coordinate and
-the archive alone (no survey labels); all take the boundary series
-through a :class:`ShiftBank` so the lag axis is continuous and the boundary
-provider stays interchangeable (phase M3).
+Inside an estuary the tide arrives later than at the mouth. This module
+measures that delay, ``tau`` (minutes, positive = later than at the mouth),
+section by section, from the wet/dry looks of the record alone: no survey
+and no gauge inside the estuary. In the code a section is called a "band"
+(``band_km``, ``band_of``, ``n_bands``).
 
-A structural fact shapes the family — the AFFINE THEOREM measured earlier in
-this project: any estimator built on the ORDER of scenes (ranks of flooded
-area, concordance of wet/dry outcomes) is invariant to gain and datum of the
-level, so it can measure the LAG tau(s) but is blind to the amplitude
-alpha(s). Amplitude is only visible to the likelihood, through how wide the
-wet/dry transition is against the boundary clock. Hence:
+What MAREA uses (``marea.reconstruct``, steps 7-9)
+--------------------------------------------------
+:class:`ShiftBank`
+    The tide at the mouth read ``tau`` minutes earlier, for any ``tau`` in
+    the tabulated range (MAREA: ``marea.BANK_TAUS``, −45 to 180 min every
+    15). A delay outside that range is clamped SILENTLY to its nearest end.
+:func:`make_bands_fixed`
+    Sections of fixed length (3 km) along the distance from the mouth, thin
+    ones merged. Use its ``band_of`` and ``centers``; its ``edges`` are the
+    raw edges from BEFORE the merge.
+:func:`m2a_rasch`
+    One delay per section, by maximum likelihood (below).
+:func:`bootstrap_lags`
+    The 95 % interval of each section's delay, by resampling the looks.
+:func:`smooth_lag_profile`
+    The delay of every pixel: the section delays smoothed along the
+    distance, anchored at (0 km, 0 min), never decreasing inland and never
+    negative. ``marea.reconstruct`` then rounds it to the minute.
 
-    ============  =================================  ==========  =========
-    estimator     mechanism                          estimates   blind to
-    ============  =================================  ==========  =========
-    M2a Rasch     Bernoulli likelihood, z profiled   alpha, tau  —
-    M2b copulas   per-pixel wet-h concordance        tau         alpha
-    M2c waterline flooded-area rank correlation      tau         alpha
-    M2d Granadeiro flood/ebb topography discrepancy  tau         alpha
-    ============  =================================  ==========  =========
+How :func:`m2a_rasch` works. Section k has one delay ``tau_k``; the mouth
+section is fixed at 0. A pixel at elevation z is wet in a look with
+probability Φ((h(t − tau_k) − z) / σ), h being the tide at the mouth and σ
+the width of the pixel's wet/dry transition. For trial delays, each pixel's
+z (and σ, when ``sg_grid`` is given, as MAREA does) is picked on a grid and
+never enters the optimiser ("profiled"); L-BFGS-B moves only the few delays
+to minimise the mean Bernoulli negative log-likelihood. With
+``monotone=True`` (MAREA) the free parameters are the per-section
+INCREMENTS of the delay, each in [0, ``tau_bounds[1]``], so the delay never
+decreases inland.
 
-**M2d — the literature baseline (Granadeiro-style).** The published route to
-cotidal lags from the archive: for each along-estuary band, find the single
-lag that makes the topography inferred from FLOOD scenes agree with the one
-inferred from EBB scenes. If the assumed tide leads the local water, flood
-fits and ebb fits disagree in opposite directions; the lag that zeroes the
-disagreement is the cotidal lag. Assumes symmetry between limbs — which is
-exactly what our hysteresis evidence questions, and why M2d is the baseline
-to beat rather than the method.
+Why no gain is fitted. Wet/dry data cannot tell a larger tide from a lower
+pixel with a wider transition: scaling (gain, z, σ) together leaves every
+likelihood term unchanged (the project's notes call this the affine
+theorem). The default therefore fits the delay only (``fit_alpha=False``);
+:func:`alpha_nll_profile` shows the flat likelihood. For the same reason the
+rank-based estimators below can see the delay but not the gain.
 
-**M2a — the main engine (Rasch/IRT).** Scene = examinee with ability
-h(s, t); pixel = item with difficulty z; response = wet/dry; Bernoulli
-likelihood. The ability is the boundary tide warped by two smooth profiles
-pinned at the mouth (the anchor items of the spec — the datum comes from the
-boundary, deviations are measured relative to it):
+Development alternatives (kept for comparison, not used by MAREA)
+-----------------------------------------------------------------
+The project's notes name the four estimators M2a (:func:`m2a_rasch`, the one
+MAREA uses) to M2d.
 
-    h(s, t) = alpha(s) * h_boundary(t - tau(s))
+:func:`m2d_flood_ebb`
+    M2d, the published Granadeiro-style approach: the delay that makes the
+    elevations fitted on FLOOD-tide looks agree with those fitted on
+    EBB-tide looks. It assumes flood and ebb behave alike.
+:func:`m2b_concordance`
+    M2b: the delay that best correlates each pixel's wet/dry series with the
+    tide.
+:func:`m2c_waterline`
+    M2c: the delay that best rank-correlates each section's flooded area
+    with the tide.
+:func:`hysteresis_oos`
+    Separate flood and ebb delays, adopted only when they predict held-out
+    looks better than one delay.
+:func:`m2a_hysteresis`
+    Deprecated: the two-delay likelihood that fails, kept as a record.
+:func:`make_bands`
+    Quantile sections (equal pixel counts); MAREA uses fixed-length ones.
+:func:`alpha_nll_profile`
+    The likelihood as a function of the gain (a check, see above).
 
-with ``alpha`` and ``tau`` piecewise-linear on a few knots, ``alpha(0)=1``,
-``tau(0)=0``. Item difficulties z are PROFILED per pixel by a vectorised 1-D
-grid search (they never enter the global parameter vector), and the handful
-of global parameters go to L-BFGS-B.
-
-Continuous lags use linear interpolation over a precomputed shift grid of the
-boundary series, so the objective stays smooth for the optimiser.
+Shapes and units
+----------------
+T looks (scenes), P pixels. ``wet``, ``clear`` (T, P) bool; ``Y`` (T, P)
+NDWI; ``C`` (T, P) clear looks; ``rising`` (T,) bool, the look was taken on
+a rising tide; ``band_of`` (P,) int, the section of each pixel, −1 = none;
+``s_km`` (P,) km. Levels are metres on the scale of the tide at the mouth;
+delays are minutes.
 """
 
 from __future__ import annotations
@@ -56,15 +86,39 @@ from scipy.special import erf
 
 from .elevation import _fit_block
 
+#: Transition widths σ (m) the per-pixel fits of the development estimators
+#: choose from (m2d_flood_ebb, hysteresis_oos). The same values as
+#: marea.SG_GRID: keep the two equal.
 SG_GRID = (0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.45, 0.65)
 
 
 def _phi(x):
+    """Standard normal cumulative distribution Φ(x)."""
     return 0.5 * (1.0 + erf(x / np.sqrt(2.0)))
 
 
 class ShiftBank:
-    """h_boundary(t - tau) for continuous tau, by interpolating a shift grid."""
+    """The tide at the mouth read ``tau`` minutes earlier, for any ``tau``.
+
+    Parameters
+    ----------
+    shifts_min : (S,) array of float
+        The tabulated delays, minutes, in any order (MAREA:
+        ``marea.BANK_TAUS``, −45 to 180 every 15).
+    series : (S, T) array of float
+        ``series[j]`` = the mouth level (m) at each of the T look instants
+        minus ``shifts_min[j]`` minutes.
+
+    ``at(tau_min)`` returns the (T,) levels for any delay, by linear
+    interpolation between the two nearest tabulated delays. A delay outside
+    the tabulated range is CLAMPED to its nearest end, silently: in MAREA,
+    any delay above 180 min reads the 180-min series.
+
+    Example
+    -------
+    >>> bank = ShiftBank([0.0, 15.0], [h0, h15])   # h0, h15: (T,) levels
+    >>> bank.at(6.0)                               # 0.6 * h0 + 0.4 * h15
+    """
 
     def __init__(self, shifts_min, series):
         order = np.argsort(shifts_min)
@@ -72,6 +126,7 @@ class ShiftBank:
         self.H = np.asarray(series, float)[order]      # (n_shift, T)
 
     def at(self, tau_min):
+        """(T,) mouth levels (m) read ``tau_min`` minutes earlier (clamped to the bank's range)."""
         t = float(np.clip(tau_min, self.taus[0], self.taus[-1]))
         j = int(np.searchsorted(self.taus, t) - 1)
         j = max(0, min(j, len(self.taus) - 2))
@@ -81,7 +136,13 @@ class ShiftBank:
 
 def make_bands(s_km, n_bands):
     """Quantile bands of the along-mouth coordinate; returns (edges, centers,
-    band_of_pixel)."""
+    band_of_pixel).
+
+    Development alternative to :func:`make_bands_fixed` (MAREA uses that
+    one): ``n_bands`` sections with equal numbers of pixels. ``s_km`` (P,)
+    km, NaN allowed; ``edges`` (n_bands + 1,) km; ``centers`` (n_bands,)
+    median s of each section; ``band_of`` (P,) int, −1 where s is NaN.
+    """
     fin = np.isfinite(s_km)
     qs = np.nanquantile(s_km, np.linspace(0, 1, n_bands + 1))
     qs[0] -= 1e-9
@@ -102,6 +163,26 @@ def m2d_flood_ebb(Y, C, bank, rising, band_of, n_bands, tau_grid,
                   mu_points=50, min_obs=6, min_b=0.15, rng=None,
                   max_px_band=2500):
     """Cotidal lag per band by minimising flood-vs-ebb topography disagreement.
+
+    Development alternative (M2d), not used by MAREA. For each candidate
+    delay, each pixel's elevation is fitted twice, on the rising-tide looks
+    and on the falling-tide looks; the section's delay is the one where the
+    median |difference| is smallest (refined between grid points by a
+    parabola).
+
+    Parameters
+    ----------
+    Y, C : (T, P)
+        NDWI and clear looks.
+    bank : ShiftBank
+    rising : (T,) bool
+        True for looks taken on a rising tide.
+    band_of : (P,) int; n_bands : int
+    tau_grid : (k,) float
+        Candidate delays, minutes, evenly spaced.
+    mu_points, min_obs, min_b, max_px_band, rng
+        Elevation grid size, the per-pixel fit's acceptance rules, and the
+        seeded pixel subsample per section.
 
     Returns ``tau_hat`` (n_bands,) minutes, NaN where undetermined.
     """
@@ -143,26 +224,40 @@ def m2d_flood_ebb(Y, C, bank, rising, band_of, n_bands, tau_grid,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  B5 — hysteresis: one clock per tide limb (flood water arrives, ebb water
-#  LEAVES — and ponding makes leaving slower than arriving)
+#  Hysteresis (development alternative): one delay per tide limb (flood water
+#  arrives, ebb water LEAVES — and ponding makes leaving slower than arriving)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def hysteresis_oos(Y, C, bank, rising, band_of, n_bands, tau_up_grid,
                    tau_dn_grid, test_every=3, rng=None, max_px_band=2000,
                    mu_points=50, min_obs=6, min_b=0.15):
-    """B5 v2: limb clocks selected by OUT-OF-SAMPLE continuous prediction.
+    """Flood and ebb delays per section, chosen by OUT-OF-SAMPLE prediction.
 
-    The binary profiled likelihood cannot judge a two-clock model — split
-    the limbs and it rewards separating them until the limb itself predicts
-    wetness (measured: clocks ran to opposite bounds even with no hysteresis
-    planted). The judge that works is the b2 prototype's: fit the per-pixel
-    sigmoids on TRAIN scenes under each candidate clock pair, score the
-    prediction of held-out CONTINUOUS NDWI, adopt the pair only if it beats
-    the best single clock. Pathological separations predict held-out scenes
-    WORSE, so the degeneracy dies at the judge.
+    Development alternative, not used by MAREA. The wet/dry likelihood
+    cannot judge a two-delay model — split the limbs and it rewards
+    separating them until the limb itself predicts wetness (measured: the
+    delays ran to opposite bounds even on synthetic data with no
+    hysteresis). The judge that works: fit the per-pixel sigmoids on
+    TRAINING looks under each candidate pair of delays, score how well they
+    predict the held-out looks' continuous NDWI, and adopt the pair only if
+    it beats the best single delay. Pathological separations predict
+    held-out looks WORSE, so the degeneracy dies at the judge.
+
+    Parameters
+    ----------
+    Y, C : (T, P)
+        NDWI and clear looks.
+    bank : ShiftBank; rising : (T,) bool; band_of : (P,) int; n_bands : int
+    tau_up_grid, tau_dn_grid : sequences of float
+        Candidate rising-tide and falling-tide delays, minutes.
+    test_every : int
+        Every ``test_every``-th look (0, n, 2n, ...) is held out.
+    rng, max_px_band, mu_points, min_obs, min_b
+        As in :func:`m2d_flood_ebb`.
 
     Returns per-band ``tau_up``, ``tau_dn``, ``adopted``, and the OOS RMSE
-    of the winner and of the best single clock.
+    of the winner and of the best single clock (``oos_two``, ``oos_one``;
+    also ``tau_single``).
     """
     rng = rng or np.random.default_rng(4)
     idx = np.arange(Y.shape[0])
@@ -225,13 +320,17 @@ def hysteresis_oos(Y, C, bank, rising, band_of, n_bands, tau_up_grid,
 def m2a_hysteresis(wet, clear, bank, rising, band_of, n_bands,
                    tau_grid=None, sigma0=0.20, sg_grid=None, z_points=60,
                    rng=None, max_px_band=1200, n_rounds=2):
-    """DEPRECATED for estimation — kept as the documented failure (B5 v1).
+    """DEPRECATED for estimation — kept as the documented failure.
 
-    Splitting scenes by limb opens a degenerate direction the profiled
-    Bernoulli likelihood loves: separate the limbs' levels until the limb
-    itself predicts wetness (measured: clocks ran to opposite bounds with
-    AND without planted hysteresis). Use :func:`hysteresis_oos` — the
-    out-of-sample continuous judge — for anything beyond one clock.
+    The first two-delay attempt (one delay for rising-tide looks, one for
+    falling-tide looks), by the same profiled Bernoulli likelihood as
+    :func:`m2a_rasch`. Splitting the looks by limb opens a degenerate
+    direction the likelihood loves: separate the limbs' levels until the
+    limb itself predicts wetness (measured: the delays ran to opposite
+    bounds with AND without hysteresis planted in synthetic data). Use
+    :func:`hysteresis_oos` — the out-of-sample judge — for anything beyond
+    one delay. Arguments as in :func:`m2a_rasch` and :func:`hysteresis_oos`;
+    returns ``{"tau_up", "tau_dn", "nll"}``.
     """
     rng = rng or np.random.default_rng(3)
     tau_grid = np.asarray([-30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0,
@@ -259,9 +358,9 @@ def m2a_hysteresis(wet, clear, bank, rising, band_of, n_bands,
         if k > 0:                      # mouth band stays the anchor (0, 0)
             for _ in range(n_rounds):
                 sc = np.asarray([nll_of(tu, tv) for tv in tau_grid])
-                td = _parabolic_argmax(-sc, tau_grid)   # min NLL en tau_dn
+                td = _parabolic_argmax(-sc, tau_grid)   # min NLL over tau_dn
                 sc = np.asarray([nll_of(tv, td) for tv in tau_grid])
-                tu = _parabolic_argmax(-sc, tau_grid)   # min NLL en tau_up
+                tu = _parabolic_argmax(-sc, tau_grid)   # min NLL over tau_up
         tau_up[k], tau_dn[k] = tu, td
         nll_tot += nll_of(tu, td)
     return {"tau_up": tau_up, "tau_dn": tau_dn,
@@ -269,18 +368,25 @@ def m2a_hysteresis(wet, clear, bank, rising, band_of, n_bands,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  M2b — copula/concordance: which clock explains each pixel's wet sequence
+#  M2b (development alternative) — concordance: which delay explains each
+#  pixel's wet sequence
 # ─────────────────────────────────────────────────────────────────────────────
 
 def m2b_concordance(wet, clear, bank, band_of, n_bands, tau_grid,
                     min_obs=10, rng=None, max_px_band=1500):
     """Lag per band by per-pixel point-biserial concordance.
 
-    For each candidate lag, correlate every pixel's wet/dry sequence with the
-    shifted boundary series over its clear scenes; the band's score is the
-    MEDIAN correlation over its pixels (robust to the always-wet/always-dry
-    tails, which carry no clock information). The lag that maximises the
-    score is the band's clock. Rank-like, hence affine-blind: tau only.
+    Development alternative (M2b), not used by MAREA. For each candidate
+    lag, correlate every pixel's wet/dry sequence with the shifted boundary
+    series over its clear scenes; the band's score is the MEDIAN correlation
+    over its pixels (robust to the always-wet/always-dry tails, which carry
+    no clock information). The lag that maximises the score is the band's
+    delay. It sees the delay but not the gain (see the module docstring).
+
+    ``wet``, ``clear`` (T, P) bool; ``tau_grid`` evenly spaced candidate
+    delays (min); pixels with fewer than ``min_obs`` clear looks, or wet in
+    under 2 % or over 98 % of them, are left out. Returns (n_bands,)
+    minutes, NaN where undetermined.
     """
     rng = rng or np.random.default_rng(2)
     tau_hat = np.full(n_bands, np.nan)
@@ -309,7 +415,7 @@ def m2b_concordance(wet, clear, bank, band_of, n_bands, tau_grid,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  M2c — differential waterline kinematics (flooded-area ranks)
+#  M2c (development alternative) — waterline: flooded-area ranks
 # ─────────────────────────────────────────────────────────────────────────────
 
 def m2c_waterline(wet, clear, bank, band_of, n_bands, tau_grid,
@@ -318,6 +424,12 @@ def m2c_waterline(wet, clear, bank, band_of, n_bands, tau_grid,
     boundary — the binary-gauging idea, which reproduced the gauges' lag
     gradient on the Scheldt. Affine-blind by the
     same theorem: ranks of area survive any monotone gain/datum, so tau only.
+
+    Development alternative (M2c), not used by MAREA. A look counts in a
+    section when at least ``min_cover`` of the section's pixels are clear;
+    a section needs ``min_scenes`` such looks. ``wet``, ``clear`` (T, P)
+    bool; ``tau_grid`` evenly spaced candidate delays (min). Returns
+    (n_bands,) minutes, NaN where undetermined.
     """
     from scipy.stats import spearmanr
 
@@ -339,7 +451,12 @@ def m2c_waterline(wet, clear, bank, band_of, n_bands, tau_grid,
 
 
 def _parabolic_argmax(score, tau_grid):
-    """Sub-grid argmax by parabola through the top three points."""
+    """Sub-grid argmax by parabola through the top three points.
+
+    ``score`` (k,) and an evenly spaced ``tau_grid`` (k,). The refinement
+    moves at most one grid step; at the ends of the grid, or next to a NaN,
+    the grid point itself is returned; with fewer than 3 finite scores, NaN.
+    """
     if np.isfinite(score).sum() < 3:
         return np.nan
     j = int(np.nanargmax(score))
@@ -354,7 +471,9 @@ def _parabolic_argmax(score, tau_grid):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  M2a — Rasch/IRT with profiled difficulties
+#  M2a — the estimator MAREA uses: Bernoulli likelihood with profiled
+#  elevations (in item-response terms: a Rasch model, looks = examinees,
+#  pixels = items with difficulty z)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _band_nll(wet, clear, h, z_grid, sigma0, sg_grid=None, min_looks=6):
@@ -364,11 +483,15 @@ def _band_nll(wet, clear, h, z_grid, sigma0, sg_grid=None, min_looks=6):
     maximises each pixel's likelihood is chosen and never leaves this
     function — that is the profiling.
 
-    ``sg_grid``: optionally profile the transition width per pixel too, over
-    the archive's own sigma atoms. Added after the v1 gate: a single fixed
-    sigma0 lets scale misfit masquerade as gain/lag (measured: alpha pinned
-    at its bound), whereas profiling sigma spends the scale degeneracy where
-    it belongs — inside the pixel, not inside the transfer.
+    ``h`` (T,) the (delayed) mouth levels, m; ``z_grid`` candidate
+    elevations, m; ``sigma0`` the transition width (m) used without
+    ``sg_grid``. ``sg_grid``: optionally profile the transition width per
+    pixel too, over the archive's own sigma values. With one fixed sigma0 a
+    scale misfit shows up as a false gain or delay (measured: the gain
+    pinned at its bound); profiling sigma keeps it inside the pixel.
+
+    Returns ``(nll, n_pixels)``: the NLL per clear look over the pixels with
+    at least ``min_looks`` clear looks, and how many such pixels there are.
     """
     W = (wet & clear).astype(np.float32)
     D = (~wet & clear).astype(np.float32)
@@ -387,14 +510,19 @@ def _band_nll(wet, clear, h, z_grid, sigma0, sg_grid=None, min_looks=6):
 def alpha_nll_profile(wet, clear, bank, tau, alpha_grid, z_grid, sg_grid):
     """NLL(alpha) with (z, sigma) profiled per pixel — the degeneracy meter.
 
-    The affine theorem says binary data cannot see gain: rescaling
-    (alpha, z, sigma) TOGETHER leaves every likelihood term unchanged. The
-    profiling grids therefore scale with alpha — otherwise their fixed
-    ceilings penalise large alpha and manufacture identifiability out of
-    quantisation (measured on the first v2 run: a spurious 0.18 NLL slope,
-    entirely from sigma being capped at its top atom). With scaled grids a
-    flat curve verifies the implementation adds no false identification;
-    curvature would mean a coding error, not physics.
+    Wet/dry data cannot see gain (the module docstring's "affine theorem"):
+    rescaling (alpha, z, sigma) TOGETHER leaves every likelihood term
+    unchanged. The profiling grids therefore scale with alpha — otherwise
+    their fixed ceilings penalise large alpha and manufacture
+    identifiability out of quantisation (measured once: a spurious 0.18 NLL
+    slope, entirely from sigma being capped at its top value). With scaled
+    grids a flat curve verifies the implementation adds no false
+    identification; curvature would mean a coding error, not physics.
+
+    ``wet``, ``clear`` (T, P) of one section; ``tau`` its delay (min);
+    ``alpha_grid`` the gains tried; ``z_grid`` and ``sg_grid`` the elevation
+    and transition-width grids at gain 1 (m). Returns the NLL per gain.
+    Development check, not used by MAREA.
     """
     out = []
     for al in alpha_grid:
@@ -415,10 +543,33 @@ def make_bands_fixed(s_km, length_km=3.0, min_px=500):
     every band has enough pixels to fix its own clock; the number of bands
     is set by the estuary's length, not chosen. Centres are the median s of
     each band's pixels.
+
+    Parameters
+    ----------
+    s_km : (P,) float
+        Distance of each pixel from the mouth along the water, km; NaN
+        where water cannot reach.
+    length_km : float
+        Section length L, km (MAREA: 3.0, ``band_km``).
+    min_px : int
+        Thinner sections are merged (MAREA: 500, ``min_px_band``).
+
+    Returns
+    -------
+    edges : (n_raw + 1,) float
+        The raw edges 0, L, 2L, ... km from BEFORE the merge: after a merge
+        ``len(edges) - 1`` is larger than the number of sections, so do not
+        use them to find a pixel's section — use ``band_of``.
+    centers : (n,) float
+        Median s (km) of each final section, from the mouth inward.
+    band_of : (P,) int
+        Section of each pixel, 0 at the mouth; −1 where s is NaN.
     """
     s = np.asarray(s_km, float)
     fin = np.isfinite(s)
     n_raw = int(np.floor(np.nanmax(s) / length_km)) + 1
+    # NaN s cast to int raises a harmless RuntimeWarning ("invalid value
+    # encountered in cast"); np.where then sets those pixels to -1
     raw = np.where(fin, np.floor(s / length_km).astype(int), -1)
     raw = np.clip(raw, -1, n_raw - 1)
     counts = np.bincount(raw[raw >= 0], minlength=n_raw)
@@ -439,8 +590,8 @@ def make_bands_fixed(s_km, length_km=3.0, min_px=500):
     remap = {u: i for i, u in enumerate(uniq)}
     band = np.full(len(s), -1, int)
     band[raw >= 0] = [remap[label[r]] for r in raw[raw >= 0]]
-    edges = np.array([k * length_km for k in range(n_raw + 1)])
-    centers = np.array([float(np.median(s[band == b])) for b in range(len(uniq))])
+    edges = np.array([k * length_km for k in range(n_raw + 1)])   # pre-merge
+    centers =np.array([float(np.median(s[band == b])) for b in range(len(uniq))])
     return edges, centers, band
 
 
@@ -448,6 +599,23 @@ def smooth_lag_profile(centers_km, tau_min, s_query_km, bandwidth_km=3.0):
     """The lag as a continuous function of the mouth distance: Gaussian
     kernel smoothing of the band lags, anchored at tau = 0 at s = 0 and
     made monotone non-decreasing along s.
+
+    In order: (1) a Gaussian-kernel average of the section delays plus an
+    anchor point (0 km, 0 min); (2) a running maximum along s, so the delay
+    never decreases inland; (3) clipped at 0, never negative.
+    ``marea.reconstruct`` then rounds the result to whole minutes (and
+    gives 0 to the pixels without a distance).
+
+    Parameters
+    ----------
+    centers_km : (n,) float
+        Section centres, km (:func:`make_bands_fixed`).
+    tau_min : (n,) float
+        Section delays, minutes.
+    s_query_km : (P,) float
+        Distance of each pixel from the mouth, km; NaN allowed.
+    bandwidth_km : float
+        Standard deviation of the kernel, km (MAREA: the section length).
 
     Returns tau (min) at every ``s_query_km``; NaN where s is NaN.
     """
@@ -474,6 +642,28 @@ def bootstrap_lags(wet, clear, bank, band_of, centers_km, n_bands, n_boot=30,
     ``n_boot`` resamples of the scenes (with replacement) and return the
     (n_boot, n_bands) array of lags. The 2.5 and 97.5 percentiles of each
     column are the 95 % confidence interval of that band's lag.
+
+    Parameters
+    ----------
+    wet, clear : (T, P) bool
+    bank : ShiftBank
+        Its series are resampled with the looks.
+    band_of, centers_km, n_bands
+        As for :func:`m2a_rasch`.
+    n_boot : int
+        Number of resamples (MAREA: 30). With ``n_boot=0`` MAREA does not
+        call this function at all (the intervals are then NaN).
+    seed : int
+        Seeds the resamples; each refit also gets its own seed
+        (``seed + 100 + b``), so the result does not depend on how many
+        threads ran.
+    **kwargs
+        Passed to :func:`m2a_rasch` (MAREA passes its fit settings with
+        ``max_px_band=600``).
+
+    ``np.nanpercentile(out, [2.5, 97.5], axis=0)`` gives MAREA's
+    ``tau_lo_min`` and ``tau_hi_min``. Runs in threads (joblib, up to the
+    number of CPUs minus 2) when joblib is installed, else in a loop.
     """
     rng = np.random.default_rng(seed)
     T = wet.shape[0]
@@ -505,29 +695,77 @@ def m2a_rasch(wet, clear, bank, band_of, centers_km, n_bands, sigma0=0.20,
               monotone=True, min_looks=6):
     """Fit alpha(s), tau(s) on band centres by profiled Bernoulli likelihood.
 
-    Mouth band pinned to (alpha=1, tau=0): the anchor. Free parameters are
-    the profiles at the remaining band centres — 2*(n_bands-1) numbers for
-    L-BFGS-B, well inside the spec's 20-40 budget.
+    The estimator MAREA uses (steps 7-8): one delay per section. The mouth
+    section is pinned to (alpha=1, tau=0): the anchor. The free parameters
+    are the delays of the other sections — ``n_bands - 1`` numbers (twice
+    that with ``fit_alpha``) for L-BFGS-B, started at 0 and stopped after at
+    most 60 iterations.
 
-    ``bank_by_band``: optional list of per-band ShiftBanks. Used by the M4
-    contraction gate: feed each band the OPERATOR's own level series and the
-    refit must come back (alpha=1, tau=0) — the fixed point.
+    Parameters
+    ----------
+    wet, clear : (T, P) bool
+        Whether each look is wet (NDWI > 0) and whether it is clear.
+    bank : ShiftBank
+        The tide at the mouth for any delay (levels in m).
+    band_of : (P,) int
+        Section of each pixel (:func:`make_bands_fixed`); −1 = none.
+    centers_km : (n_bands,) float
+        Section centres; only copied into the result.
+    n_bands : int
+        Number of sections; section 0 is the mouth.
+    sigma0 : float
+        Transition width (m) used when ``sg_grid`` is None.
+    alpha_bounds : (lo, hi)
+        Bounds of the gain, used only with ``fit_alpha=True``.
+    tau_bounds : (lo, hi)
+        Minutes. With ``monotone=True`` (MAREA) the free parameters are the
+        per-section INCREMENTS of the delay, each in [0, ``tau_bounds[1]``],
+        and ``tau_bounds[0]`` is not used; the total delay is their running
+        sum, so it is not bounded by ``tau_bounds[1]`` — but the bank clamps
+        any delay to its own range (MAREA: 180 min), so beyond that the
+        likelihood is flat: a delay at or above the bank's end is a delay the
+        record could not measure. With ``monotone=False`` each delay lies in
+        ``tau_bounds``.
+    z_points : int
+        Points of the elevation grid, spanning the mouth tide's range ± 0.3 m.
+    rng : numpy Generator, optional
+        Seeds the pixel subsample (default seed 1).
+    max_px_band : int
+        At most this many pixels per section enter the likelihood.
+    verbose : bool
+        Print one line with the result.
+    bank_by_band : list of ShiftBank, optional
+        One bank per section instead of ``bank``: a development check
+        (feed each section its own level series and the refit must come back
+        at alpha=1, tau=0).
+    fit_alpha : bool
+        **False by default**, and MAREA keeps it so: wet/dry data cannot see
+        a per-section gain (the module docstring), and when it was fitted
+        the optimiser spent the gain on a misfit of sigma (pinned at its
+        bound). :func:`alpha_nll_profile` shows the flat likelihood.
+        ``fit_alpha=True`` is kept for degeneracy studies only.
+    sg_grid : sequence of float, optional
+        Transition widths (m) to profile per pixel (MAREA:
+        ``configs/m2.yaml`` ``sigma_perfil_m``) — without it, a misfit of
+        scale leaks into tau as well.
+    monotone : bool
+        True: the delay never decreases inland (a propagation delay
+        accumulates).
+    min_looks : int
+        A pixel with fewer clear looks does not enter the likelihood. With
+        every pixel below it the objective is flat and every lag stays at 0.
 
-    ``fit_alpha``: **False by default since the v1 gate.** The affine theorem
-    makes per-band gain unidentifiable from binary data — the v1 gate showed
-    the optimiser spending alpha on sigma misfit (pinned at its bound). The
-    default is the honest phase-only model; ``alpha_nll_profile`` exists to
-    demonstrate the flatness rather than hide it. ``fit_alpha=True`` is kept
-    for degeneracy studies only.
+    A section with fewer than 50 pixels does not enter the likelihood
+    either, so its own pixels say nothing about its delay; with
+    ``monotone=True`` its delay ends between its neighbours'.
 
-    ``sg_grid``: per-pixel sigma atoms to profile over (recommended: the
-    archive's own grid) — without it, scale misfit leaks into tau as well.
-
-    ``min_looks``: a pixel with fewer clear looks does not enter the likelihood.
-    With every pixel below it the objective is flat and every lag stays at 0.
-
-    Returns dict with ``alpha``, ``tau`` (per band, mouth included) and the
-    achieved mean NLL.
+    Returns
+    -------
+    dict
+        ``alpha`` (n_bands,) — ones unless ``fit_alpha``; ``tau``
+        (n_bands,) minutes, ``tau[0] = 0``; ``nll`` the mean negative
+        log-likelihood per clear look (sections weighted by their pixels);
+        ``centers_km``; ``converged`` (L-BFGS-B's success flag).
     """
     from scipy.optimize import minimize
 
@@ -559,7 +797,7 @@ def m2a_rasch(wet, clear, bank, band_of, centers_km, n_bands, sigma0=0.20,
         for k in range(n_bands):
             cols = cols_by_band[k]
             if len(cols) < 50:
-                continue
+                continue                  # too few pixels: out of the likelihood
             bk = bank if bank_by_band is None else bank_by_band[k]
             h = alpha[k] * bk.at(tau[k])
             nll, npx = _band_nll(wet[:, cols], clear[:, cols], h,

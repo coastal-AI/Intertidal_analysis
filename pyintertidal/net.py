@@ -6,6 +6,13 @@ Several parts of this library talk to the internet, among them the openEO
 backend (:mod:`pyintertidal.scenes`) and the catalogue search for satellite
 overpass times (:mod:`pyintertidal.overpass`). They all trip over the same
 thing on a managed machine, so the fix lives here once.
+
+You rarely call anything here yourself: :func:`use_system_certificates` is
+called by ``scenes.connect``, by the overpass queries and by
+``marea.reconstruct``. :func:`patch_botocore_ssl` and
+:func:`system_ca_bundle` are two alternative workarounds for libraries that
+speak S3 through botocore (``copernicusmarine``, for CMEMS data); nothing in
+this edition uses them. Try :func:`patch_botocore_ssl` first.
 """
 
 from __future__ import annotations
@@ -82,6 +89,8 @@ def patch_botocore_ssl():
     inner = session.create_urllib3_context
 
     def create_urllib3_context(*args, **kwargs):
+        # botocore's own factory, run with the original SSLContext class put
+        # back for the duration of the call only
         current = ssl.SSLContext
         ssl.SSLContext = original
         try:
@@ -107,6 +116,10 @@ def system_ca_bundle(path=None):
     Windows only in practice: elsewhere ``certifi`` already matches the
     system store and this is a no-op returning None.
 
+    Side effect: sets ``SSL_CERT_FILE``, ``REQUESTS_CA_BUNDLE`` and
+    ``AWS_CA_BUNDLE`` for the whole process (only those not already set).
+    An existing bundle file is reused, not rewritten.
+
     Parameters
     ----------
     path : str, optional
@@ -121,7 +134,7 @@ def system_ca_bundle(path=None):
     if _BUNDLE:
         return _BUNDLE
 
-    import ssl
+    import ssl                       # (already imported at the top; harmless)
 
     if not hasattr(ssl, "enum_certificates"):        # not Windows
         return None

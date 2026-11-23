@@ -70,7 +70,13 @@ SERIES = "villaviciosa_eot20_10min_2023-2025.npz"
 
 
 def npz_rows(path, key, rows):
-    """Rows ``rows`` of a C-ordered 2-D array inside an npz, streamed."""
+    """Rows ``rows`` of a C-ordered 2-D array inside an npz, streamed.
+
+    ``path`` an npz (compressed or not); ``key`` the array's name; ``rows``
+    DISTINCT row indices, in any order. The array is read row by row up to
+    the largest index, so memory holds only the output. Returns
+    ``(len(rows), n_columns)`` in the order of ``rows``.
+    """
     from numpy.lib import format as npf
 
     rows = np.asarray(rows)
@@ -93,18 +99,25 @@ def npz_rows(path, key, rows):
 
 
 def npz_small(path, key):
-    """One (small) array of an npz."""
+    """One (small) array of an npz, read whole (``path``, array name ``key``)."""
     with np.load(path, allow_pickle=False) as d:
         return d[key]
 
 
 def describe(path):
-    """{key: [dtype, shape]} of an npz."""
+    """{key: [dtype, shape]} of the npz at ``path`` (the MANIFEST's ``arrays``)."""
     with np.load(path, allow_pickle=False) as d:
         return {k: [str(d[k].dtype), list(d[k].shape)] for k in d.files}
 
 
 def main(argv=None):
+    """Build the three kit files and MANIFEST.json (see the module docstring); returns 0.
+
+    The checks below are ``assert`` statements: they ARE the kit's checks
+    (replication/README.md: "the script checks, and stops if one fails"),
+    so never run this script with ``python -O``, which removes asserts.
+    """
+    # the --help text is the first line of the module docstring
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--extract", required=True,
                     help="products_marea/marea_extract.npz of the authors (all 1379 scenes)")
@@ -131,6 +144,7 @@ def main(argv=None):
           f"frame {tuple(int(v) for v in shape_p)}")
 
     # ── the record rows of the extraction ────────────────────────────────
+    # (the asserts in this function are the kit's checks: do not run with -O)
     dates = npz_small(a.extract, "dates").astype(str)
     keep = npz_small(a.extract, "keep")
     shape = npz_small(a.extract, "shape")

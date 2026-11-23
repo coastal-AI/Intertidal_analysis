@@ -19,6 +19,12 @@ marea.npz, result.json, figure.png, record.json and provenance.json into
 ends with a check table against products_marea/. The exit code is 0 only
 if every check passes. These checks are about code behaviour: they compare
 a run with the published product, not with any measurement.
+
+Other options: ``--fast`` skips the 30 bootstrap fits (the 4 interval checks
+are reported as skipped); ``--compare-only DIR`` compares an existing run
+folder with products_marea/ (facts only, no verdict; e.g. a run from a
+re-downloaded cube, Route C of guide/REPRODUCE.md); ``--check-env`` prints
+the installed against the pinned package versions.
 """
 import argparse
 import datetime as _dt
@@ -68,6 +74,11 @@ def say(k, text, expected=None, ok=None):
 
 
 def print_checks(rows, verdict=True):
+    """Print the check table of ``marea_tools.compare_products``.
+
+    ``verdict=False`` (``--compare-only``) prints same/differs instead of
+    PASS/FAIL: a comparison with no pass/fail claim.
+    """
     if not verdict:
         rows = [(*r[:4], {"PASS": "same", "FAIL": "differs", "SKIP": "-"}[r[4]])
                 for r in rows]
@@ -75,6 +86,7 @@ def print_checks(rows, verdict=True):
 
 
 def reference():
+    """The published product: result.json, and keep/shape/tau_px_min of marea.npz."""
     res = json.loads((PROD / "result.json").read_text(encoding="utf-8"))
     with np.load(PROD / "marea.npz") as d:
         prod = {k: d[k] for k in ("keep", "shape", "tau_px_min")}
@@ -82,7 +94,14 @@ def reference():
 
 
 def run_reconstruct(cube_path, out, boundary, ex_rec, times, cfg, n_boot):
-    """Steps 7-11 (and the hypsometry) through pyintertidal.marea.reconstruct."""
+    """Steps 7-11 (and the hypsometry) through pyintertidal.marea.reconstruct.
+
+    ``cube_path`` is hashed into result.json (the kit's record file in Route
+    A, the cube in Route B); ``out`` the run folder; ``boundary`` the tide
+    at the mouth; ``ex_rec`` the record; ``times`` the acquisition times;
+    ``cfg`` the site file (its ``marea`` settings); ``n_boot`` 0 or 30.
+    Returns ``(result dict or None, seconds)``.
+    """
     from pyintertidal import marea
 
     m = cfg["marea"]
@@ -122,6 +141,16 @@ def report_steps(res, ref, out, n_boot):
 
 
 def route_a(kit, out, cfg, n_boot, started):
+    """Route A, offline: steps 6-11 from the replication kit.
+
+    Checks every kit file against its sha256 in ``MANIFEST.json`` (stops if
+    one differs), prints steps 1-6 from the kit's contents, runs steps 7-11
+    through ``marea.reconstruct`` with the tabulated EOT20 levels
+    (``marea_tools.TableBoundary``), and writes record.json and
+    provenance.json. ``kit`` is the kit folder, ``out`` the run folder,
+    ``cfg`` the site file, ``started`` the UTC start time. Returns the kit
+    record's sha256 (what result.json's ``inputs_sha.cube`` must hold).
+    """
     from pyintertidal import sites
 
     kit = Path(kit)
@@ -186,6 +215,14 @@ def route_a(kit, out, cfg, n_boot, started):
 
 
 def route_b(cube, tide_dir, out, cfg, n_boot, started):
+    """Route B: steps 3-11 from the authors' cube and the EOT20 files.
+
+    Checks the cube by its sha256 (step 1; 3.09 GB read), screens it (step 3) and extracts the
+    looks (step 4) — these counts are checked against ``EXPECTED_B`` —,
+    builds the record with EOT20 at the registry centroid (steps 5-6), then
+    runs steps 7-11 as Route A. ``tide_dir`` holds ``EOT20/ocean_tides/``.
+    Returns the cube's sha256.
+    """
     import pandas as pd
     from pyintertidal import marea, sites
     from pyintertidal.boundary import PyTMDBoundary
@@ -266,6 +303,11 @@ def route_b(cube, tide_dir, out, cfg, n_boot, started):
 
 
 def main(argv=None):
+    """The command line (see the module docstring); returns the exit code.
+
+    0 only when every check passes (``--check-env``: when no core package
+    is missing; ``--compare-only``: always 0, it gives no verdict).
+    """
     ap = argparse.ArgumentParser(
         description="Reproduce products_marea/ (Ría de Villaviciosa) and check the run "
                     "against it. Route A: --from-kit; Route B: --from-cube.",

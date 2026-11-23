@@ -14,6 +14,20 @@ would silently give every scene the same (wrong) tide.
 
 The query is metadata-only: it costs nothing in processing credits and takes
 seconds even for a decade of imagery.
+
+Entry points (step 2 of MAREA)
+------------------------------
+:func:`get_overpass_times`
+    The live catalogue query: ``{date: datetime}``, naive UTC.
+:func:`load_overpass`
+    A cached ``overpass_times.json`` read back, with the known errors listed
+    in ``configs/overpass_corrections.json`` put right: returns
+    ``({date: pandas.Timestamp}, changed)``. (``scripts/marea_tools.load_overpass``
+    reads the same files WITHOUT the corrections and returns only the dict.)
+:func:`s1_passes`
+    Sentinel-1 passes over a box; not used by MAREA.
+
+The time kept for a scene is the datatake start written in its product name.
 """
 
 from __future__ import annotations
@@ -31,8 +45,9 @@ from .net import use_system_certificates
 
 #: Copernicus Data Space STAC search endpoint.
 STAC_SEARCH = "https://stac.dataspace.copernicus.eu/v1/search"
-#: known errors of the overpass-time files, corrected when they are read
-CORRECTIONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "configs",
+#: Known errors of the cached overpass-time files (configs/overpass_corrections.json
+#: of this repository), corrected when :func:`load_overpass` reads them.
+CORRECTIONS =os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "configs",
                            "overpass_corrections.json")
 
 
@@ -42,16 +57,37 @@ def utm_zone(lon):
 
 
 def _tile_zone(name):
-    """The UTM zone of a Sentinel-2 product from the MGRS tile in its name (``..._T30TWP_...``), or None."""
+    """The UTM zone of a Sentinel-2 product from its MGRS tile (``..._T30TWP_...``), or None."""
     match = re.search(r"_T(\d{2})[A-Z]{3}_", name)
     return int(match.group(1)) if match else None
 
 
 def load_overpass(path, corrections=CORRECTIONS):
-    """The overpass times of a downloader's file as ``{date: pandas.Timestamp}``, with the known errors listed for that file in
-    ``corrections`` (configs/overpass_corrections.json) put right. Returns ``(times, changed)``, ``changed`` being
-    ``{date: (wrong, right)}``; the file itself is never rewritten. An entry whose wrong instant is not the file's raises, so
-    a correction cannot silently land on a file that changed."""
+    """Read a cached overpass-time file and put its known errors right.
+
+    Parameters
+    ----------
+    path : str
+        A JSON file ``{'YYYY-MM-DD': 'YYYY-MM-DDTHH:MM:SS'}`` (UTC), such as
+        ``products_marea/overpass_times.json``.
+    corrections : str or None
+        The corrections table (default ``configs/overpass_corrections.json``);
+        None reads the file as it is. A table entry applies to the file whose
+        path ends with the entry's key (e.g.
+        ``products_urdaibai_10m/overpass_times.json``).
+
+    Returns
+    -------
+    (times, changed)
+        ``times`` is ``{date: pandas.Timestamp}`` (naive UTC) with the
+        corrections applied; ``changed`` is ``{date: (wrong, right)}``. The
+        file itself is never rewritten.
+
+    An entry whose wrong instant is not the one the file holds raises
+    ``ValueError``, so a correction cannot silently land on a file that
+    changed. ``scripts/marea_tools.load_overpass`` reads the same files
+    without the corrections.
+    """
     import pandas as pd
 
     times = {d: pd.Timestamp(v) for d, v in json.load(open(path, encoding="utf-8")).items()}
@@ -98,12 +134,9 @@ def _session_with_retries():
 def get_overpass_times(bbox, time_extent, verbose=True, retries=4):
     """Real UTC acquisition time of every Sentinel-2 L2A scene over an AOI.
 
-    A catalogue outage used to come back as an EMPTY or PARTIAL dict —
-    scenes silently lost their time and the estimators downstream fitted
-    fewer scenes, or nothing (2026-09-15/16, three runs at once; Ferrol
-    kept 262 of 461 dates). Now any failed page makes the whole search
-    retry, ``retries`` times with a growing pause, and after the last
-    failure it RAISES instead of returning a short answer.
+    Metadata only (Copernicus Data Space STAC): no openEO job, no credits.
+    Any failed page makes the whole search retry, and after the last attempt
+    it RAISES instead of returning a short answer.
 
     Parameters
     ----------
@@ -112,19 +145,28 @@ def get_overpass_times(bbox, time_extent, verbose=True, retries=4):
         An :class:`~pyintertidal.aoi.AOI` exposes exactly this via
         ``aoi.bbox``.
     time_extent : (start, end)
-        ISO dates ``'YYYY-MM-DD'``.
+        ISO dates ``'YYYY-MM-DD'``, both INCLUSIVE (unlike openEO's
+        ``temporal_extent``, whose end is exclusive).
     verbose : bool
-        Print a diagnostic when the catalogue returns nothing.
+        Print a diagnostic when the catalogue returns nothing or a page
+        fails.
+    retries : int
+        Attempts of the whole search; the pause between them grows 30, 60,
+        90 s. After the last failed attempt: ``RuntimeError``.
 
     Returns
     -------
     dict
-        ``{'YYYY-MM-DD': datetime}`` sorted by date. When a day has several
-        overpasses (possible near swath overlaps) the FIRST one is kept —
-        consistent with how the cube keeps one scene per date.
+        ``{'YYYY-MM-DD': datetime.datetime}`` (naive, UTC) sorted by date:
+        the datatake start read from the product name. When a day has
+        several overpasses (possible near swath overlaps) the FIRST one is
+        kept — consistent with how the cube keeps one scene per date.
 
     Notes
     -----
+    Why the whole search is retried: a catalogue outage used to come back
+    as an EMPTY or PARTIAL dict, and scenes silently lost their time
+    (2026-09-15/16: Ferrol kept 262 of 461 dates).
     Products are filtered to L2A locally (by the ``MSIL2A`` marker in the
     title) instead of with a CQL2 server-side filter, which this backend
     rejects. Pagination follows the STAC ``next`` link, whose POST body
@@ -155,7 +197,7 @@ def get_overpass_times(bbox, time_extent, verbose=True, retries=4):
         overpass.clear()
         session = _session_with_retries()
         url = STAC_SEARCH
-        first_page_failed = False
+        first_page_failed = False      # True when ANY page failed, not only the first
         try:
             page, max_pages = 0, 50        # safety stop against paging loops
             while url and page < max_pages:
@@ -228,7 +270,8 @@ def mean_overpass_hour(bbox, time_extent):
 
     Useful as a fallback when only an approximate acquisition time is needed
     (for instance to sanity-check a tide series) instead of the full
-    per-date dictionary.
+    per-date dictionary. ``bbox`` and ``time_extent`` as in
+    :func:`get_overpass_times`.
     """
     times = get_overpass_times(bbox, time_extent)
     if not times:
@@ -259,6 +302,10 @@ def s1_passes(bbox, start, end, retries=4, max_pages=500):
 
     Returns a DataFrame sorted by instant, columns ``instant`` (naive UTC),
     ``sat``, ``direction`` ('ascending' or 'descending') and ``rel_orbit``.
+
+    ``bbox`` is a ``west``/``south``/``east``/``north`` dict in degrees;
+    ``max_pages`` is a safety stop (``RuntimeError`` when still paging).
+    Not used by MAREA.
     """
     import time as _time
 

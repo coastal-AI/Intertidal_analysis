@@ -31,20 +31,22 @@ keywords:
   - tidal delay
   - estuaries
   - seagrass
-  - Zostera noltei
+  - Nanozostera noltei
 abstract: >-
   MAREA maps intertidal elevation, its uncertainty and emersion time at 10 m
   from Sentinel-2 openEO data cubes. It reads from the images one delay of
   the tide for each 3-km section along the channel (zero at the mouth, never
-  decreasing inland), shifts the tide at the mouth by that delay, and then
-  fits the elevation of every pixel. This branch is the companion repository
+  decreasing inland), gives every pixel a delay from a smooth curve through
+  the section delays, shifts the tide at the mouth by it, and then fits the
+  elevation of every pixel. This branch is the companion repository
   of the poster presented at CARTOGRASS 2026: the method's library, example
   notebooks on real data, a small real sample with its tide, the offline
   replication kit of the Villaviciosa product, and the interactive map
   viewer.
 preferred-citation:
-  type: conference-paper
+  type: generic                    # a poster: CFF has no poster type
   title: "MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes"
+  notes: "Poster"
   authors:
     - given-names: Jorge
       family-names: "Alías Álvarez"

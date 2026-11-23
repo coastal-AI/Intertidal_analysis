@@ -13,8 +13,17 @@ Consequences a pipeline author should know:
   size or the number of years — that is what makes it safe to run many
   contiguous tiles in parallel on one machine.
 * The bands in the cube depend only on the chosen water detector
-  (:func:`pyintertidal.water.bands_for`), so cubes are interchangeable
-  between experiments that use the same detector.
+  (:func:`pyintertidal.water.bands_for`) plus any ``extra_bands``, so cubes
+  are interchangeable between experiments that use the same detector.
+* A download is one openEO batch job, billed in Copernicus Data Space
+  credits; a cached file costs nothing.
+
+How it fits (step 1): notebook 03 builds
+``SentinelCube(aoi, period, water="ndwi", cache_path=...)`` and calls
+``ensure(connection)``. The screening (step 3, :mod:`pyintertidal.stability`)
+streams the cube through :meth:`SentinelCube.stream`; ``marea.extract``
+(step 4) opens the same netCDF file directly. With ``water="ndwi"`` the cube
+holds B03, B08 and SCL at 10 m, on a UTM grid with rows north to south.
 
 The building blocks are deliberately separate functions/objects — nothing is
 hidden behind a single "do everything" call:
@@ -50,6 +59,9 @@ def grid_from_dataset(ds):
     The x/y coordinates are pixel CENTRES; the affine origin is therefore the
     upper-left pixel CORNER (x0 − dx/2, y0 − dy/2). The CRS is read from the
     WKT the Copernicus backend writes into the ``crs`` variable.
+
+    ``ds`` is an open ``xarray.Dataset`` with ``x`` and ``y`` coordinates;
+    returns ``(affine.Affine, rasterio CRS or None)``.
     """
     x = np.asarray(ds["x"].values, dtype="float64")
     y = np.asarray(ds["y"].values, dtype="float64")
@@ -76,8 +88,12 @@ def open_cube(nc_path, bands=("B03", "B08", "SCL")):
     to an xarray DataArray transposed to ``(t, y, x)``. Close ``ds`` when
     done. Handles both encodings the backend produces (bands as separate
     variables, or one variable with a ``bands`` dimension).
+
+    ``nc_path`` is the cube's netCDF file; ``bands`` the band names to
+    return. ``t_dim`` is the name of the time dimension (``"t"`` in the
+    openEO cubes).
     """
-    import xarray as xr
+    import xarray as xr                    # (also imported at the top)
 
     ds = xr.open_dataset(nc_path)
 
@@ -101,7 +117,11 @@ def open_cube(nc_path, bands=("B03", "B08", "SCL")):
 
 
 def cube_dates(band_array, t_dim):
-    """The cube's acquisition dates as ``'YYYY-MM-DD'`` strings."""
+    """The cube's acquisition dates as ``'YYYY-MM-DD'`` strings.
+
+    ``band_array`` and ``t_dim`` are one band and the time dimension's name,
+    as :func:`open_cube` returns them.
+    """
     import re
     out = []
     for v in np.asarray(band_array[t_dim].values):
@@ -118,6 +138,9 @@ def auto_chunk(pixels, chunk=None, budget_bytes=400_000_000, cap=128,
     ~20 for index-based water detection (two float32 reflectance bands, the
     index, SCL and boolean masks live simultaneously), ~3 for SCL-only
     passes. Pass an explicit ``chunk`` to override the rule entirely.
+
+    ``pixels`` is the grid's H × W. Returns a number of dates between 4 and
+    ``cap`` (128); with ``chunk`` given, ``max(1, chunk)``.
     """
     if chunk is not None:
         return max(1, int(chunk))
@@ -146,6 +169,10 @@ class SentinelCube:
     resolution : int
         Target grid resolution in metres (10 = native for B03/B08; SCL is
         upsampled and only ever used as a cloud mask).
+    max_cloud_cover : float
+        Scene-level cloud filter of openEO ``load_collection``, in percent of
+        the whole granule. 100 keeps every scene, which MAREA wants: the
+        screening (step 3) judges cloud over the transition zone instead.
     extra_bands : sequence of str, optional
         Bands to download IN ADDITION to the ones the detector needs, without
         changing which detector is used. Two reasons this exists rather than
@@ -194,7 +221,7 @@ class SentinelCube:
         if not os.path.exists(self.cache_path):
             return False
         try:
-            import xarray as xr
+            import xarray as xr            # (also imported at the top)
 
             with xr.open_dataset(self.cache_path) as ds:
                 return len(ds.data_vars) > 0
@@ -209,6 +236,20 @@ class SentinelCube:
         One OpenEO batch job: ``load_collection`` → resample to the target
         grid → ``save_result(netCDF)`` → download. Returns ``self``.
         ``job_options`` (e.g. executor memory) is passed to the backend as is.
+
+        Parameters
+        ----------
+        connection : openeo.Connection, optional
+            From :func:`pyintertidal.scenes.connect`; needed only when the
+            cache is missing (``ValueError`` otherwise).
+        verbose : bool
+            Print the job id and the cache path.
+        job_options : dict, optional
+            E.g. ``{"executor-memory": "4G"}`` (notebook 03).
+
+        The job is billed in Copernicus Data Space credits. If the back-end
+        rejects ``resample_spatial``, the job is sent without it and the cube
+        comes on the back-end's default grid.
         """
         if self.cached:
             if verbose:
@@ -231,7 +272,7 @@ class SentinelCube:
             cube = cube.resample_spatial(resolution=self.resolution,
                                          method="near")
         except Exception:
-            pass
+            pass                  # no resampling: the back-end's default grid
         job = cube.save_result(format="netCDF").create_job(
             title=f"pyintertidal_cube_{self.aoi.name}",
             **({"job_options": job_options} if job_options else {}))
@@ -300,11 +341,15 @@ class SentinelCube:
 
         This is THE access pattern of the package: no caller ever
         materialises the full ``(T, H, W)`` cube in RAM.
+
+        ``chunk`` is the number of dates per block (:func:`auto_chunk` when
+        None). Blocks come in date order; ``t_slice`` indexes
+        :attr:`dates`. The netCDF file stays open until the loop ends.
         """
         ds, arrays, t_dim = open_cube(self.cache_path, self.bands)
         try:
             T = arrays["SCL"].sizes[t_dim]
-            H, Wd = self.shape
+            H, Wd = self.shape                # Wd, not W: W is the water module
             ch = auto_chunk(H * Wd, chunk)
             for a in range(0, T, ch):
                 sl = slice(a, min(a + ch, T))
@@ -315,13 +360,14 @@ class SentinelCube:
             ds.close()
 
     def thumbnails(self, n_dates=6, size=18, spread=True):
-        """Tiny downsampled previews of the cube, for the explain diagrams.
+        """Tiny downsampled previews of the cube, for quick-look figures.
 
         Reads ``n_dates`` scenes — evenly spread across the archive by
         default, so the previews show the range of conditions rather than
-        one cloudy week — and block-averages each one down to about
-        ``size × size`` cells. Cheap by construction: a handful of small
-        reads, never the whole cube.
+        one cloudy week — and keeps every step-th pixel of each (a
+        subsample, not an average) down to about ``size × size`` cells.
+        Zeros (openEO padding) become NaN. Cheap by construction: a handful
+        of small reads, never the whole cube.
 
         Returns ``({band: [array, …]}, [date, …])``.
         """

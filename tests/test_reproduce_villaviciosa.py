@@ -18,6 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the reposi
 
 @pytest.mark.slow
 def test_offline_kit_reproduces_the_product(tmp_path):
+    """Route A with --fast exits 0 and prints a PASS verdict; its marea.npz is written to tmp_path."""
     env = dict(os.environ, PYTHONIOENCODING="utf-8", MPLBACKEND="Agg",
                GIT_OPTIONAL_LOCKS="0")  # the provenance step reads git; a read must not touch the index
     cmd = [sys.executable, "-X", "utf8", os.path.join("scripts", "reproduce_villaviciosa.py"),

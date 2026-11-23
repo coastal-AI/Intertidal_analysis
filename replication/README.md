@@ -25,7 +25,7 @@ of the tide at the mouth).
 
 The source cube is `ndwi_cube_villaviciosa_grande_10y.nc` (sha256
 `5f3ccb2bf9162037798111b86cc295e77fe39159480e665a4911a18c53aaa337`,
-3,092,569,908 bytes; DOI: to be added on release).
+3,092,569,908 bytes; not public yet).
 
 ## How it was made
 
@@ -84,10 +84,11 @@ passed in 57 s (20 s with `--fast`).
   [DOI 10.17882/79489](https://doi.org/10.17882/79489)), CC BY 4.0.
 * The kit's data files are released under CC BY 4.0
   ([`../LICENSE-docs.md`](../LICENSE-docs.md)); `build_kit.py` under MIT
-  ([`../LICENSE`](../LICENSE)). DOI of the kit: to be added on release.
+  ([`../LICENSE`](../LICENSE)).
 
 ## Next steps
 
 * Run Route A: [`../guide/REPRODUCE.md`](../guide/REPRODUCE.md).
 * What each array of the product means: [`../guide/DATA.md`](../guide/DATA.md).
 * The method, step by step: [`../guide/METHOD.md`](../guide/METHOD.md).
+* The same steps on an estuary of your own: [`../guide/NEW_ESTUARY.md`](../guide/NEW_ESTUARY.md).

@@ -2,6 +2,17 @@
 elevation.py — Intertidal elevation from the NDWI-vs-tide relationship
 ======================================================================
 
+What MAREA uses from this module
+--------------------------------
+Only :func:`_fit_block`, the per-pixel least-squares solver behind
+:func:`pyintertidal.marea.invert_series`, and :func:`epochs`, which sets the
+record's 3-year epoch (through ``scripts/marea_tools.build_record``). HSR
+(:func:`fit_hsr`, with super-resolution and a Cramér–Rao uncertainty) and the
+DEA step method (:func:`fit_step`) are the earlier estimator and the
+literature baseline, kept for comparison: :func:`pyintertidal.marea.reconstruct`
+does not call them, and MAREA's ``sigma`` is the width of the flooding curve,
+not HSR's ``sigma_mu``.
+
 Two estimators, both computed LOCALLY from the cached cube (no cloud jobs),
 both turning "how wet is this pixel at each tide level?" into metres:
 
@@ -74,7 +85,16 @@ def epochs(dates, epoch_years=3):
     epochs → …, 2020-2022, 2023-2025; the short remainder falls at the start
     of the record where it does least harm).
 
+    ``dates`` is a list of ``'YYYY-MM-DD'`` strings (only the year is read).
+    An epoch without dates is left out, and the first label starts at the
+    record's first year.
+
     Returns ``[{"label": "2023-2025", "dates": [...]}, ...]``, oldest first.
+
+    Examples
+    --------
+    >>> [e["label"] for e in epochs([f"{y}-06-01" for y in range(2016, 2026)])]
+    ['2016-2016', '2017-2019', '2020-2022', '2023-2025']
     """
     if not dates:
         return []
@@ -135,6 +155,13 @@ def extract_intertidal_ndwi(nc_path, dates, mask, max_pixels=40_000,
     dict with ``Y`` (T, P) float32 NDWI, ``C`` (T, P) bool usable-observation
     mask, ``index`` the flat indices of the kept pixels, ``dates``, and
     ``shape`` of the full grid.
+
+    Notes
+    -----
+    MAREA does not use this function: its extraction is
+    :func:`pyintertidal.marea.extract`, which names the flat indices
+    ``keep`` and counts a look as clear with SCL in (4, 5, 6, 7), where
+    ``clear_classes`` here defaults to ``water.CLEAR_CLASSES`` = (4, 5, 6, 12).
     """
     ds, arrays, t_dim = open_cube(nc_path, ("B03", "B08", "SCL"))
     try:
@@ -199,15 +226,37 @@ def extract_intertidal_ndwi(nc_path, dates, mask, max_pixels=40_000,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fit_block(Y, C, tide, mu_grid, sg_grid):
-    """Least-squares sigmoid fit for a block of pixels.
+    """Least-squares sigmoid fit for a block of pixels, on a grid of (μ, σ).
 
-    ``Y`` (T, P) are NDWI values, ``C`` (T, P) marks usable observations.
-    For each candidate ``(μ, σ)`` the amplitude terms ``(a, b)`` have a
-    closed-form least-squares solution, so the search is a cheap sweep over
-    a 2-D grid rather than an iterative optimiser — this is what makes the
-    method fast enough for millions of pixels.
+    Fits NDWI = a + b·Φ((tide − μ)/σ) per pixel: the solver behind
+    :func:`pyintertidal.marea.invert_series` and HSR. For each candidate
+    ``(μ, σ)`` the amplitude terms ``(a, b)`` have a closed-form weighted
+    least-squares solution, so the search is a cheap sweep over a 2-D grid
+    rather than an iterative optimiser — this is what makes the method fast
+    enough for millions of pixels.
 
-    Returns ``(a, b, mu, sigma, rmse, n_obs)``, each of length P.
+    Parameters
+    ----------
+    Y : (T, P) float array
+        NDWI values; must be finite wherever ``C`` > 0.
+    C : (T, P) bool or float array
+        The weight of each observation: a boolean mask of usable ones, or
+        float weights (0 leaves the observation out).
+    tide : (T,) float array
+        The water level of each observation (m).
+    mu_grid, sg_grid : 1-D arrays
+        The candidate elevations μ and widths σ (m).
+
+    Returns
+    -------
+    ``(a, b, mu, sigma, rmse, n_obs)``, each of length P
+        The pair with the smallest weighted sum of squared residuals (on a
+        tie the first in grid order, μ outer and σ inner), its ``a`` and
+        ``b`` (unconstrained: ``b`` < 0 is possible, the callers apply the
+        guards), the weighted RMSE and ``n_obs`` = the sum of ``C``. ``mu``
+        and ``sigma`` are always grid values. A pair under which Φ does not
+        vary over a pixel's observations is skipped; a pixel for which every
+        pair is skipped returns zeros, with an infinite RMSE.
     """
     T, P = Y.shape
     # C may be a boolean mask (every observation counts the same) or a float
@@ -739,8 +788,10 @@ def fit_hsr(cube, tide_heights, dates=None, scale=4, sigma_floor=0.05,
     cube : SentinelCube
         Must be an NDWI cube (``water="ndwi"``, i.e. B03/B08/SCL).
     tide_heights : dict {date: metres}
-        The tide at each acquisition, e.g. from
-        :meth:`pyintertidal.boundary.PyTMDBoundary.levels`.
+        The tide at each acquisition, keyed ``'YYYY-MM-DD'`` as in
+        ``cube.dates``, e.g. ``dict(zip(dates, boundary.levels(times)))``
+        with :meth:`pyintertidal.boundary.PyTMDBoundary.levels` at the
+        acquisition instants ``times`` (naive UTC).
     dates : list, optional
         The epoch's dates (see :func:`epochs`); defaults to every date with a
         tide height.
@@ -785,8 +836,8 @@ def fit_hsr(cube, tide_heights, dates=None, scale=4, sigma_floor=0.05,
     # Every per-pixel product is masked to the SAME valid set. Stage 1 fills
     # its arrays everywhere — a sigmoid can be fitted to a roof or a wet
     # field — and leaking that through would put land noise on the
-    # uncertainty map, in the exported GeoTIFF, and into the significance
-    # test of `morphodynamics.dem_difference`, which reads sigma_mu directly.
+    # uncertainty map, in the exported GeoTIFF, and into any later
+    # comparison of two DEMs that reads sigma_mu directly.
     def masked(name):
         return np.where(valid, s1[name], np.nan).astype(np.float32)
 
@@ -871,10 +922,10 @@ def fit_step(cube, tide_heights, dates=None, threshold=0.1, n_windows=100,
     ``freq_range=(0.01, 0.99)``
         Candidate pixels must have a dynamic inundation frequency; a pixel
         that is always wet or always dry is not intertidal.
-    ``require_positive_corr``
-        Candidates must also show a positive Pearson correlation between
-        NDWI and tide height — a pixel whose wetness falls as the tide rises
-        is not responding to the tide.
+    ``min_correlation=0.15``
+        Candidates must also show a Pearson correlation of at least this
+        between NDWI and tide height — a pixel whose wetness falls as the
+        tide rises is not responding to the tide. None disables the test.
     ``erode_upper``
         Their correction for the bias mixed pixels introduce along the upper
         landward edge, where part of the pixel is permanently dry so a

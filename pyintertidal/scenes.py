@@ -2,9 +2,10 @@
 scenes.py — Individual scenes: connect, list dates, download single images
 ==========================================================================
 
-The analysis path never needs this module: products are computed from the
-cached cube (:mod:`pyintertidal.cube`), which is downloaded once. What
-single scenes ARE for:
+MAREA needs only :func:`connect` from this module (step 1, before
+``SentinelCube(...).ensure``): products are computed from the cached cube
+(:mod:`pyintertidal.cube`), which is downloaded once. What single scenes
+ARE for:
 
 * **looking at your study area** — an RGB image of a specific date, to check
   a feature you see in a product is real and not an artefact;
@@ -13,10 +14,11 @@ single scenes ARE for:
 * **figures and datasets** — RGB panels for a paper, or PNG exports for
   machine-learning work.
 
-Each download is a small OpenEO batch job and is idempotent: an existing
-file is never re-downloaded. For many dates prefer :func:`download_scenes`,
-which asks the backend for the whole series in ONE job instead of one job
-per date.
+Each download is a small OpenEO batch job, billed in Copernicus Data Space
+credits, and is idempotent: an existing file is never re-downloaded. For many
+dates :func:`download_scenes` asks the backend for the series in ONE job
+instead of one job per date — but read its warning first: with the pinned
+openEO client it downloads every scene between the first and the last date.
 """
 
 from __future__ import annotations
@@ -44,6 +46,21 @@ def connect(backend="openeo.dataspace.copernicus.eu", fix_ssl=True,
     ``fix_ssl=True`` routes certificate validation through the operating
     system's trust store — see
     :func:`pyintertidal.net.use_system_certificates`.
+
+    Parameters
+    ----------
+    backend : str
+        openEO back-end URL (default: the Copernicus Data Space Ecosystem).
+    fix_ssl : bool
+        Use the operating system's certificates (needs ``truststore``).
+    interactive : bool
+        Fall back to the browser / device-code login when the cached token
+        does not work. Any error of the token step (an expired token, but
+        also a network error) leads to that fallback.
+
+    Returns
+    -------
+    An authenticated ``openeo.Connection``.
     """
     if fix_ssl:
         use_system_certificates()
@@ -68,6 +85,12 @@ def available_dates(connection, aoi, time_extent, max_cloud_cover=100):
     Costs nothing in processing credits: it inspects the collection's
     temporal labels rather than loading any pixel. Use it to size a study
     before committing to a download.
+
+    ``connection`` is :func:`connect`'s result; ``aoi`` anything
+    :func:`~pyintertidal.aoi.as_aoi` accepts (its bounding box is queried);
+    ``time_extent`` ``(start, end)`` ISO dates; ``max_cloud_cover`` the
+    granule-level cloud filter, percent. Returns sorted ``'YYYY-MM-DD'``
+    strings.
     """
     aoi = as_aoi(aoi)
     cube = connection.load_collection(
@@ -99,7 +122,14 @@ def _download_single(connection, aoi, date, bands, out_path, title):
 
 
 def download_rgb(connection, aoi, date, out_dir="scenes_rgb"):
-    """True-colour scene (B04, B03, B02) for one date → GeoTIFF path."""
+    """True-colour scene (B04, B03, B02) for one date → GeoTIFF path.
+
+    ``connection`` from :func:`connect`; ``aoi`` anything
+    :func:`~pyintertidal.aoi.as_aoi` accepts; ``date`` 'YYYY-MM-DD'. Writes
+    ``<out_dir>/rgb_<date>.tif`` with one openEO job, unless a valid file is
+    already there. :func:`download_scl` and :func:`download_indices` work the
+    same way.
+    """
     out = os.path.join(out_dir, f"rgb_{date}.tif")
     return _download_single(connection, aoi, date, ["B04", "B03", "B02"],
                             out, f"rgb_{date}")
@@ -131,6 +161,32 @@ def download_scenes(connection, aoi, dates, bands=("B04", "B03", "B02"),
     One job produces one asset per date; empty assets (AOI outside the
     granule) are discarded when ``keep_only_valid``. Returns the list of
     written paths.
+
+    .. warning::
+       With openEO 0.50.0 (the pinned version) the date filter below fails
+       — the callback's ``ProcessBuilder`` has no ``isin`` — and is skipped,
+       so the job downloads, and is charged for, EVERY scene from the first
+       to the last of ``dates``, not only ``dates``. Until this is fixed, use
+       :func:`download_rgb` / :func:`download_scl` per date, or pass dates
+       that span a short period.
+
+    Parameters
+    ----------
+    connection : openeo.Connection
+        :func:`connect`'s result.
+    aoi : AOI, polygon or bbox dict
+        The area; its bounding box is downloaded.
+    dates : iterable of 'YYYY-MM-DD'
+        The dates wanted (see the warning).
+    bands : sequence of str
+        Sentinel-2 L2A band names.
+    out_dir, prefix : str
+        Output folder and the job's title prefix; files keep the asset names
+        the back-end gives them.
+    keep_only_valid : bool
+        Delete assets that hold no data (:func:`~pyintertidal.raster.is_valid_tif`).
+    verbose : bool
+        Print one line before and after the job.
     """
     aoi = as_aoi(aoi)
     dates = sorted(dates)
@@ -147,7 +203,10 @@ def download_scenes(connection, aoi, dates, bands=("B04", "B03", "B02"),
         cube = cube.filter_labels(dimension="t",
                                   condition=lambda x: x.isin(list(dates)))
     except Exception:
-        pass                      # backend without filter_labels: keep all
+        # Reached ALWAYS with openeo 0.50 (ProcessBuilder has no ``isin``),
+        # not only on a back-end without filter_labels: then every scene in
+        # [dates[0], dates[-1]] is downloaded. See the docstring's warning.
+        pass
 
     job = cube.save_result(format="GTiff").create_job(
         title=f"{prefix}_{aoi.name}_{len(dates)}scenes")

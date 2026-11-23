@@ -1,17 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Per-pixel quality rule of the elevation inversion (2026-10-06)."""
+"""Per-pixel quality rule of the elevation inversion (``marea.QUALITY_MIN_BRACKET``, added 2026-10-06).
+
+An elevation is kept only when at least N clear looks were taken with the (delayed) tide below it and N
+with the tide above it, i.e. when it is interpolated from the pixel's own record, not pinned at an end of it.
+``marea.invert_series`` applies the rule through ``min_bracket``; ``marea.reconstruct`` through
+``quality_min_bracket``. Synthetic pixels only: no data file is read.
+"""
 import os
 import sys
 
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+sys.path.insert(0, ROOT)  # also done by conftest.py; kept so this file runs on its own
 
 from pyintertidal import marea  # noqa: E402
 
 
 def test_quality_rule_drops_unbracketed_elevations():
+    """A pixel near the top of the tide range loses its elevation; a mid-range one keeps it unchanged."""
     rng = np.random.default_rng(0)
     h = rng.uniform(-1, 1, 120)
     z_true = np.array([0.0, 0.97])                  # 0.97: only ~2 scenes with the level above it
@@ -25,6 +32,7 @@ def test_quality_rule_drops_unbracketed_elevations():
 
 
 def test_quality_rule_counts_only_clear_observations():
+    """Cloudy looks do not count towards the N looks on each side."""
     h = np.linspace(-1, 1, 40)
     Y = np.where(h[:, None] > 0.0, 0.4, -0.3)
     C = np.ones((40, 1))
@@ -37,6 +45,7 @@ def test_quality_rule_counts_only_clear_observations():
 
 
 def test_default_is_the_historical_behaviour():
+    """invert_series keeps the historical default (0: no rule); reconstruct applies the rule by default (3)."""
     import inspect
     assert inspect.signature(marea.invert_series).parameters["min_bracket"].default == 0
     assert marea.QUALITY_MIN_BRACKET == 3

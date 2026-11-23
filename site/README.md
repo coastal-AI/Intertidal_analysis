@@ -89,6 +89,11 @@ All under `public/data/` (served at `<base>data/`), written by `scripts/data_lay
 python scripts/data_layers.py --layers <folder of the layer files>    # deterministic: a second run writes the same bytes
 ```
 
+The layer folder (value images on each site's grid, `heights.json` with each site's NMMA constant C, the tide levels
+and lines) was made with the MAREA library outside this branch; only its result, `public/data/`, is published here.
+How to read the value images, and turn them into GeoTIFFs:
+[`../guide/DATA.md`](../guide/DATA.md#6-map-viewer-files).
+
 Every layer of a site is drawn on one domain, named in the "domain" block of the layer folder's manifest: the pixels
 with an elevation inside an intertidal mask cleaned by hand ("hand-cleaned"), or inside a mask made by a rule
 ("automatic"). The script refuses a layer folder without that block. A site with an automatic mask is listed with

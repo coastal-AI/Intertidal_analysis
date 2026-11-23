@@ -4,7 +4,7 @@
   one pixel to the maps.
 * **Who it is for:** coastal scientists, ecologists and managers. No statistics
   background is assumed.
-* **Time:** about 15 minutes of reading.
+* **Time:** about 20 minutes of reading.
 
 Every figure on this page shows real data of the Ría de Villaviciosa (Asturias, Spain):
 its Sentinel-2 images, its tide, and the 10 m MAREA product made from the 97 images of
@@ -29,6 +29,11 @@ set.
 The method was built on the Ría de Villaviciosa, a narrow ría whose flats reach about
 9 km from the mouth along the water.
 
+Reading the elevation of a flat from the tide level at which it turns wet is the idea
+behind NDWI–tide methods such as DEA Intertidal (Bishop-Taylor et al. 2019). MAREA reads
+that turn pixel by pixel, and first corrects the tide for the delay with which it reaches
+each part of the estuary.
+
 ![Four panels for the Ría de Villaviciosa: a stack of Sentinel-2 images from low to high tide, the same images as water or not, one pixel's NDWI looks against the tide that reaches it with its fitted S-shaped curve, and the elevation map of every pixel.](figures/workflow.png)
 
 *From the images to the map: (a) Sentinel-2 images from low to high tide; (b) water or
@@ -44,7 +49,10 @@ Ecosystem. The cube holds the green (B03), near-infrared (B08) and scene-classif
 
 **Screening.** A scene is kept if at most 5 % of the whole frame is cloudy or, failing
 that, at most 10 % of the transition zone between permanent water and land, where the
-flats are. A scene overcast inland can still be clear over the estuary.
+flats are. A scene overcast inland can still be clear over the estuary. Cloudy means the
+scene-classification classes 3, 8, 9 and 10 (cloud shadow, medium and high cloud, thin
+cirrus). The transition zone is made of the pixels that are neither water nor land in at
+least 95 % of the scenes under 5 % cloud, widened by 10 pixels.
 
 **Looks.** A look is a cloud-free view of the pixel: one whose scene classification is
 vegetation, bare soil, water or unclassified (SCL classes 4 to 7). Each look has a water
@@ -53,12 +61,18 @@ high over water and low over dry ground. A look is **wet** when NDWI is above 0 
 **dry** otherwise.
 
 **Which pixels.** MAREA maps the pixels with more than 30 clear looks that are seen wet
-in more than 10 % and less than 90 % of them: neither permanent sea nor dry land.
+in more than 10 % and less than 90 % of them: neither permanent sea nor dry land. These
+counts use every scene of the cube, before screening: at Villaviciosa, the 1,379 scenes
+of 2016–2025. The pixels wet in 90 % of their looks or more are the permanent sea.
 
 **The record.** The looks that enter the fits come from the record: the screened scenes
-of the product's period that have an acquisition time and a tide level at the mouth. At
-Villaviciosa the period is 2023–2025 and the record holds 97 scenes, from 2023-01-06 to
-2025-12-28.
+of the product's period that have an acquisition time and a tide level at the mouth. For
+the Villaviciosa product the period is the latest three years of the archive
+(`scripts/marea_tools.build_record`); flats move, so a longer record blurs the dry-to-wet
+turn of each pixel. The other maps of the viewer have their own periods
+([`DATA.md`](DATA.md#1-the-four-sites)). At Villaviciosa the period is 2023–2025 and the
+record holds 97 scenes, from 2023-01-06 to 2025-12-28. MAREA refuses a record shorter than
+a set number of scenes (`min_scenes`, 80 by default; 40 for this product).
 
 **The flooding curve.** A pixel is not simply wet or dry: the sensor averages whatever
 lies inside its 10 m. With part of the pixel under water, NDWI sits between the pixel's
@@ -85,6 +99,13 @@ where
 
 Because $a_p$ and $b_p$ belong to each pixel, a dark mud and a bright sand can both be
 fitted.
+
+**An assumption.** The S shape $\Phi$ is a modelling assumption: it holds if the ground
+inside a pixel is spread like a bell curve around its mean height, which has not been
+tested directly. In earlier tests, replacing $\Phi$ by a logistic curve or by a curve of
+free shape changed the elevations by millimetres, so $z_p$ does not hinge on it; the
+reading of $\sigma_p$ as the relief inside the pixel does. Eq. 1 also treats NDWI as
+varying linearly with the flooded fraction of the pixel, which is an approximation.
 
 ![Nine panels, three per section of the ría: the NDWI looks of one pixel against the tide that reaches it, dry looks in sand colour and wet looks in blue, with the fitted S-shaped curve and its midpoint z marked.](figures/pixel_gallery.png)
 
@@ -160,7 +181,16 @@ measured from it through water and intertidal pixels only. The intertidal pixels
 into *sections* of 3 km of that distance; a section with fewer than 500 pixels joins its
 neighbour. Section 0, at the mouth, is the anchor where the tide at the mouth is trusted:
 its delay is 0 by construction. Each section further in may only add to the delay of the
-one before it, because a delay of propagation accumulates.
+one before it, because a delay of propagation accumulates. The section delays are found
+together by a bounded quasi-Newton search (L-BFGS-B) that starts from zero delay
+everywhere. The tide is tabulated for delays from −45 to 180 min, so no delay beyond
+three hours can be represented.
+
+**One axis.** The sections are cut by distance alone. In an estuary with branches whose
+tide arrives at different times, or with a neighbouring estuary in the same frame, one
+section mixes them and their delays average out. `marea.reconstruct` can fit one branch
+at a time (`region_mask`); how to draw the frame:
+[`NEW_ESTUARY.md`](NEW_ESTUARY.md#2-draw-the-box).
 
 **Eq. 3, the delay objective:**
 
@@ -185,8 +215,8 @@ where
 
 **An interval for every delay.** An estimator always returns some number, even where the
 true delay is zero. MAREA therefore refits the delays on 30 resamples of the scenes,
-drawn with replacement, and reports the range of the middle 95 % of the fits as the
-interval of each section.
+drawn with replacement (each refit with at most 600 pixels per section), and reports the
+range of the middle 95 % of the fits as the interval of each section.
 
 At Villaviciosa the three sections receive delays of 0, 5.0 and 20.7 min, with 95 %
 intervals of 0 to 0, 0 to 17.9 and 13.1 to 28.7 min. The middle section's interval is
@@ -199,12 +229,23 @@ wider than its delay: the images decide it only loosely.
 ## 5. From sections to every pixel
 
 The section is the unit of estimation; the pixel is the unit of application. A smooth
-curve through the section delays (a Gaussian kernel of 3 km along the distance), pinned
-at 0 min at the mouth and never decreasing inland, gives each pixel its own delay from
-its distance $s_p$, rounded to the whole minute. The curve blends neighbouring sections:
-at Villaviciosa the pixels of section 0 receive 1 to 4 min, borrowed from section 1, and
-the pixel delays run from 0 to 16 min. Pixels that water cannot reach from the mouth have
-no distance and keep a delay of 0.
+curve through the section delays gives each pixel its own delay from its distance $s_p$,
+rounded to the whole minute. The curve is a weighted average of the section delays and of
+an extra point of 0 min at distance 0, with Gaussian weights 3 km wide along the
+distance, made never to decrease inland. Two consequences follow:
+
+* **Near the mouth**, pixels already receive a minute or more: at Villaviciosa the pixels
+  of section 0 receive 1 to 4 min, borrowed from section 1.
+* **In the last section**, which has no neighbour further in, the average is pulled down
+  by the sections before it: at Villaviciosa its pixels receive 10 to 16 min (median
+  14 min), while the section's own delay is 20.7 min (95 % interval 13.1 to 28.7). At the
+  Ría de Mundaka the four sections have delays of 0, 9.6, 23.4 and 96.7 min, and the
+  pixel delays reach 80 min.
+
+The map therefore applies less delay in the inner reach than the section fit found. The
+pixels of section 1 at Villaviciosa receive 4 to 10 min (median 6). Pixels that water
+cannot reach from the mouth have no distance and keep a delay of 0 (1,339 of the 32,120
+at Villaviciosa).
 
 ![The delay against the distance from the mouth along the water at Villaviciosa: the delay of each section with its 95 % interval and its 30 bootstrap fits, and the stepped delay that each pixel receives.](figures/lag_profile.png)
 
@@ -280,7 +321,8 @@ fitted flooding curve. It is found together with $z$, pixel by pixel, by a grid 
    $\sigma$.
 
 So $\sigma$ is always one of the eight widths, and the uncertainty map has eight classes.
-A transition sharper than 0.03 m or more gradual than 0.65 m is reported at that end.
+A transition sharper than 0.03 m or more gradual than 0.65 m is reported at that end: at
+Villaviciosa, 14 % of the mapped pixels sit at 0.03 m and 12 % at 0.65 m.
 
 How to read it: $\sigma$ says how gradually the pixel turns from dry to wet as the water
 rises. In the pixel model it is the spread of the ground inside the pixel; in practice it
@@ -288,6 +330,12 @@ also absorbs any error in the water level given to each look, which blurs the tr
 in the same way. It is not a standard error of $z$: it does not come from the scatter of
 the fit and does not shrink as more looks are added. Nor is it an accuracy measured
 against an independent survey.
+
+**Of the hypsometric curve.** The product's area–elevation curve has an envelope
+(`hyp_lo`, `hyp_hi` in `marea.npz`): the curve is recomputed 30 times with every
+elevation moved at random by its own $\sigma$, and the 5 to 95 % range is kept. That
+treats $\sigma$ as if it were an error of $z$, so read the envelope as a sensitivity band,
+not as a confidence interval.
 
 ## 9. What the images cannot tell
 
@@ -301,6 +349,15 @@ against an independent survey.
   sample only part of the tide's cycle. At Villaviciosa they reach down to near the
   lowest tides but never see the highest ones (figure below), and no elevation is read
   beyond the levels the satellite saw.
+* **An assumed shape.** The S-shaped flooding curve rests on an assumption about the
+  ground inside each pixel ([section 2](#2-one-pixel-seen-many-times)).
+* **Delays of up to three hours.** Longer delays cannot be represented
+  ([section 4](#4-reading-the-delay-from-the-images)).
+* **One estuary, one axis.** Branches or neighbours in the same frame share sections
+  ([section 4](#4-reading-the-delay-from-the-images)).
+* **No accuracy assessment here.** The checks in this repository compare a run with the
+  published product. How close the maps are to the ground can only be said against an
+  independent survey, which this repository does not include.
 
 ![The EOT20 tide at the mouth of the Ría de Villaviciosa over 2023–2025 as a band of daily ranges, the levels of the 97 images as dots, and dotted lines at the highest and lowest tide and the highest and lowest look.](figures/tide_coverage.png)
 
@@ -311,6 +368,23 @@ against an independent survey.
 The functions behind each step. The module names are those of
 [`pyintertidal/`](../pyintertidal/); the record helper is in
 [`scripts/marea_tools.py`](../scripts/marea_tools.py).
+
+The code uses a few words of its own, and some keys in Spanish:
+
+| this guide | in the code |
+|---|---|
+| look | one value of `Y` (NDWI) and of `C` (clear or not): one scene, one pixel |
+| record | the extraction cut to the record scenes (`ex_rec`, `record_dates`) |
+| permanent sea; intertidal pixels | `sea`; `inter`, `keep` |
+| tide at the mouth | the boundary (`BoundaryProvider`, `h0`, the shift bank `bank`) |
+| section | band (`band`, `band_of`, `make_bands_fixed`, `centros_km`) |
+| delay | lag, tau, clock (`tau_min`, `tau_usado_min`, `tau_px_min`) |
+| flooding curve | sigmoid, step (`elevation._fit_block`) |
+| elevation; width | `z`, `mu`, *cota*; `sigma`, `sg` |
+| emersion time | 1 − hydroperiod (`hydroperiod.hydroperiod`) |
+
+The Spanish keys of `result.json` are translated in
+[`DATA.md`](DATA.md#7-the-villaviciosa-product-files).
 
 1. Download the Sentinel-2 cube: B03, B08, SCL at 10 m (`SentinelCube.ensure`).
 2. Get the acquisition time of every scene (`overpass.get_overpass_times`).
@@ -334,7 +408,8 @@ The functions behind each step. The module names are those of
 given. Notebook [`01_marea_villaviciosa`](../notebooks/01_marea_villaviciosa.ipynb)
 follows steps 4–11 on real data, and
 [`03_new_ria_openeo`](../notebooks/03_new_ria_openeo.ipynb) shows steps 1–3 for a new
-estuary.
+estuary. The whole chain for an estuary of your own, with the rules for drawing its frame:
+[`NEW_ESTUARY.md`](NEW_ESTUARY.md).
 
 ## References
 

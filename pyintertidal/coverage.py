@@ -39,6 +39,22 @@ The metrics, and what each one catches
 :func:`coverage_metrics` runs them all; :func:`coverage_verdict` turns them
 into a pass/fail judgement; :func:`print_coverage_report` prints a readable
 summary.
+
+Inputs
+------
+Every function takes tide LEVELS in metres, on the scale of the boundary
+(the tide at the mouth), as 1-D array-likes; NaN values are dropped.
+
+* ``sampled`` / ``values`` — the levels at the record's acquisition instants
+  (one per usable scene);
+* ``reference`` — a regular series of the same boundary over the same
+  period (e.g. hourly), standing for the full tidal distribution.
+
+How it fits: a report that goes with a product, not a step that changes it.
+In this edition notebook 02 uses :func:`tidal_range_coverage` and
+:func:`gap_statistics`; ``scripts/marea_tools.coverage`` runs
+:func:`coverage_metrics` and :func:`coverage_verdict` and writes the
+``coverage.json`` that ``marea_tools.qa_table`` reads.
 """
 
 from __future__ import annotations
@@ -49,6 +65,7 @@ import numpy as np
 
 
 def _clean(values):
+    """The finite values of any array-like, as a flat float array."""
     values = np.asarray(values, dtype=float).ravel()
     return values[np.isfinite(values)]
 
@@ -97,6 +114,10 @@ def ks_uniformity(values, reference_range=None):
     The null hypothesis is "the tide heights are uniformly distributed over
     the range". A LOW statistic (and a p-value above 0.05) means the sampling
     is close to uniform, which is what a waterline reconstruction wants.
+
+    ``values`` are the sampled levels (m); ``reference_range`` ``(lo, hi)``
+    is the range they are tested against (default: their own min and max;
+    :func:`coverage_metrics` passes the reference series' range).
     """
     from scipy import stats
 
@@ -123,6 +144,9 @@ def shannon_entropy(values, n_bins=20, reference_range=None):
     archive keeps re-imaging the same few tide levels. Reported alongside the
     number of EMPTY bins, which is the actionable part: those are the
     elevations no image constrains.
+
+    ``n_bins`` equal-height bins over ``reference_range`` ``(lo, hi)``
+    (default: the values' own range).
     """
     v = _clean(values)
     if v.size == 0:
@@ -151,6 +175,8 @@ def gap_statistics(values):
     ``max_gap`` and its location tell you exactly which band of the tidal
     frame is unconstrained — often the actionable output of the whole module
     (e.g. "we never imaged between +0.8 and +1.6 m").
+
+    ``values`` are the sampled levels (m); gaps are in metres.
     """
     v = np.sort(_clean(values))
     if v.size < 2:
@@ -173,6 +199,11 @@ def dispersion_index(values):
     ``< 1`` the levels are more evenly spaced than random (good);
     ``≈ 1`` random; ``> 1`` clustered, i.e. dense sampling in a few bands and
     holes elsewhere.
+
+    ``values`` are the sampled levels (m). The labels use the cut-offs 0.8
+    and 1.2. Note that the ratio has units of metres (a variance in m² over
+    a mean in m), so its value depends on the gap size, not only on the
+    pattern.
     """
     v = np.sort(_clean(values))
     if v.size < 3:
@@ -201,6 +232,8 @@ def vertical_sampling_resolution(values):
     this IS the vertical resolution of the resulting DEM.
 
     Guide: ≤ 0.1 m detailed · 0.1–0.3 m moderate · > 0.3 m coarse.
+
+    ``values`` are the sampled levels (m).
     """
     v = np.sort(_clean(values))
     if v.size < 2:
@@ -221,6 +254,8 @@ def representativity(sampled, reference, n_quantiles=10):
     full tidal distribution into deciles and checking each one has at least
     one observation catches the case of a range that is nominally covered but
     hollow inside.
+
+    ``n_quantiles`` equal-count bins of ``reference`` (10 = deciles).
     """
     s, r = _clean(sampled), _clean(reference)
     if s.size == 0 or r.size == 0:
@@ -248,6 +283,10 @@ def coverage_metrics(sampled, reference, n_bins=20, n_quantiles=10):
 
     ``sampled`` = tide heights of the dates that survived cloud filtering;
     ``reference`` = the full tidal distribution over the same period.
+    ``n_bins`` and ``n_quantiles`` go to :func:`shannon_entropy` and
+    :func:`representativity`. Keys of the result: ``n_sampled``,
+    ``n_reference``, ``range_coverage``, ``uniformity``, ``entropy``,
+    ``dispersion``, ``gaps``, ``resolution``, ``representativity``.
     """
     s, r = _clean(sampled), _clean(reference)
     rng = (float(r.min()), float(r.max())) if r.size else None
@@ -272,6 +311,13 @@ def coverage_verdict(metrics, min_coverage=0.85, min_entropy=0.70,
     own and say which you used when reporting.
 
     Returns ``{"suitable": bool, "checks": {...}, "reasons": [...]}``.
+
+    ``metrics`` is :func:`coverage_metrics`'s dict. Each check passes when:
+    range coverage ≥ ``min_coverage`` (fraction), normalised entropy ≥
+    ``min_entropy``, VMR ≤ ``max_vmr``, vertical sampling resolution ≤
+    ``max_vsr`` (m; 0.25 lies inside the module's 0.1-0.3 m "moderate"
+    band) and representativity ≥ ``min_representativity`` (fraction).
+    ``suitable`` is True only when all five pass.
     """
     checks = {
         "range_coverage": metrics["range_coverage"]["coverage"] >= min_coverage,
@@ -306,7 +352,12 @@ def coverage_verdict(metrics, min_coverage=0.85, min_entropy=0.70,
 
 
 def print_coverage_report(metrics, verdict=None, title=""):
-    """Print a readable summary of the diagnostics (and optional verdict)."""
+    """Print a readable summary of the diagnostics (and optional verdict).
+
+    ``metrics`` from :func:`coverage_metrics`, ``verdict`` from
+    :func:`coverage_verdict`, ``title`` an optional heading. Returns
+    ``metrics`` unchanged, so the call can end a notebook cell.
+    """
     if title:
         print(f"\n{'=' * 66}\n{title}\n{'=' * 66}")
     c = metrics["range_coverage"]

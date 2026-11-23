@@ -6,13 +6,14 @@
 * **Who it is for:** reviewers, and anyone who wants to check the method end to end.
 * **Time and needs:** Route A takes 1–2 minutes and about 0.6 GB of memory, with no
   account, no download and no tide model. Route B needs the authors' Sentinel-2 cube
-  (3.09 GB, to be archived on Zenodo) and the EOT20 files (2.26 GB). Route C needs a free
+  (3.09 GB, not public yet) and the EOT20 files (2.26 GB). Route C needs a free
   Copernicus account and openEO credits.
 
 Here *reproduce* means that the same data and the same code give identical arrays, or
-arrays within a stated tolerance where an optimiser is involved. Mapping a new estuary
-with the same procedure is a different task: see notebook
-[`03_new_ria_openeo`](../notebooks/03_new_ria_openeo.ipynb).
+arrays within a stated tolerance where an optimiser is involved. Only the Villaviciosa
+product can be rebuilt from this branch: the other maps of the viewer were made with the
+same library outside it ([`DATA.md`](DATA.md#1-the-four-sites)). Mapping a new estuary
+with the same procedure is a different task: see [`NEW_ESTUARY.md`](NEW_ESTUARY.md).
 
 ## 1. Environment
 
@@ -20,9 +21,23 @@ Python 3.13 (3.13.3 was used), in a virtual environment:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate              # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+On Windows, clone the repository into a short folder such as `C:\src\`: some installed
+files have long paths, and pip fails when the clone's folder path is longer than about
+110 characters (or enable long paths in Windows, which needs an administrator). Calling
+the environment's Python directly avoids PowerShell's activation rules:
+
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+Then write `.venv\Scripts\python` wherever this page writes `python`. The installation
+takes about 8 minutes and 1 GB of disk; pip's "Installing collected packages" step stays
+silent for about 5 minutes.
 
 or in a conda environment:
 
@@ -33,12 +48,16 @@ mamba activate marea-cartograss26
 
 [`requirements.txt`](../requirements.txt) pins the versions with which the product was
 made and reproduced (numpy 2.4.6, scipy 1.17.1, pandas 2.3.3, xarray 2025.1.1,
-pyTMD 2.2.9.1, eo-tides 0.10.4, …).
+pyTMD 2.2.9.1, eo-tides 0.10.4, …). pyTMD, eo-tides and openeo are needed only for
+Routes B and C and for a new estuary; Route A, the notebooks and the tests run without
+them, but the file installs them all.
 
-Run every command from the repository root: the library reads its settings from
-[`configs/`](../configs/), next to its own folder, and the scripts write into `runs/`,
-which git ignores. On Windows, run Python with `-X utf8` (or set `PYTHONUTF8=1`), as the
-commands on this page do.
+The library is used from the checkout, not installed with pip. Run every command from
+the repository root (the notebooks find it themselves), and keep
+[`configs/`](../configs/) next to `pyintertidal/`: `marea.reconstruct` reads
+`configs/m2.yaml` from there. The scripts write into `runs/`, which git ignores. On
+Windows, run Python with `-X utf8` (or set `PYTHONUTF8=1`), as the commands on this page
+do.
 
 Check the environment before a run:
 
@@ -109,6 +128,13 @@ its last line reads `PASS: 37 of 37 checks passed, 4 skipped (--fast); total 20 
 script exits with code 0 only if every check passes. It has been run on Windows and Linux
 with Python 3.13.3.
 
+Step 11 of Route A writes the product files only: no GeoTIFF and no emersion time, despite
+the step's name. Open `runs/villaviciosa_repro/figure.png` first (its labels are in
+Spanish; [section 8](#8-what-a-run-folder-holds)). For a GeoTIFF of the elevation, use the
+snippet of [`DATA.md`](DATA.md#7-the-villaviciosa-product-files) on
+`runs/villaviciosa_repro/marea.npz`: it gives a GeoTIFF in EPSG:32630 with 29,728 values.
+Notebook 01 maps the emersion time.
+
 **Three settings differ from the library defaults**, because the product predates them.
 They are read from [`scripts/sites/villaviciosa.yaml`](../scripts/sites/villaviciosa.yaml):
 
@@ -146,15 +172,27 @@ behaves as it did when the product was made, not how close the map is to the gro
 python -X utf8 -m pytest
 ```
 
-The tests take about 2 minutes. They hold unit tests of the library, a check of the
-notebook sample in [`data/`](../data/README.md) against the stored elevations, the
-`--fast` run of Route A, and a check that no file holds personal paths or credentials.
+The tests take about a minute (49 s on a Windows 10 laptop). They hold unit tests of the
+library, a check of the notebook sample in [`data/`](../data/README.md) against the stored
+elevations, and the `--fast` run of Route A. The last test,
+`tests/test_publication_guard.py`, is for the maintainers: it checks that no file a commit
+would take holds personal paths or credentials, so it fails if you keep in the checkout an
+untracked file that names a folder of your own.
 
 ## 5. Notebooks
 
-The three notebooks in [`notebooks/`](../notebooks/) are stored with their outputs and
-run in a few minutes. To run them yourself, install JupyterLab in the same environment
-(`pip install jupyterlab`) and start `jupyter lab`, or open them on
+The three notebooks in [`notebooks/`](../notebooks/) are stored with their outputs. On a
+Windows 10 laptop, notebook 01 ran in 59 s, 02 in 14 s and 03 in 9 s. To run them
+yourself, install JupyterLab in the same environment (`pip install jupyterlab`; it is not
+in `requirements.txt`) and start `jupyter lab`, or run one without opening it:
+
+```bash
+jupyter nbconvert --to notebook --execute notebooks/01_marea_villaviciosa.ipynb
+```
+
+It writes `notebooks/01_marea_villaviciosa.nbconvert.ipynb`, which git ignores. On
+Windows, a pyzmq warning about the "Proactor event loop" and a numpy warning that
+"ndarray size changed" may appear; both are harmless. The notebooks also open on
 [Binder](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb).
 
 ## 6. Route B: from the authors' cube
@@ -164,8 +202,8 @@ run in a few minutes. To run them yourself, install JupyterLab in the same envir
 * The cube `ndwi_cube_villaviciosa_grande_10y.nc`: 3,092,569,908 bytes, sha256
   `5f3ccb2bf9162037798111b86cc295e77fe39159480e665a4911a18c53aaa337`; 1379 scenes from
   2016-01-01 to 2025-12-29; 915 × 915 pixels of 10 m in EPSG:32630; bands B03, B08 and
-  SCL. To be archived on Zenodo (DOI to be added). Check it with `sha256sum` (Linux,
-  macOS) or `certutil -hashfile <file> SHA256` (Windows).
+  SCL. Not public yet. Check it with `sha256sum` (Linux, macOS) or
+  `certutil -hashfile <file> SHA256` (Windows).
 * The EOT20 tide model in `tide_models/EOT20/ocean_tides/` (below).
 * The acquisition times, in the repository:
   [`products_marea/overpass_times.json`](../products_marea/overpass_times.json).
@@ -249,5 +287,5 @@ Every run folder holds:
 
 * How the method works, step by step: [`METHOD.md`](METHOD.md).
 * What the maps and files hold: [`DATA.md`](DATA.md).
-* A new estuary through openEO: notebook
-  [`03_new_ria_openeo`](../notebooks/03_new_ria_openeo.ipynb).
+* A new estuary: [`NEW_ESTUARY.md`](NEW_ESTUARY.md), and notebook
+  [`03_new_ria_openeo`](../notebooks/03_new_ria_openeo.ipynb) as a dry run.

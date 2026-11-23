@@ -3,9 +3,16 @@ terrain.py — Derivatives of any elevation model
 ===============================================
 
 Slope, aspect, hillshade, contours and roughness. These work on ANY DEM on
-the analysis grid — the HSR product, the step product, or an external LiDAR
-raster — which is why they live in the core rather than next to one
-particular reconstruction method.
+the analysis grid — MAREA's ``z``, the older HSR and step products
+(``elevation.fit_hsr``/``fit_step``), or an external LiDAR raster — which is
+why they live in the core rather than next to one particular reconstruction
+method. None of them is called by ``marea.reconstruct``: they are tools for
+figures and derived maps.
+
+Inputs: ``elevation`` is an (H, W) array in metres with NaN outside the
+mapped area (a MAREA layer must first be put back on its grid, as
+``scripts/marea_tools.export_geotiffs`` does); ``pixel_size`` is in metres
+(10 for MAREA).
 
 Intertidal specifics worth knowing:
 
@@ -23,7 +30,11 @@ import numpy as np
 
 
 def _gradients(elevation, pixel_size):
-    """NaN-aware central-difference gradients ``(dz/dx, dz/dy)``."""
+    """NaN-aware central-difference gradients ``(dz/dx, dz/dy)``.
+
+    ``dz/dy`` is taken along the rows (row index increasing southwards on a
+    north-up grid). A pixel next to a hole gets NaN, never a made-up value.
+    """
     z = np.asarray(elevation, dtype=float)
     gy, gx = np.gradient(z, pixel_size, pixel_size)
     invalid = ~np.isfinite(z)
@@ -37,6 +48,9 @@ def slope(elevation, pixel_size=10.0, degrees=True):
 
     On tidal flats expect values well under 1°; the informative structure is
     the CONTRAST between the flats and the channel banks.
+
+    ``elevation`` (H, W) m; ``pixel_size`` m; ``degrees=False`` returns the
+    gradient magnitude (m/m) instead.
     """
     gx, gy = _gradients(elevation, pixel_size)
     magnitude = np.hypot(gx, gy)
@@ -48,6 +62,8 @@ def aspect(elevation, pixel_size=10.0):
 
     In an estuary this maps which bank a pixel belongs to, and highlights the
     drainage direction of tidal creeks.
+
+    ``elevation`` (H, W) m on a north-up grid; ``pixel_size`` m.
     """
     gx, gy = _gradients(elevation, pixel_size)
     ang = np.degrees(np.arctan2(-gx, gy))
@@ -61,6 +77,9 @@ def hillshade(elevation, pixel_size=10.0, azimuth=315.0, altitude=45.0,
     ``vertical_exaggeration`` matters here more than in normal terrain work:
     with centimetric relief a true-scale hillshade is uniformly grey, so
     values of 5–20 are reasonable for intertidal DEMs.
+
+    ``elevation`` (H, W) m; ``pixel_size`` m; ``azimuth`` (degrees clockwise
+    from north) and ``altitude`` (degrees above the horizon) of the light.
     """
     z = np.asarray(elevation, dtype=float) * float(vertical_exaggeration)
     gx, gy = _gradients(z, pixel_size)
@@ -76,10 +95,15 @@ def hillshade(elevation, pixel_size=10.0, azimuth=315.0, altitude=45.0,
 def roughness(elevation, window=3):
     """Local standard deviation of elevation — small-scale surface texture.
 
-    Complements the HSR ``sigma`` product: ``sigma`` is relief measured
-    WITHIN a pixel from the tidal signal, this is relief measured BETWEEN
-    neighbouring pixels from the DEM itself. Disagreement between the two is
-    informative (it usually means the DEM is smoother than reality).
+    Complements the ``sigma`` product (MAREA's, or HSR's): ``sigma`` is
+    relief measured WITHIN a pixel from the tidal signal, this is relief
+    measured BETWEEN neighbouring pixels from the DEM itself. Disagreement
+    between the two is informative (it usually means the DEM is smoother
+    than reality).
+
+    ``elevation`` (H, W) m; ``window`` the side of the square neighbourhood
+    in pixels. NaN neighbours are left out; returns metres, NaN where the
+    elevation is NaN.
     """
     from scipy.ndimage import uniform_filter
 
@@ -139,9 +163,15 @@ def contours(elevation, transform, crs, interval=0.5, levels=None,
     """Elevation contours as a GeoDataFrame of LineStrings.
 
     Contours of an intertidal DEM are effectively modelled waterlines: the
-    ``0 m`` contour is mean sea level, and the spacing of the others shows
-    how quickly the flat rises. Fragments shorter than ``min_vertices`` are
-    dropped as noise.
+    ``0 m`` contour is the zero of the DEM's vertical datum (for MAREA, the
+    scale of the tide at the mouth, about mean sea level), and the spacing
+    of the others shows how quickly the flat rises. Fragments shorter than
+    ``min_vertices`` are dropped as noise.
+
+    ``elevation`` (H, W) m; ``transform``, ``crs`` the grid's; ``interval``
+    the contour spacing (m) or ``levels`` explicit values (m). A contour
+    mostly outside the data is dropped too. Returns a GeoDataFrame with an
+    ``elevation`` column, in ``crs``.
     """
     import geopandas as gpd
     import rasterio

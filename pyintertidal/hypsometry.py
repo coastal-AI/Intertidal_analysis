@@ -16,6 +16,24 @@ that a map cannot at a glance:
 Because it is a distribution rather than a picture, it also lets you compare
 estuaries of completely different sizes, and compare one estuary with itself
 through time.
+
+Two functions, two formats
+--------------------------
+:func:`curve_with_uncertainty` is the curve MAREA writes (``marea.reconstruct``,
+step 11: result.json ``hipsometria``; marea.npz ``hyp_z``, ``hyp_area``,
+``hyp_lo``, ``hyp_hi``). It takes 1-D elevations and returns the keys ``z``,
+``area_km2``, ``area_lo``, ``area_hi``, ``integral``, ``area_total_km2``.
+
+:func:`hypsometric_curve` takes a 2-D map and its transform and returns the
+keys ``levels``, ``area_km2``, ``fraction``, ``hist_km2``, ``total_km2``,
+``z_min``, ``z_max``, ``z_mean``, ``z_median``.
+
+:func:`hypsometric_integral`, :func:`describe`, :func:`compare_curves` and
+:func:`plot_curves` read the SECOND format only: given a
+:func:`curve_with_uncertainty` result they raise ``KeyError`` (its
+integral is already in ``integral``).
+
+Elevations are metres on the scale of the tide at the mouth (for MAREA).
 """
 
 from __future__ import annotations
@@ -29,6 +47,21 @@ def hypsometric_curve(elevation, transform, n_bins=100, mask=None):
     Returns a dict with ``levels`` (bin edges, m), ``area_km2`` (cumulative
     area below each level), ``fraction`` (the same, normalised 0–1) and
     ``hist_km2`` (area IN each bin — the density rather than the cumulative).
+
+    Parameters
+    ----------
+    elevation : (H, W) float
+        A DEM, metres, NaN outside the mapped area.
+    transform : affine.Affine
+        The grid's transform; only the pixel area is read from it.
+    n_bins : int
+        Number of equal-height bins between the lowest and highest pixel.
+    mask : (H, W) bool, optional
+        Restrict to these pixels.
+
+    ``levels`` are the UPPER edges of the bins (n_bins values); the dict also
+    holds ``total_km2``, ``z_min``, ``z_max``, ``z_mean`` and ``z_median``.
+    Raises ``ValueError`` when no pixel is valid.
     """
     z = np.asarray(elevation, dtype=float)
     valid = np.isfinite(z)
@@ -55,17 +88,41 @@ def hypsometric_curve(elevation, transform, n_bins=100, mask=None):
 
 def curve_with_uncertainty(z_keep, pixel_m=10.0, sigma_z=None, n_bins=80,
                            n_draws=30, seed=20260820):
-    """MAREA-era hypsometric curve: 1-D elevations + a per-pixel sigma.
+    """Area below each elevation, with an envelope from each pixel's sigma.
 
-    The v4 product carries an uncertainty for every pixel, so its hypsometry
-    can carry one too: the curve is recomputed ``n_draws`` times with each
-    elevation jittered by its own sigma, and the 5-95 % envelope is
-    reported. Pixels without elevation are simply absent — the curve
-    describes what was measured, never what was filled.
+    The hypsometric curve MAREA writes. The curve is recomputed ``n_draws``
+    times with each elevation jittered by its own sigma, and the 5-95 %
+    envelope is reported. Pixels without elevation are simply absent — the
+    curve describes what was measured, never what was filled.
+
+    Parameters
+    ----------
+    z_keep : (P,) float
+        Elevations, metres; NaN = no elevation (left out).
+    pixel_m : float
+        Pixel size, metres; each pixel counts ``pixel_m²`` of area.
+    sigma_z : (P,) float, optional
+        Per-pixel jitter, metres. MAREA passes its sigma, the width of the
+        wet/dry transition — not an accuracy measured against a survey, so
+        the envelope is a sigma-jitter envelope, not a confidence interval.
+        A NaN sigma takes the median sigma.
+    n_bins : int
+        Number of levels, evenly spaced from the 0.5th to the 99.5th
+        percentile of z (so ``area_km2[-1]`` is about 99.5 % of
+        ``area_total_km2``).
+    n_draws : int
+        Jittered copies; ``area_lo``/``area_hi`` are their 5th and 95th
+        percentiles.
+    seed : int
+        Fixed, so the published curve reproduces bit for bit.
 
     Returns dict with ``z`` (levels), ``area_km2`` (cumulative below),
     ``area_lo``/``area_hi`` (the envelope), ``integral`` (Strahler),
     ``area_total_km2``.
+
+    ``integral`` is the hypsometric integral over the levels' span. Raises
+    ``ValueError`` (message in Spanish: "too few pixels with an elevation")
+    when fewer than 100 elevations are finite.
     """
     z = np.asarray(z_keep, float)
     ok = np.isfinite(z)
@@ -107,6 +164,10 @@ def hypsometric_integral(curve):
     indicate a convex profile (most area high, e.g. a well-fed accreting
     flat); below ~0.5 a concave one (most area low, e.g. a scoured or
     sediment-starved system). Comparable between sites and between epochs.
+
+    ``curve`` is a :func:`hypsometric_curve` dict (``levels``,
+    ``fraction``). A :func:`curve_with_uncertainty` result already holds its
+    integral in ``integral``.
     """
     levels = np.asarray(curve["levels"], dtype=float)
     fraction = np.asarray(curve["fraction"], dtype=float)
@@ -115,13 +176,18 @@ def hypsometric_integral(curve):
         return float("nan")
     relative_height = (levels - levels[0]) / span
     # Area under the "fraction of area ABOVE this level" curve.
-    # np.trapz was removed in NumPy 2; np.trapezoid is the current name.
+    # np.trapz is deprecated since NumPy 2.0; np.trapezoid is the current name.
     integrate = getattr(np, "trapezoid", None) or np.trapz
     return float(integrate(1.0 - fraction, relative_height))
 
 
 def describe(curve, name="site"):
-    """Readable summary of a hypsometric curve, with its interpretation."""
+    """Readable summary of a hypsometric curve, with its interpretation.
+
+    ``curve`` is a :func:`hypsometric_curve` dict; ``name`` heads the
+    printout. The shape label uses the cut-offs 0.45 and 0.55. Returns
+    ``{"hypsometric_integral", "shape", "total_km2"}``.
+    """
     hi = hypsometric_integral(curve)
     shape = ("convex — area concentrated high (accretional signature)"
              if hi > 0.55 else
@@ -143,6 +209,9 @@ def compare_curves(curves, reference=None):
     area, median elevation and hypsometric integral, plus the difference in
     area against ``reference`` when given — the quickest way to see whether a
     system gained or lost intertidal surface, and at which elevations.
+
+    The curves are :func:`hypsometric_curve` dicts; ``reference`` is one of
+    the labels.
     """
     rows = []
     for label, curve in curves.items():
@@ -165,6 +234,11 @@ def plot_curves(curves, title="Hypsometric curves", figsize=(7, 6), ax=None):
 
     Elevation goes on the vertical axis because that is how the estuary is
     stacked in reality; the horizontal axis is cumulative area.
+
+    ``curves`` must be ``{label: curve}`` with :func:`hypsometric_curve`
+    dicts: a single curve is a dict too and would be read as one, so wrap it
+    (``{"site": curve}``). ``ax`` draws into an existing axis. Returns
+    ``(fig, ax)``.
     """
     import matplotlib.pyplot as plt
 
