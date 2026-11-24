@@ -76,7 +76,7 @@ site/
     lib/                 assets.ts (URLs under the base path, cached JSON), format.ts (numbers, units),
                          sites.ts (the site list contract), theme.ts, useResource.ts
     components/ui/       the UI kit
-    components/layout/   ErrorBoundary, LogoMark
+    components/layout/   ErrorBoundary
     features/contracts.ts   the props App.tsx passes to the viewer
     features/explorer/   the viewer (its own chunk, with MapLibre GL JS): map, panel, legend, readout, info panel;
                          ramps.json, the colour scales of the maps

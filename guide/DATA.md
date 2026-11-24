@@ -35,6 +35,9 @@ means.
 | Bahía de Santander | Cantabria | 99 | 2021-03-02 to 2026-10-14 | EOT20 and the Santander 2 gauge (5 km away) | 93,965 | 90,726 |
 | Marismas de Santoña | Cantabria | 176 | 2022-01-06 to 2026-10-31 | EOT20 and the Santander 2 gauge (26 km away) | 118,843 | 116,681 |
 
+* **Site:** the estuary's full name. The viewer, and the `longName` of its data files,
+  shorten the Ría de San Vicente de la Barquera to "Ría de San Vicente", so that it fits
+  the viewer's site switcher.
 * **Images:** the screened Sentinel-2 L2A scenes of each map's record. The periods
   differ between sites; each map describes its own period.
 * **Tide at the mouth:** the EOT20 model at the site. Where a gauge is named, the tide

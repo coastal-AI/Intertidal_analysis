@@ -12,12 +12,15 @@ line (the texts that count or name the sites must then be edited too; a link to 
 Each sub-folder has a manifest.json and, for every map layer, a value image
 (<layer>_values.png) on the site's Web Mercator grid; plus the tide lines (tide_lines.geojson, tide_levels.json) and,
 at Mundaka, the lines of equal delay (cotidal.geojson). Any coloured images of the layer folder are not used: the
-overlays are drawn here, from the values, with the colour scales of src/features/explorer/ramps.json.
+overlays are drawn here, from the values, with the colour scales of src/features/explorer/ramps.json. The names of a
+site come from its manifest, except a long name of LONG_NAMES, shortened to fit the site switcher.
 
 Every layer of a site must be drawn on one domain, which its manifest names in a "domain" block: "hand-cleaned" (the
 pixels with an elevation inside an intertidal mask cleaned by hand) or "automatic" (inside a mask made by a rule). A
-site with an automatic mask is listed as preliminary, and the viewer says so next to its name. A layer folder without
-a domain block (layers drawn on a production's own, noisy mask) is refused.
+site with an automatic mask is listed as preliminary: the viewer lists it under "Preliminary · automatic mask" in the
+site switcher of wide screens, writes "preliminary" on its chip on phones, and gives one line on what that means under
+the line of its images. A layer folder without a domain block (layers drawn on a production's own, noisy mask) is
+refused.
 
 It writes, under --out (default public/data, next to this script's folder):
 
@@ -66,6 +69,9 @@ from PIL import Image  # PNG reading and writing, WebP writing
 SITE_ORDER = ["corme", "noia", "betanzos", "ferrol", "ortigueira", "foz", "eo", "villaviciosa", "tina_menor",
               "san_vicente", "mogro", "santander", "santona", "mundaka"]
 LEFT_OUT = ()  # sites of SITE_ORDER not put on the website, e.g. ("mogro",): one line leaves a site out
+#: Long names shorter than the layer folder's, where that one is cut in the site switcher of wide screens (238 px of
+#: text; "Ría de San Vicente de la Barquera" needs 259 px). The site list and the site's manifest both take this one.
+LONG_NAMES = {"san_vicente": "Ría de San Vicente"}
 REGIONS = {  # the region line of each site card
     "corme": "Galicia",
     "noia": "Galicia",
@@ -670,11 +676,12 @@ def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
 
     first, last = prod["record_first"], prod["record_last"]
     years = first[:4] if first[:4] == last[:4] else f"{first[:4]}–{last[:4]}"
+    long_name = LONG_NAMES.get(site_id, man["site"]["long_name"])  # the name of the switcher, the info line, alt texts
     site_manifest = {
         "schema": "cg26-explorer-site/2",
         "id": site_id,
         "name": man["site"]["name"],
-        "longName": man["site"]["long_name"],
+        "longName": long_name,
         "images": int(prod["record_scenes"]),
         "firstImage": first,
         "lastImage": last,
@@ -688,7 +695,7 @@ def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
     listed = {
         "id": site_id,
         "name": man["site"]["name"],
-        "longName": man["site"]["long_name"],
+        "longName": long_name,
         "region": REGIONS[site_id],
         "firstImage": first,
         "lastImage": last,
@@ -754,9 +761,10 @@ def main():
     ids = [s["id"] for s in index_in["sites"]]
     if ids != SITE_ORDER:
         fail(f"the layer index lists {ids}, expected {SITE_ORDER}")
-    unknown = sorted(set(LEFT_OUT) - set(SITE_ORDER))
-    if unknown:
-        fail(f"LEFT_OUT names sites that are not in SITE_ORDER: {unknown}")
+    for name, chosen in (("LEFT_OUT", LEFT_OUT), ("LONG_NAMES", LONG_NAMES)):
+        unknown = sorted(set(chosen) - set(SITE_ORDER))
+        if unknown:
+            fail(f"{name} names sites that are not in SITE_ORDER: {unknown}")
     sites, report = [], {}
     for site_id in [s for s in SITE_ORDER if s not in LEFT_OUT]:
         if site_id not in heights.get("sites", {}):

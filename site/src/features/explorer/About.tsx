@@ -6,7 +6,6 @@
 import { clsx } from 'clsx'
 import { ArrowUpRight, Info, Moon, Sun, X } from 'lucide-react'
 import { useEffect, useId, useRef } from 'react'
-import { LogoMark } from '@/components/layout'
 import { ButtonAnchor, ExternalLink, IconButton } from '@/components/ui'
 import { config, repoFile } from '@/config'
 import { conference, dataSources, poster, repositoryCitation } from '@/content/site'
@@ -29,7 +28,6 @@ export function ThemeToggle({ className }: { className?: string }) {
 export function BrandRow({ onInfo }: { onInfo: () => void }) {
   return (
     <div className="flex items-center gap-2">
-      <LogoMark className="size-8" />
       <div className="min-w-0 flex-1 leading-tight">
         <p className="text-base font-semibold tracking-tight text-ink">MAREA</p>
         <p className="text-[11px] font-semibold tracking-wide text-primary uppercase">{conference.name}</p>
@@ -52,12 +50,11 @@ export function BrandPill({ onInfo, className }: { onInfo: () => void; className
       title={ABOUT}
       onClick={onInfo}
       className={clsx(
-        'inline-flex h-11 items-center gap-2 rounded-full bg-raised pr-3 pl-1.5 text-ink shadow-float ring-1 ring-line',
+        'inline-flex h-11 items-center gap-2 rounded-full bg-raised pr-3.5 pl-4 text-ink shadow-float ring-1 ring-line',
         'transition-colors duration-150 hover:bg-sunken',
         className,
       )}
     >
-      <LogoMark className="size-8" />
       <span className="text-base font-semibold tracking-tight">MAREA</span>
       <Info aria-hidden="true" className="size-4 text-muted" />
     </button>

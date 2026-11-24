@@ -15,6 +15,10 @@
   automatic mask", and a preliminary site gets one line on what the word means; on phones the chips of the chosen
   site and layer scroll into view. The delay legend says "MAREA finds no delay here" at the sites where it finds
   none, and at Noia that the delay is counted from the west edge of the map.
+* Viewer: the name MAREA stands alone, without the logo mark, at the top of the control panel and on the phones'
+  info button (the browser tab keeps its icon). The Ría de San Vicente de la Barquera is called "Ría de San Vicente"
+  in the viewer and its data files (`LONG_NAMES` in `site/scripts/data_layers.py`), a name that fits the site
+  switcher. `LICENSE-docs.md` credits the Santander gauge with those of Ferrol and Bilbao.
 * The tide-line files of the preliminary sites carry `C_rule` in their metadata: how their C was tied to NMMA.
 * `site/scripts/data_layers.py`: the fourteen sites in `SITE_ORDER`, and `LEFT_OUT`, which leaves a site out of the
   website's data in one line (the texts that count or list the sites must then be edited too). The front end's site
