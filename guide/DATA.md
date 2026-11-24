@@ -19,7 +19,8 @@ by hand:
 
 The other ten are **preliminary**: each is drawn inside an intertidal mask made by a rule,
 which nobody checked by hand, and none has an accuracy assessment, because no survey of
-the ground was compared with them. The viewer writes "preliminary" next to their names.
+the ground was compared with them. The viewer marks them "preliminary" and says what that
+means.
 
 | site | region | images | period of the images | tide at the mouth | pixels with an elevation | pixels on the map |
 |---|---|---|---|---|---|---|
@@ -50,31 +51,50 @@ the ground was compared with them. The viewer writes "preliminary" next to their
 * **The mask of the preliminary sites** is the product's own intertidal mask cleaned by a
   fixed rule, without hand editing: a 3 × 3 median filter removes isolated pixels, then
   only the pieces connected to the estuary, which reaches the open sea at its mouth, are
-  kept. The rule removes 1 to 15 % of the pixels with an elevation. It keeps some noise
+  kept. The rule removes 0.7 to 15 % of the pixels with an elevation. It keeps some noise
   that a hand cleaning would remove, such as mussel rafts in the Rías de Betanzos and
-  Noia and specks on rocky shores and at sea. Gaps on the flats are larger than at the
-  first four sites: 13 to 48 % of the mask has no elevation, mostly channel and harbour
-  margins that stay wet at the tides the images see.
+  Noia and specks on rocky shores and at sea. Gaps on the flats cover 7 to 48 % of the
+  mask (2 to 31 % at the first four sites). Over the ten sites, about 60 % of the gap
+  pixels (30 % at Santoña, 81 % at Corme) are channel and harbour margins that stay wet
+  at the tides the images see, wet in at least 80 % of the looks.
 * **What to keep in mind at the preliminary sites:**
   * Ferrol: only about half of its mask has an elevation; the map is patchy along the
-    port and dock shores. Tina Menor: about two thirds.
+    port and dock shores, shows straight lines of pixels along harbour basins and quays,
+    and has single noisy pixels on the open water of the ría.
+  * Tina Menor: about 70 % of its mask has an elevation.
+  * Tina Menor and San Vicente de la Barquera: the specks at sea, north of the estuaries,
+    are false elevations, although the uncertainty layer gives most of them its lowest
+    value (0.03 m).
   * Noia: the box covers only the inner part of the ría, so its distances, and its
-    delays, start at the box's western edge, not at the mouth of the ría.
+    delays, start at the box's western edge, not at the mouth of the ría. A straight
+    north–south line crosses the inner flats at about 8.897° W, along a column of the
+    image grid: west of it the map has more holes and more speckle. Its cause has not
+    been found.
+  * Ortigueira: a marsh of about 25 ha just south of the town of Ortigueira has no water
+    path to the mouth in the mask. The map gives it a delay of 0 min, while the flats
+    around it have 20 to 25 min; such a delay lowers the heights elsewhere in the ría by
+    about 0.07 m (median), so those of the marsh are probably that much too high. At
+    Cariño, a straight line of single pixels and scattered specks, probably the harbour's
+    breakwater and moored boats, are mapped as intertidal. A fifth of the mask has no
+    elevation.
   * Mogro: the estuary has two 3-km sections. MAREA estimates 54 min for the inner
     channel (95 % interval 36 to 85 min) and 0 for the outer one; the smooth curve
     through them gives the outer flats delays of 10 to 20 min.
   * Corme: MAREA estimates 46 min for its innermost section; that delay has not been
     checked against measurements.
-  * The constants C of Betanzos, Corme and Noia come from a gauge outside the estuary, and
-    those of the five Cantabrian sites from the coast's mean sea level of 2011
-    ([section 3](#3-heights-nmma-and-the-constant-c)).
+  * Santander: MAREA finds no delay, while the sailing directions give delays of 9 to
+    20 min in the inner bay (Maura and Astillero).
+  * Corme, Noia and Betanzos have no gauge in their tide: their C comes from the Ferrol 2
+    gauge, 62, 94 and 16 km away, by the rule used at Villaviciosa. At the five Cantabrian
+    sites C rests on the coast's mean sea level of 2011, not on the Santander 2 gauge's
+    own tie ([section 3](#3-heights-nmma-and-the-constant-c)).
 * **Delay:** at the Ría del Eo, the Ría de Tina Menor, the Bahía de Santander and the
-  Marismas de Santoña every section has a delay of 0 min; at the Ría de Ferrol every
-  section has less than half a minute (0.4 min in the innermost one). There every pixel has
-  a delay of 0 min, and the map uses the tide at the mouth unchanged. At the Ría de Mundaka
-  MAREA estimates delays of 0, 9.6, 23.4 and 96.7 min for the four sections; the delays
-  of the pixels, read from a smooth curve through them, reach 80 min, so the map shows less
-  delay in the inner reach than the last section's fit
+  Marismas de Santoña MAREA finds a delay of 0 min in every section; at the Ría de Ferrol,
+  less than half a minute in every section (0.4 min in the innermost one). There every
+  pixel has a delay of 0 min, and the map uses the tide at the mouth unchanged. At the
+  Ría de Mundaka MAREA estimates delays of 0, 9.6, 23.4 and 96.7 min for the four
+  sections; the delays of the pixels, read from a smooth curve through them, reach 80 min,
+  so the map shows less delay in the inner reach than the last section's fit
   ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)).
 * **Villaviciosa:** the map is drawn from the product in
   [`products_marea/`](../products_marea/README.md), inside the hand-cleaned mask and on
@@ -93,7 +113,7 @@ the ground was compared with them. The viewer writes "preliminary" next to their
 | Elevation, z | m | The water level at which the pixel turns from dry to wet, read on the tide that reaches it: the tide at the mouth, delayed by the pixel's τ. |
 | Uncertainty, σ | m | The width of the pixel's dry-to-wet transition: one of eight values, 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m. A larger σ is a less sharp transition. It is neither a standard error of z nor an accuracy measured against a survey. |
 | Emersion time | % of time | The share of the map's period during which the pixel is out of the water: how often its delayed tide, h(t − τ), stays at or below z, with the tide taken every minute. |
-| Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, then a smooth curve through the section delays and a point of 0 min at the mouth (Gaussian weights of standard deviation 3 km), never decreasing inland and rounded to the minute. Pixels near the mouth already receive about a minute; the innermost pixels receive less than the last section's fitted delay ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
+| Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, then a smooth curve through the section delays and a point of 0 min at the mouth (Gaussian weights of standard deviation 3 km), never decreasing inland along the water path and rounded to the minute. A pixel without a water path to the mouth keeps 0 min (at Ortigueira, [section 1](#1-the-sites)). Pixels near the mouth already receive about a minute (about 10 min at Mogro); the innermost pixels receive less than the last section's fitted delay ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
 | Tide lines | m | Contours of the elevation at the tidal datums ([section 4](#4-tide-lines)). |
 
 MAREA estimates elevations only inside the intertidal mask: the pixels seen wet in 10 to
@@ -107,7 +127,7 @@ The viewer's legend gives the emersion time as the % of hours out of the water.
 ## 3. Heights: NMMA and the constant C
 
 MAREA's elevations are on the zero of the tide used to make each map: the mean level of
-EOT20 where the tide is EOT20 alone (Villaviciosa, Corme, Noia and Betanzos), and the mean
+EOT20 where the tide is EOT20 alone (Corme, Noia, Betanzos and Villaviciosa), and the mean
 of EOT20 and the median-removed gauge at the other sites. That zero is close to the local
 mean sea level over the map's period, but it is not a national datum.
 
@@ -121,11 +141,13 @@ Puertos del Estado tide gauge whose zero is tied to NMMA, as the 25-hour mean of
 difference between the gauge and the map's tide around the image. C is the mean over the
 map's images that have gauge data. Its 1σ uncertainty combines the tie of the gauge to
 NMMA, the geoid model (EGM08-REDNAP), the transfer from the gauge to the estuary and the
-spread over the images. Where the map's tide is EOT20 alone, the same 25-hour means of the
-Ferrol 2 gauge give C by the rule used at Villaviciosa, although the gauge lies outside the
-estuary. The 1σ of the preliminary sites is not measured: it is taken from the sites of
-the first table whose C was built the same way (Foz and Eo with a gauge in the tide,
-Villaviciosa with EOT20 alone). C was computed outside this branch, from gauge records
+spread over the images. Where the map's tide is EOT20 alone (Corme, Noia, Betanzos and
+Villaviciosa), no gauge enters the tide, and C is the coast's REDNAP-tied mean sea level
+of 2011 plus the non-tidal level of the Ferrol 2 gauge around the map's images, counted
+from that gauge's own mean of 2011: this is the rule used at Villaviciosa. The 1σ of the
+preliminary sites is not measured: Ferrol and Ortigueira take that of Foz and Eo (the
+Ferrol 2 gauge in the tide), the other eight that of Villaviciosa, whose C also rests on
+the coast's mean sea level of 2011. C was computed outside this branch, from gauge records
 that the branch does not redistribute; the library does not compute it.
 
 | site | C (m) | 1σ (m) | gauge of the tie |
@@ -138,7 +160,7 @@ that the branch does not redistribute; the library does not compute it.
 | Ría de Noia, inner part (preliminary) | 0.3112 | 0.055 | Ferrol 2, 94 km away (113 of the 143 images) |
 | Ría de Betanzos (preliminary) | 0.3258 | 0.055 | Ferrol 2, 16 km away (143 of the 189 images) |
 | Ría de Ferrol (preliminary) | 0.3359 | 0.047 | Ferrol 2 (130 of the 171 images) |
-| Ría de Ortigueira (preliminary) | 0.3436 | 0.047 | Ferrol 2 (92 of the 130 images) |
+| Ría de Ortigueira (preliminary) | 0.3436 | 0.047 | Ferrol 2, 40 km away (92 of the 130 images) |
 | Ría de Tina Menor (preliminary) | 0.3739 | 0.055 | Santander 2, 56 km away (56 of the 123 images) |
 | Ría de San Vicente de la Barquera (preliminary) | 0.3737 | 0.055 | Santander 2, 50 km away (51 of the 117 images) |
 | Ría de Mogro (preliminary) | 0.3771 | 0.055 | Santander 2, 13 km away (58 of the 111 images) |
@@ -153,7 +175,7 @@ that the branch does not redistribute; the library does not compute it.
   sea level. With the 1998 tie, C would be about 0.10 m higher. The 1σ of these sites is
   taken from Villaviciosa, whose zero rests on the same assumption.
 * The data files (the viewer's value images and the product files) keep the map's zero:
-  add C, where the site has one, to read them in NMMA.
+  add C to read them in NMMA.
 
 ## 4. Tide lines
 
@@ -208,9 +230,10 @@ inner reach are a few pixels wide.
 **Files.** For each site, `tide_lines.geojson` holds the contours, with the properties
 `datum`, `level_m` (on the map's zero), `level_nmma_m` (above NMMA), `units`, `label`
 (for example "MLWN −0.46 m", in NMMA), `length_m` (before simplification) and `source`,
-and a `metadata` block (the definitions, C, the licence and the attribution). The seven
-levels, and whether each is drawn, are in the site's `manifest.json`: the `tide_lines`
-layer, field `levels` (`id`, `name`, `level` on the map's zero, `nmma`, `drawn`). At
+and a `metadata` block (the definitions, C, the licence and the attribution; at the
+preliminary sites also `C_rule`, how C was tied to NMMA). The seven levels, and whether
+each is drawn, are in the site's `manifest.json`: the `tide_lines` layer, field `levels`
+(`id`, `name`, `level` on the map's zero, `nmma`, `drawn`). At
 Mundaka, `cotidal.geojson` holds the lines of equal delay, with the properties `tau_min`,
 `units`, `s_km` (where the delay first reaches that value, km from the mouth), `label`,
 `length_m` and `source`. Coordinates are WGS84, with 5 decimals.
@@ -226,10 +249,10 @@ usable ones of the method's screening
 
 ## 6. Map viewer files
 
-* **Grid.** The layers of a site share one grid in Web Mercator (EPSG:3857), of about
-  6.89 m, which is 5 m on the ground at these latitudes, over the pixels on the map plus
-  200 m. Each 10 m pixel of a product is about 2 × 2 grid pixels, assigned by nearest
-  neighbour (no interpolation).
+* **Grid.** The layers of a site share one grid in Web Mercator (EPSG:3857), of 6.8 to
+  6.9 m (each site's `grid.res`), which is 5 m on the ground at these latitudes, over the
+  pixels on the map plus 200 m. Each 10 m pixel of a product is about 2 × 2 grid pixels,
+  assigned by nearest neighbour (no interpolation).
 * **Overlay images.** Coloured RGBA PNG, for display only: at twice the grid's resolution
   (2.5 m on the ground), each overlay pixel interpolated bilinearly from the grid pixels
   around it that have a value, the edge of the data faded over one grid pixel, and
@@ -271,7 +294,7 @@ code = 256 * rgb[..., 0] + rgb[..., 1]                 # 0 means no value
 for col, row, expected in v["check"]:                  # the manifest's own probes
     assert code[row, col] == expected
 value = np.where(code > 0, v["offset"] + v["scale"] * code, np.nan).astype(np.float32)
-C = manifest["heights"]["C"]                           # None at the sites without an NMMA link
+C = manifest["heights"]["C"]                           # every site has C; None keeps the map's zero
 if layer.get("heights") and C is not None:             # elevations: on the map's zero, + C for NMMA
     value = value + np.float32(C)
 g = manifest["grid"]
@@ -280,7 +303,7 @@ Path("runs").mkdir(exist_ok=True)                      # git ignores runs/
 write_geotiff(f"runs/{site}_{layer_id}.tif", value, transform, "EPSG:3857")
 ```
 
-The GeoTIFF keeps the viewer's 6.89 m Web Mercator grid; reproject it for other uses.
+The GeoTIFF keeps the viewer's Web Mercator grid (about 6.9 m); reproject it for other uses.
 
 ## 7. The Villaviciosa product files
 
@@ -371,8 +394,8 @@ Notebook [`01_marea_villaviciosa`](../notebooks/01_marea_villaviciosa.ipynb) use
 * **EOT20:** Hart-Davis et al. (2021), DGFI-TUM; data on SEANOE,
   <https://doi.org/10.17882/79489>, CC BY 4.0. Its values are in the kit and the sample.
 * **Tide gauges:** IOC Sea Level Station Monitoring Facility (VLIZ/IOC),
-  <https://doi.org/10.14284/482>, for non-commercial use (CC BY-NC 4.0); Ferrol 2 and
-  Bilbao 3 are stations of Puertos del Estado.
+  <https://doi.org/10.14284/482>, for non-commercial use (CC BY-NC 4.0); Ferrol 2,
+  Santander 2 and Bilbao 3 are stations of Puertos del Estado.
 * **Website basemaps:** PNOA orthophoto and IGN base map, © Instituto Geográfico
   Nacional de España, CC BY 4.0 (scne.es). They are loaded at run time from IGN's
   services and not redistributed.

@@ -10,8 +10,9 @@ time together are a base layer for the potential habitat of *Nanozostera noltei*
 
 **Explore the maps: <https://coastal-ai.github.io/Intertidal_analysis/>**. Fourteen
 estuaries of northern Spain, with the elevation in m above NMMA, its uncertainty, the
-emersion time and the delay of the tide. Four are drawn inside masks cleaned by hand; the other ten are **preliminary**: drawn inside masks made by a rule,
-not checked by hand, and with no accuracy assessment.
+emersion time and the delay of the tide. Four are drawn inside masks cleaned by hand; the
+other ten are **preliminary**: drawn inside masks made by a rule, not checked by hand, and
+with no accuracy assessment.
 
 [![The map viewer showing the elevation of the Ría de Mundaka (Urdaibai) over an orthophoto, with the layer panel on the left.](guide/figures/viewer_mundaka.jpg)](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation)
 
@@ -55,13 +56,12 @@ fourteen estuaries of northern Spain.
   de Corme e Laxe, the inner part of the Ría de Noia, the Ría de Betanzos, the Ría de
   Ferrol, the Ría de Ortigueira, the Ría de Tina Menor, the Ría de San Vicente de la
   Barquera, the Ría de Mogro, the Bahía de Santander and the Marismas de Santoña. Each is
-  drawn only inside an intertidal mask made by a rule (a 3 × 3 median filter, then only the
-  pieces connected to the estuary), which nobody checked by hand and which keeps some
-  noise. No survey of the ground was compared with these maps: their accuracy is not
-  assessed. At the five Cantabrian sites, from Tina Menor to Santoña, the heights are tied
-  to NMMA through the coast's REDNAP-tied mean sea level of 2011 and the datum sheet of the
-  Santander 2 tide gauge, because the gauge's own benchmark has only a 1998 tie. The maps
-  of Ferrol and Tina Menor are patchy.
+  drawn only inside an intertidal mask made by a rule, which nobody checked by hand and
+  which keeps some noise; no survey of the ground was compared with them, so their
+  accuracy is not assessed. The maps of Ferrol and Tina Menor are patchy, and at the five
+  Cantabrian sites the heights are tied to NMMA indirectly, through the coast's mean sea
+  level of 2011. What to keep in mind at each site:
+  [`guide/DATA.md`](guide/DATA.md#1-the-sites).
 
 | layer | what it shows |
 |---|---|
@@ -220,7 +220,8 @@ their own sections).
 ## Limits
 
 * Heights are read on the zero of the tide used; the viewer adds a constant per site to
-  give m above NMMA, known to 0.04–0.06 m (1σ).
+  give m above NMMA, known to 0.04–0.06 m (1σ) at the four sites with hand-cleaned masks;
+  at the ten preliminary sites that 1σ is borrowed from them, not measured.
 * Sentinel-2 passes at about the same time every day and never sees the highest tides. No
   elevation is read above the highest level the images saw: at Villaviciosa they span
   −2.17 to +1.15 m of a tide that runs from −2.40 to +2.41 m.
@@ -298,8 +299,9 @@ build it for another address: [`site/README.md`](site/README.md).
 * Contains modified Copernicus Sentinel data (2015–2026), processed with openEO on the
   Copernicus Data Space Ecosystem.
 * Tide model EOT20 (Hart-Davis et al. 2021), CC BY 4.0.
-* Tide gauges Ferrol 2 and Bilbao 3: IOC Sea Level Station Monitoring Facility (VLIZ,
-  IOC-UNESCO), for non-commercial use (CC BY-NC 4.0); stations of Puertos del Estado.
+* Tide gauges Ferrol 2, Santander 2 and Bilbao 3: IOC Sea Level Station Monitoring
+  Facility (VLIZ, IOC-UNESCO), for non-commercial use (CC BY-NC 4.0); stations of Puertos
+  del Estado.
 * Website basemaps: PNOA orthophoto and IGN base map, © Instituto Geográfico Nacional de
   España (CC BY 4.0, scne.es), loaded at run time.
 

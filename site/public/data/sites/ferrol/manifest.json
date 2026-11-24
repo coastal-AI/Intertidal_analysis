@@ -432,7 +432,7 @@
    "decimals": 0,
    "id": "delay",
    "kind": "raster",
-   "note": "No delay here: every section has under half a minute, so every pixel has 0 min.",
+   "note": "MAREA finds no delay here: every section has under half a minute, so every pixel has 0 min.",
    "overlay": {
     "height": 3592,
     "tiles": [

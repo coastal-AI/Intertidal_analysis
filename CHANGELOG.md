@@ -8,10 +8,17 @@
   Each is drawn only inside an intertidal mask made by a rule (a 3 × 3 median filter, then only the pieces connected
   to the estuary), not checked by hand, and none has an accuracy assessment. All fourteen maps give heights in NMMA;
   at the five Cantabrian sites the tie rests on the coast's REDNAP-tied mean sea level of 2011 and the datum sheet of
-  the Santander 2 tide gauge, whose benchmark has only a 1998 tie. The viewer now lists fourteen sites; the four maps
-  drawn inside masks cleaned by hand are unchanged, byte for byte.
+  the Santander 2 tide gauge, whose benchmark has only a 1998 tie. The viewer now lists fourteen sites; the maps of
+  the four sites drawn inside masks cleaned by hand are unchanged, byte for byte, but for the wording of the Eo delay
+  note.
+* Viewer: the site switcher of wide screens lists the sites in two groups, "Hand-cleaned masks" and "Preliminary ·
+  automatic mask", and a preliminary site gets one line on what the word means; on phones the chips of the chosen
+  site and layer scroll into view. The delay legend says "MAREA finds no delay here" at the sites where it finds
+  none, and at Noia that the delay is counted from the west edge of the map.
+* The tide-line files of the preliminary sites carry `C_rule` in their metadata: how their C was tied to NMMA.
 * `site/scripts/data_layers.py`: the fourteen sites in `SITE_ORDER`, and `LEFT_OUT`, which leaves a site out of the
-  website in one line. The front end's site list (`src/lib/sites.ts`) and its tests follow the data.
+  website's data in one line (the texts that count or list the sites must then be edited too). The front end's site
+  list (`src/lib/sites.ts`) and its tests follow the data, and a link to a site left out opens the default site.
 * Size caps: the data folder may hold 50 MB (about 42 MB now) and the built site 60 MB (about 44 MB now); a visitor
   downloads only the site they open.
 

@@ -98,7 +98,8 @@ How to read the value images, and turn them into GeoTIFFs:
 Every layer of a site is drawn on one domain, named in the "domain" block of the layer folder's manifest: the pixels
 with an elevation inside an intertidal mask cleaned by hand ("hand-cleaned"), or inside a mask made by a rule
 ("automatic"). The script refuses a layer folder without that block. A site with an automatic mask is listed with
-`"preliminary": true`, and the viewer writes "preliminary" next to its name in the site switcher and the info line.
+`"preliminary": true`: the viewer lists it in the "Preliminary · automatic mask" group of the site switcher, writes
+"preliminary" on its chip on phones, and gives one line on what that means under its name.
 
 Code reads them with `dataUrl()` and `loadJSON()` from `src/lib/assets.ts`, never with a hand-written path.
 

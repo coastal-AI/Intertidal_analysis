@@ -570,6 +570,7 @@
    "decimals": 0,
    "id": "delay",
    "kind": "raster",
+   "note": "Counted from the west edge of the map, not from the mouth of the ría.",
    "overlay": {
     "height": 4456,
     "tiles": [

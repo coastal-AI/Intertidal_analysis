@@ -570,7 +570,7 @@
    "decimals": 0,
    "id": "delay",
    "kind": "raster",
-   "note": "No delay here: every section is 0 min.",
+   "note": "MAREA finds no delay here: every section is 0 min.",
    "overlay": {
     "height": 4134,
     "tiles": [

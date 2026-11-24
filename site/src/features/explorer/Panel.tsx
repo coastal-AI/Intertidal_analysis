@@ -1,11 +1,12 @@
 /**
  * The explorer's controls: site switcher, layer list, readout line and the map toggles (basemap, 2D/3D).
- * Wide screens get a select and a vertical list in a floating card; phones get rows of chips. A site flagged
- * preliminary in the site list gets that word next to its name.
+ * Wide screens get a select and a vertical list in a floating card; phones get rows of chips, which keep the chosen
+ * one in view. A site flagged preliminary in the site list is listed apart in the select, carries that word on its
+ * chip, and gets one line that says what it means.
  */
 import { clsx } from 'clsx'
 import { ChevronDown } from 'lucide-react'
-import { useId, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Chip, gradientCss, Segmented } from '@/components/ui'
 import type { Site, SiteId } from '@/lib/sites'
 import { BASEMAPS } from './basemaps'
@@ -15,6 +16,22 @@ import type { MapLayer } from './types'
 
 /** The word shown next to the name of a site whose map is drawn inside an automatic mask (index.json: preliminary). */
 export const PRELIMINARY = 'preliminary'
+/** What "preliminary" means, after the word itself. */
+export const PRELIMINARY_NOTE = 'automatic mask, not checked by hand; accuracy not assessed.'
+/** The two groups of the site select: the sites drawn inside hand-cleaned masks, then the preliminary ones. */
+const SITE_GROUPS = [
+  { label: 'Hand-cleaned masks', preliminary: false },
+  { label: 'Preliminary · automatic mask', preliminary: true },
+]
+
+/** One line under the name of a preliminary site: what the word means. */
+export function PreliminaryNote({ className }: { className?: string }) {
+  return (
+    <p className={clsx('text-sm text-ink', className)}>
+      <span className="font-semibold">Preliminary:</span> {PRELIMINARY_NOTE}
+    </p>
+  )
+}
 
 /** A small picture of a layer: its colours, or a line for tide lines. */
 function LayerIcon({ layer }: { layer: MapLayer }) {
@@ -37,8 +54,20 @@ function LayerIcon({ layer }: { layer: MapLayer }) {
   )
 }
 
+/**
+ * The site switcher of wide screens: each option is the site's name; where the list holds both kinds of site, the
+ * options come in two groups (hand-cleaned masks, then the preliminary ones), each west to east.
+ */
 export function SiteSelect({ sites, value, onChange }: { sites: Site[]; value: SiteId; onChange: (id: SiteId) => void }) {
   const id = useId()
+  const option = (s: Site) => (
+    <option key={s.id} value={s.id}>
+      {s.longName}
+    </option>
+  )
+  const groups = SITE_GROUPS.map((g) => ({ ...g, sites: sites.filter((s) => s.preliminary === g.preliminary) })).filter(
+    (g) => g.sites.length > 0,
+  )
   return (
     <div className="relative">
       <label htmlFor={id} className="sr-only">
@@ -50,21 +79,54 @@ export function SiteSelect({ sites, value, onChange }: { sites: Site[]; value: S
         onChange={(e) => onChange(e.target.value as SiteId)}
         className="h-11 w-full cursor-pointer appearance-none rounded-lg border border-control bg-surface pr-10 pl-3 text-base font-semibold text-ink hover:bg-sunken"
       >
-        {sites.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.preliminary ? `${s.longName} · ${PRELIMINARY}` : s.longName}
-          </option>
-        ))}
+        {groups.length > 1
+          ? groups.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.sites.map(option)}
+              </optgroup>
+            ))
+          : sites.map(option)}
       </select>
       <ChevronDown aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3 size-5 -translate-y-1/2 text-muted" />
     </div>
   )
 }
 
-/** A row of chips that scrolls sideways (phones). */
-function ChipRow({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+/**
+ * A row of chips that scrolls sideways (phones). It scrolls the pressed chip to its middle when the row appears
+ * (again once the web font has loaded, which changes the chips' widths) and whenever ``current`` changes, so the
+ * chosen site or layer is always in view.
+ */
+function ChipRow({ label, current, children, className }: { label: string; current: string; children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const last = useRef<string | null>(null)
+  useEffect(() => {
+    const row = ref.current
+    if (!row) return
+    const centre = (behavior: ScrollBehavior) => {
+      const chip = row.querySelector<HTMLElement>('[aria-pressed="true"]')
+      if (!chip) return
+      const r = row.getBoundingClientRect()
+      const c = chip.getBoundingClientRect()
+      row.scrollTo({ left: row.scrollLeft + c.left + c.width / 2 - (r.left + r.width / 2), behavior })
+    }
+    const changed = last.current !== null && last.current !== current
+    last.current = current
+    if (changed) {
+      const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      centre(still ? 'auto' : 'smooth')
+      return
+    }
+    centre('auto')
+    let alive = true
+    document.fonts?.ready.then(() => alive && centre('auto'))
+    return () => {
+      alive = false
+    }
+  }, [current])
   return (
     <div
+      ref={ref}
       role="group"
       aria-label={label}
       className={clsx('flex gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)}
@@ -76,7 +138,7 @@ function ChipRow({ label, children, className }: { label: string; children: Reac
 
 export function SiteChips({ sites, value, onChange, className }: { sites: Site[]; value: SiteId; onChange: (id: SiteId) => void; className?: string }) {
   return (
-    <ChipRow label="Site" className={className}>
+    <ChipRow label="Site" current={value} className={className}>
       {sites.map((s) => (
         <Chip key={s.id} size="sm" selected={s.id === value} onClick={() => onChange(s.id)} className="shadow-card">
           {s.name}
@@ -89,7 +151,7 @@ export function SiteChips({ sites, value, onChange, className }: { sites: Site[]
 
 export function LayerChips({ layers, value, onChange }: { layers: MapLayer[]; value: string; onChange: (id: string) => void }) {
   return (
-    <ChipRow label="Layer" className="-mx-1 px-1 py-0.5">
+    <ChipRow label="Layer" current={value} className="-mx-1 px-1 py-0.5">
       {layers.map((l) => (
         <Chip key={l.id} size="sm" selected={l.id === value} onClick={() => onChange(l.id)}>
           {l.title}

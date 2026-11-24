@@ -15,17 +15,17 @@ import { ButtonAnchor, Notice, Sheet, Skeleton, Slider } from '@/components/ui'
 import { config } from '@/config'
 import type { ExplorerProps } from '@/features/contracts'
 import { dataUrl } from '@/lib/assets'
-import { fmtInt } from '@/lib/format'
+import { fmtInt, NBSP } from '@/lib/format'
 import { useSitesIndex, type Site, type SiteId } from '@/lib/sites'
 import { useTheme } from '@/lib/theme'
 import { AboutDialog, BrandPill, BrandRow } from './About'
 import { pixelOf } from './geo'
-import { formatHash, normaliseState, parseHash, type BaseMap, type ExplorerState } from './hashState'
+import { formatHash, listedSite, normaliseState, parseHash, type BaseMap, type ExplorerState } from './hashState'
 import { siteFileUrl, useLocationHash, useMediaQuery, useSiteManifest, useValueGrid } from './hooks'
 import { Ladder, Legend } from './Legend'
 import { heightNote, heightOffset, readoutLine } from './readout'
 import { ExplorerMap, type MapInit, type PointerInfo } from './mapController'
-import { LayerChips, LayerList, MapToggles, PRELIMINARY, Readout, SiteChips, SiteSelect } from './Panel'
+import { LayerChips, LayerList, MapToggles, PreliminaryNote, Readout, SiteChips, SiteSelect } from './Panel'
 import type { TerrainHeights } from './terrarium'
 import { heightLayer, rasterById, type MapLayer, type SiteManifest } from './types'
 import { valueAt } from './valueGrid'
@@ -45,9 +45,13 @@ function hasWebGL2(): boolean {
   }
 }
 
-/** "97 Sentinel-2 images, 2023–2025", and "· preliminary" for a site whose map is drawn inside an automatic mask. */
-function imagesLine(site: Pick<SiteManifest, 'images' | 'years'>, preliminary = false): string {
-  return `${fmtInt(site.images)} Sentinel-2 images, ${site.years}${preliminary ? ` · ${PRELIMINARY}` : ''}`
+/** "97 Sentinel-2 images, 2023–2025", with the years kept on one line. */
+function ImagesLine({ site }: { site: Pick<SiteManifest, 'images' | 'years'> }) {
+  return (
+    <>
+      {fmtInt(site.images)} Sentinel-2 images, <span className="whitespace-nowrap">{site.years}</span>
+    </>
+  )
 }
 
 /** The map centre's target while the keyboard moves the map. */
@@ -99,7 +103,10 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
   const [about, setAbout] = useState(false)
 
   // ------------------------------------------------------------------------------------------ state in the hash
-  const requested = useMemo(() => parseHash(locationHash, defaultSite), [locationHash, defaultSite])
+  const parsed = useMemo(() => parseHash(locationHash, defaultSite), [locationHash, defaultSite])
+  const listed = useMemo(() => (sites ? sites.map((s) => s.id) : null), [sites])
+  // A site that the site list leaves out (data_layers.py: LEFT_OUT) opens the default site, as an unknown one does.
+  const requested = useMemo(() => ({ ...parsed, site: listedSite(parsed.site, listed, defaultSite) }), [parsed, listed, defaultSite])
   const manifest = useSiteManifest(requested.site)
   const site = manifest.status === 'ready' ? manifest.data : null
   // While another site loads, the map and legend keep showing the last one.
@@ -241,7 +248,8 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
   // ------------------------------------------------------------------------------------------ layout
   if (!webgl) return <NoWebGL site={sites?.find((s) => s.id === requested.site)} />
 
-  const failed = index.status === 'error' || manifest.status === 'error'
+  // A manifest that fails before the site list is known may be that of a site the list leaves out: wait for the list.
+  const failed = index.status === 'error' || (sites !== null && manifest.status === 'error')
   const pickSite = (id: SiteId) => setState({ site: id })
   const pickLayer = (id: string) => setState({ layer: id })
   const layers = view?.layers ?? []
@@ -265,7 +273,8 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
     <div className="grid grid-cols-1 gap-1 pt-1 pb-2 pr-1">
       <BrandRow onInfo={() => setAbout(true)} />
       {sites ? <SiteSelect sites={sites} value={requested.site} onChange={pickSite} /> : <Skeleton className="h-11 w-full" />}
-      <p className="text-sm text-muted">{view ? imagesLine(view, preliminary) : ' '}</p>
+      <p className="text-sm text-muted">{view ? <ImagesLine site={view} /> : ' '}</p>
+      {preliminary && <PreliminaryNote />}
     </div>
   ) : (
     <div ref={headRef} className="grid min-w-0 grid-cols-1 gap-2 py-1.5">
@@ -287,9 +296,11 @@ export default function Explorer({ defaultSite, enable3d }: ExplorerProps) {
       {failed && <Notice tone="warn">The map data could not be loaded.</Notice>}
       {view && (
         <p className="text-sm font-medium text-ink">
-          {view.longName} · {imagesLine(view, preliminary)}
+          {view.longName}
+          {NBSP}· <ImagesLine site={view} />
         </p>
       )}
+      {preliminary && <PreliminaryNote />}
       {layer && <p className="text-sm text-muted">{layer.about}</p>}
       {view && layer?.kind === 'contours' && <Ladder layer={layer} heights={view.heights} compact={false} />}
       {view && layer?.heights && <p className="text-xs text-muted">{heightNote(view.heights)}</p>}

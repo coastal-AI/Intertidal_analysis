@@ -7,7 +7,8 @@ Run it from the site folder with any Python that has NumPy and Pillow:
 
 The layer folder holds index.json (the sites), heights.json (each site's NMMA constant C, or a note where the heights
 stay on the tide model's datum) and one sub-folder per site of SITE_ORDER. The layer index must list exactly the sites
-of SITE_ORDER, in that order; a site named in LEFT_OUT is skipped, so leaving a site out of the website is one line.
+of SITE_ORDER, in that order; a site named in LEFT_OUT is skipped, so leaving a site out of the website's data is one
+line (the texts that count or name the sites must then be edited too; a link to the site opens the default site).
 Each sub-folder has a manifest.json and, for every map layer, a value image
 (<layer>_values.png) on the site's Web Mercator grid; plus the tide lines (tide_lines.geojson, tide_levels.json) and,
 at Mundaka, the lines of equal delay (cotidal.geojson). Any coloured images of the layer folder are not used: the
@@ -26,7 +27,8 @@ It writes, under --out (default public/data, next to this script's folder):
                                     be too large)
     sites/<id>/<layer>_values.png   value images, copied byte for byte (code = 256 R + G, value = offset + scale code,
                                     code 0 = no data)
-    sites/<id>/tide_lines.geojson   contours at the tidal levels, labelled with the real minus sign
+    sites/<id>/tide_lines.geojson   contours at the tidal levels, labelled with the real minus sign; where heights.json
+                                    says how the site's C was tied to NMMA, that rule as "C_rule" in the metadata
     sites/<id>/cotidal.geojson      lines of equal delay (where the layer folder has them), without a "status" field
     sites/<id>/thumb.webp           a small picture of the elevation map, shown where a browser cannot draw the map
 
@@ -92,6 +94,11 @@ RASTERS = [
 #: The tide-line layer: id, title, one sentence.
 CONTOURS = ("tide_lines", "Tide lines", "Where the ground meets each tidal level of the site.")
 EQUAL_DELAY_TITLE = "Lines of equal delay"  # the delay layer's lines, where the layer folder has them
+#: The delay legend's note where every section has no delay: the layer folder's "No delay here: ..." is said as what
+#: MAREA finds, since published tide tables may give a delay where MAREA finds none (e.g. the Bahía de Santander).
+NO_DELAY_NOTE = ("No delay here:", "MAREA finds no delay here:")
+#: Notes of the delay legend that the layer folder does not carry, by site.
+DELAY_NOTES = {"noia": "Counted from the west edge of the map, not from the mouth of the ría."}
 #: Units as a legend writes them, where they need more words than the readout's "%".
 LEGEND_UNITS = {"emersion": "% of hours out of the water"}
 
@@ -492,9 +499,14 @@ def heights_of(entry, site_id):
     fail(f"{site_id}: unknown height datum {entry.get('datum')!r}")
 
 
-def relabel_lines(src, dst, levels_by_id, with_nmma):
-    """Copy a tide-line GeoJSON, with each label rebuilt as "<datum> <height> m" in the map's heights."""
+def relabel_lines(src, dst, levels_by_id, with_nmma, c_rule=None):
+    """Copy a tide-line GeoJSON, with each label rebuilt as "<datum> <height> m" in the map's heights, and, where
+    heights.json says how the site's C was tied to NMMA (its "rule"), that rule as "C_rule" in the metadata."""
     gj = read_json(src)
+    if c_rule:
+        if not isinstance(gj.get("metadata"), dict):
+            fail(f"{os.path.basename(src)}: no metadata block for C_rule")
+        gj["metadata"]["C_rule"] = c_rule
     for feat in gj.get("features", []):
         p = feat["properties"]
         if p.get("datum") not in levels_by_id:
@@ -637,14 +649,19 @@ def build_site(site_id, layers_dir, heights_entry, ramps, out_dir):
                 entry["lines"] = {"file": "cotidal.geojson", "title": EQUAL_DELAY_TITLE, "features": n,
                                   "legend": f"{EQUAL_DELAY_TITLE}, every {int(cot['step_min'])} min"}
             elif int(cot.get("max_delay_min", 99)) <= 1 and cot.get("why_not"):
-                entry["note"] = cot["why_not"]
+                old, new = NO_DELAY_NOTE
+                note = cot["why_not"]
+                entry["note"] = new + note[len(old):] if note.startswith(old) else note
+            if site_id in DELAY_NOTES:
+                entry["note"] = " ".join(filter(None, [entry.get("note"), DELAY_NOTES[site_id]]))
         entries.append(entry)
         del codes, values, rgba
 
     cid, ctitle, cabout = CONTOURS
     levels_by_id = {lv["id"]: lv for lv in levels}
     lines_src = os.path.join(src, levels_doc.get("lines_file", "tide_lines.geojson"))
-    n_lines = relabel_lines(lines_src, os.path.join(out, "tide_lines.geojson"), levels_by_id, with_nmma)
+    n_lines = relabel_lines(lines_src, os.path.join(out, "tide_lines.geojson"), levels_by_id, with_nmma,
+                            heights_entry.get("rule") if with_nmma else None)
     drawn = [lv["id"] for lv in levels if lv["drawn"]]
     entries.append({"id": cid, "kind": "contours", "title": ctitle, "about": cabout, "units": "m",
                     "file": "tide_lines.geojson", "features": n_lines, "levels": levels, "heights": True})

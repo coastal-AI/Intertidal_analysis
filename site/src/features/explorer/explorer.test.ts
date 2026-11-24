@@ -7,7 +7,7 @@ import { parseSitesIndex, SITE_IDS } from '@/lib/sites'
 import indexJson from '../../../public/data/sites/index.json'
 import villaJson from '../../../public/data/sites/villaviciosa/manifest.json'
 import { lonLatToMercator, mercatorToLonLat, pixelOf, tileExtent, tileTouchesGrid } from './geo'
-import { DEFAULT_LAYER, formatHash, normaliseState, parseHash } from './hashState'
+import { DEFAULT_LAYER, formatHash, listedSite, normaliseState, parseHash } from './hashState'
 import { contourDash } from './lineStyles'
 import ramps from './ramps.json'
 import {
@@ -72,6 +72,20 @@ describe('URL hash state', () => {
 
   it('takes a link to one of the preliminary sites', () => {
     expect(parseHash('#site=santander&layer=delay', 'villaviciosa').site).toBe('santander')
+  })
+
+  it('opens the default site for a site the viewer knows but the site list leaves out (LEFT_OUT)', () => {
+    const site = parseHash('#site=ferrol&layer=delay', 'villaviciosa').site
+    expect(site).toBe('ferrol') // known to the viewer (SITE_IDS) ...
+    expect(listedSite(site, ['corme', 'foz', 'villaviciosa'], 'villaviciosa')).toBe('villaviciosa') // ... not listed
+    expect(listedSite(site, ['corme', 'foz'], 'villaviciosa')).toBe('corme') // the default is not listed either
+    expect(listedSite(site, ['ferrol', 'villaviciosa'], 'villaviciosa')).toBe('ferrol')
+    expect(listedSite(site, null, 'villaviciosa')).toBe('ferrol') // the list is still loading: the request stands
+  })
+
+  it('keeps every site of the generated site list', () => {
+    const listed = parseSitesIndex(indexJson).sites.map((s) => s.id)
+    for (const id of listed) expect(listedSite(id, listed, 'villaviciosa')).toBe(id)
   })
 
   it('writes the hash in one order and reads it back', () => {
@@ -369,12 +383,14 @@ describe('generated data (scripts/data_layers.py)', () => {
     }
   })
 
-  it('draws lines of equal delay at Mundaka only, and notes where there is no delay', () => {
+  it('draws lines of equal delay at Mundaka only, and notes where MAREA finds no delay or counts it from elsewhere', () => {
     const noDelay = ['ferrol', 'eo', 'tina_menor', 'santander', 'santona'] // every section of these at 0 min
     for (const id of DATA_IDS) {
       const delay = layerOf(parseSiteManifest(MANIFESTS[id], id), 'delay') as RasterLayer
       expect(Boolean(delay.lines)).toBe(id === 'mundaka')
-      expect(Boolean(delay.note)).toBe(noDelay.includes(id))
+      if (noDelay.includes(id)) expect(delay.note).toMatch(/^MAREA finds no delay here: /)
+      else if (id === 'noia') expect(delay.note).toBe('Counted from the west edge of the map, not from the mouth of the ría.')
+      else expect(delay.note).toBeUndefined()
     }
   })
 

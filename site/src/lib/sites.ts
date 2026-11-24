@@ -13,7 +13,7 @@ export const SITES_INDEX_PATH = 'sites/index.json'
 
 /**
  * The sites the viewer knows, west to east (scripts/data_layers.py: SITE_ORDER). The site list may hold all of them
- * or some (data_layers.py: LEFT_OUT), always in this order.
+ * or some (data_layers.py: LEFT_OUT), always in this order; a link to a site it leaves out opens the default site.
  */
 export const SITE_IDS = [
   'corme',
