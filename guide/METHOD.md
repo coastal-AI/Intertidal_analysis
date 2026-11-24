@@ -71,7 +71,7 @@ of the product's period that have an acquisition time and a tide level at the mo
 the Villaviciosa product the period is the latest three years of the archive
 (`scripts/marea_tools.build_record`); flats move, so a longer record blurs the dry-to-wet
 turn of each pixel. The other maps of the viewer have their own periods
-([`DATA.md`](DATA.md#1-the-four-sites)). At Villaviciosa the period is 2023–2025 and the
+([`DATA.md`](DATA.md#1-the-sites)). At Villaviciosa the period is 2023–2025 and the
 record holds 97 scenes, from 2023-01-06 to 2025-12-28. MAREA refuses a record shorter than
 a set number of scenes (`min_scenes`, 80 by default; 40 for this product).
 

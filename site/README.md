@@ -1,9 +1,10 @@
 # MAREA map viewer
 
-An interactive map of the MAREA results at four estuaries of northern Spain: elevation, uncertainty, emersion time,
-delay and tide lines over an orthophoto or a grey map, with a pixel readout and, on wide screens, a 3D view. It is the
-whole website: one full-screen page, a React + Tailwind CSS application around MapLibre GL JS, built with Vite into
-plain static files that GitHub Pages serves from the `docs/` folder of this branch.
+An interactive map of the MAREA results at fourteen estuaries of northern Spain (four drawn inside masks cleaned by
+hand, ten preliminary ones inside masks made by a rule and without an accuracy assessment): elevation, uncertainty,
+emersion time, delay and tide lines over an orthophoto or a grey map, with a pixel readout and, on wide screens, a 3D
+view. It is the whole website: one full-screen page, a React + Tailwind CSS application around MapLibre GL JS, built
+with Vite into plain static files that GitHub Pages serves from the `docs/` folder of this branch.
 
 ## Run it
 
@@ -52,7 +53,7 @@ value that starts with `/` into a Windows folder before npm sees it; keep it as 
 `vite build` writes the page (`index.html`) and its assets into `SITE_OUT_DIR`; `scripts/postbuild.mjs` then adds
 `.nojekyll`, `licenses/` (the licence texts of the bundled packages, one file each and `THIRD-PARTY-NOTICES.txt`,
 linked from the info panel), and runs a scan of the text files for local folders, file URLs and IP addresses and a
-size report: the build fails on a hit, above 30 MB in all or above 5 MB for one file. The viewer keeps its state in
+size report: the build fails on a hit, above 60 MB in all or above 5 MB for one file. The viewer keeps its state in
 the URL hash (`#site=<id>&layer=<id>&base=photo|map&3d=0|1`), so it needs no other page and no 404 fallback.
 
 ## Code map

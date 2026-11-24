@@ -8,9 +8,10 @@ pixel's emersion time, the share of time it is out of the water. Elevation and e
 time together are a base layer for the potential habitat of *Nanozostera noltei*.
 (*Marea* is Spanish for tide.)
 
-**Explore the maps: <https://coastal-ai.github.io/Intertidal_analysis/>**. Four estuaries
-of northern Spain, with the elevation in m above NMMA, its uncertainty, the emersion time
-and the delay of the tide.
+**Explore the maps: <https://coastal-ai.github.io/Intertidal_analysis/>**. Fourteen
+estuaries of northern Spain, with the elevation in m above NMMA, its uncertainty, the
+emersion time and the delay of the tide. Four are drawn inside masks cleaned by hand; the other ten are **preliminary**: drawn inside masks made by a rule,
+not checked by hand, and with no accuracy assessment.
 
 [![The map viewer showing the elevation of the Ría de Mundaka (Urdaibai) over an orthophoto, with the layer panel on the left.](guide/figures/viewer_mundaka.jpg)](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation)
 
@@ -44,10 +45,23 @@ CARTOGRASS 2026, Cartagena, Spain. ([BibTeX](#how-to-cite))
 ## Explore the maps
 
 The map viewer, <https://coastal-ai.github.io/Intertidal_analysis/>, shows MAREA's maps of
-four estuaries of northern Spain, from west to east: the Ría de Foz, the Ría del Eo, the
-Ría de Villaviciosa and the Ría de Mundaka (Urdaibai). Each map is drawn only inside an
-intertidal mask cleaned by hand, which removes the water-detection noise at sea and along
-the open coast.
+fourteen estuaries of northern Spain.
+
+* **Four maps drawn inside masks cleaned by hand**, from west to east: the Ría de Foz, the
+  Ría del Eo, the Ría de Villaviciosa and the Ría de Mundaka (Urdaibai). Each map is drawn
+  only inside an intertidal mask cleaned by hand, which removes the water-detection noise
+  at sea and along the open coast.
+* **Ten preliminary maps**, marked "preliminary" in the viewer, from west to east: the Ría
+  de Corme e Laxe, the inner part of the Ría de Noia, the Ría de Betanzos, the Ría de
+  Ferrol, the Ría de Ortigueira, the Ría de Tina Menor, the Ría de San Vicente de la
+  Barquera, the Ría de Mogro, the Bahía de Santander and the Marismas de Santoña. Each is
+  drawn only inside an intertidal mask made by a rule (a 3 × 3 median filter, then only the
+  pieces connected to the estuary), which nobody checked by hand and which keeps some
+  noise. No survey of the ground was compared with these maps: their accuracy is not
+  assessed. At the five Cantabrian sites, from Tina Menor to Santoña, the heights are tied
+  to NMMA through the coast's REDNAP-tied mean sea level of 2011 and the datum sheet of the
+  Santander 2 tide gauge, because the gauge's own benchmark has only a 1998 tie. The maps
+  of Ferrol and Tina Menor are patchy.
 
 | layer | what it shows |
 |---|---|
@@ -259,9 +273,10 @@ build it for another address: [`site/README.md`](site/README.md).
 
 * **Code:** this branch, `CARTOGRASS26`:
   <https://github.com/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26>.
-* **The maps of the four sites:** in the map viewer; their layer images and value images
-  are in [`site/public/data/`](site/public/data/) (formats, and how to turn them into
-  GeoTIFFs, in [`guide/DATA.md`](guide/DATA.md#6-map-viewer-files)). CC BY 4.0.
+* **The maps of the fourteen sites** (ten of them preliminary): in the map viewer; their
+  layer images and value images are in [`site/public/data/`](site/public/data/) (formats,
+  and how to turn them into GeoTIFFs, in
+  [`guide/DATA.md`](guide/DATA.md#6-map-viewer-files)). CC BY 4.0.
 * **The Villaviciosa product and its replication kit:**
   [`products_marea/`](products_marea/README.md) and
   [`replication/`](replication/README.md). CC BY 4.0.

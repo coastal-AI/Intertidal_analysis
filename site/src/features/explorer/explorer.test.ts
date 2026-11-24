@@ -5,10 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseSitesIndex, SITE_IDS } from '@/lib/sites'
 import indexJson from '../../../public/data/sites/index.json'
-import fozJson from '../../../public/data/sites/foz/manifest.json'
-import eoJson from '../../../public/data/sites/eo/manifest.json'
 import villaJson from '../../../public/data/sites/villaviciosa/manifest.json'
-import mundakaJson from '../../../public/data/sites/mundaka/manifest.json'
 import { lonLatToMercator, mercatorToLonLat, pixelOf, tileExtent, tileTouchesGrid } from './geo'
 import { DEFAULT_LAYER, formatHash, normaliseState, parseHash } from './hashState'
 import { contourDash } from './lineStyles'
@@ -28,12 +25,16 @@ import { compositeTile, decodeTerrarium, encodeTerrarium } from './terrarium'
 import { heightLayer, parseSiteManifest, type ContourLayer, type MapHeights, type RasterLayer, type SiteManifest } from './types'
 import { codesFromRgba, failedChecks, valueAt, type ValueGrid } from './valueGrid'
 
-const MANIFESTS: Record<string, unknown> = {
-  foz: fozJson,
-  eo: eoJson,
-  villaviciosa: villaJson,
-  mundaka: mundakaJson,
-}
+/** Every generated site manifest, by site id (read from the data folder, so a site left out has none). */
+const MANIFESTS: Record<string, unknown> = Object.fromEntries(
+  Object.entries(import.meta.glob('../../../public/data/sites/*/manifest.json', { eager: true, import: 'default' })).map(
+    ([path, json]) => [path.split('/').slice(-2)[0], json],
+  ),
+)
+/** The ids of the generated sites, in the order of the site list. */
+const DATA_IDS: string[] = parseSitesIndex(indexJson).sites.map((s) => s.id)
+/** The sites drawn inside a hand-cleaned mask; the others are drawn inside an automatic one and are preliminary. */
+const HAND_CLEANED = ['foz', 'eo', 'villaviciosa', 'mundaka']
 const villa = parseSiteManifest(villaJson, 'villaviciosa')
 /** Heights of a site without an NMMA link (no such site in the data now; the format allows it). */
 const modelHeights: MapHeights = { datum: 'model', C: null, note: 'Heights above the tide model’s mean sea level.' }
@@ -65,8 +66,12 @@ describe('URL hash state', () => {
     expect(parseHash('#site=mundaka', 'villaviciosa').site).toBe('mundaka')
   })
 
-  it('opens the default site for a site the viewer no longer lists', () => {
-    expect(parseHash('#site=santander&layer=delay', 'villaviciosa').site).toBe('villaviciosa')
+  it('opens the default site for a site the viewer does not list', () => {
+    expect(parseHash('#site=urdaibai&layer=delay', 'villaviciosa').site).toBe('villaviciosa')
+  })
+
+  it('takes a link to one of the preliminary sites', () => {
+    expect(parseHash('#site=santander&layer=delay', 'villaviciosa').site).toBe('santander')
   })
 
   it('writes the hash in one order and reads it back', () => {
@@ -309,19 +314,21 @@ describe('3D terrain (Terrarium)', () => {
 describe('generated data (scripts/data_layers.py)', () => {
   it('writes a site list that passes the shell’s contract, west to east', () => {
     const index = parseSitesIndex(indexJson)
-    expect(index.sites.map((s) => s.id)).toEqual([...SITE_IDS])
+    expect(DATA_IDS).toEqual(SITE_IDS.filter((id) => DATA_IDS.includes(id)))
+    expect(Object.keys(MANIFESTS).sort()).toEqual([...DATA_IDS].sort())
     for (const s of index.sites) {
       expect(s.layers).toEqual(['elevation', 'sigma', 'emersion', 'delay', 'tide_lines'])
       expect(s.thumb).toBe(`sites/${s.id}/thumb.webp`)
     }
   })
 
-  it('lists no preliminary site: every map is drawn inside a hand-cleaned mask', () => {
-    expect(parseSitesIndex(indexJson).sites.map((s) => s.preliminary)).toEqual([false, false, false, false])
+  it('lists as preliminary exactly the sites drawn inside an automatic mask', () => {
+    for (const s of parseSitesIndex(indexJson).sites) expect(s.preliminary).toBe(!HAND_CLEANED.includes(s.id))
+    expect(HAND_CLEANED.every((id) => DATA_IDS.includes(id))).toBe(true)
   })
 
-  it('writes four manifests that pass the explorer’s contract', () => {
-    for (const id of SITE_IDS) {
+  it('writes a manifest per site that passes the explorer’s contract', () => {
+    for (const id of DATA_IDS) {
       const site = parseSiteManifest(MANIFESTS[id], id)
       expect(heightLayer(site)?.id).toBe('elevation')
       expect(site.grid.corners).toHaveLength(4)
@@ -331,28 +338,48 @@ describe('generated data (scripts/data_layers.py)', () => {
     }
   })
 
-  it('gives NMMA heights at the four sites', () => {
-    const C = Object.fromEntries(SITE_IDS.map((id) => [id, parseSiteManifest(MANIFESTS[id], id).heights.C]))
-    expect(C).toEqual({ foz: 0.3151, eo: 0.324, villaviciosa: 0.3778, mundaka: 0.3742 })
+  it('gives NMMA heights at every site, with its constant C', () => {
+    const expected: Record<string, number> = {
+      corme: 0.3205,
+      noia: 0.3112,
+      betanzos: 0.3258,
+      ferrol: 0.3359,
+      ortigueira: 0.3436,
+      foz: 0.3151,
+      eo: 0.324,
+      villaviciosa: 0.3778,
+      tina_menor: 0.3739,
+      san_vicente: 0.3737,
+      mogro: 0.3771,
+      santander: 0.3689,
+      santona: 0.375,
+      mundaka: 0.3742,
+    }
+    for (const id of DATA_IDS) {
+      const h = parseSiteManifest(MANIFESTS[id], id).heights
+      expect(h.C).toBe(expected[id])
+      expect(h.datum).toBe('NMMA')
+    }
   })
 
   it('writes the emersion legend in hours out of the water, its readout in %', () => {
-    for (const id of SITE_IDS) {
+    for (const id of DATA_IDS) {
       const e = layerOf(parseSiteManifest(MANIFESTS[id], id), 'emersion') as RasterLayer
       expect([e.units, e.legendUnits]).toEqual(['%', '% of hours out of the water'])
     }
   })
 
   it('draws lines of equal delay at Mundaka only, and notes where there is no delay', () => {
-    for (const id of SITE_IDS) {
+    const noDelay = ['ferrol', 'eo', 'tina_menor', 'santander', 'santona'] // every section of these at 0 min
+    for (const id of DATA_IDS) {
       const delay = layerOf(parseSiteManifest(MANIFESTS[id], id), 'delay') as RasterLayer
       expect(Boolean(delay.lines)).toBe(id === 'mundaka')
-      expect(Boolean(delay.note)).toBe(id === 'eo')
+      expect(Boolean(delay.note)).toBe(noDelay.includes(id))
     }
   })
 
   it('colours every map and legend with the scales of ramps.json', () => {
-    for (const id of SITE_IDS) {
+    for (const id of DATA_IDS) {
       for (const l of parseSiteManifest(MANIFESTS[id], id).layers) {
         if (l.kind !== 'raster') continue
         const ramp = ramps[l.id as keyof typeof ramps] as { stops?: string[]; classes?: string[] }
@@ -363,7 +390,7 @@ describe('generated data (scripts/data_layers.py)', () => {
   })
 
   it('draws each overlay at twice the grid, in tiles of at most 4096 px that cover the grid edge to edge', () => {
-    for (const id of SITE_IDS) {
+    for (const id of DATA_IDS) {
       const site = parseSiteManifest(MANIFESTS[id], id)
       for (const l of site.layers) {
         if (l.kind !== 'raster') continue

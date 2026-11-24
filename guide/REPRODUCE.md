@@ -12,7 +12,7 @@
 Here *reproduce* means that the same data and the same code give identical arrays, or
 arrays within a stated tolerance where an optimiser is involved. Only the Villaviciosa
 product can be rebuilt from this branch: the other maps of the viewer were made with the
-same library outside it ([`DATA.md`](DATA.md#1-the-four-sites)). Mapping a new estuary
+same library outside it ([`DATA.md`](DATA.md#1-the-sites)). Mapping a new estuary
 with the same procedure is a different task: see [`NEW_ESTUARY.md`](NEW_ESTUARY.md).
 
 ## 1. Environment

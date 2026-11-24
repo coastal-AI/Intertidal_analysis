@@ -327,8 +327,8 @@ how close it is.
 
 MAREA's heights are on the zero of the tide you used: the mean level of the tide model, or
 of your gauge series. To read them in a national datum, add the height of that zero in the
-datum. The library does not compute it. For the four maps of the viewer it was read from
-tide gauges tied to the Spanish datum NMMA
+datum. The library does not compute it. For the maps of the viewer it was read from tide
+gauges tied to the Spanish datum NMMA
 ([`DATA.md`](DATA.md#3-heights-nmma-and-the-constant-c)).
 
 ## Next steps

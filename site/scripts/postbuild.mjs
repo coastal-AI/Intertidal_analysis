@@ -3,7 +3,7 @@
 //   1. .nojekyll, so GitHub Pages serves the files as they are;
 //   2. licenses/: the licence texts of the packages bundled into the site, one file each plus one combined file;
 //   3. a scan of the text files for local folders, file URLs and IP addresses (the build fails on a hit);
-//   4. a size report; the build fails above 30 MB in all or 5 MB for one file.
+//   4. a size report; the build fails above 60 MB in all or 5 MB for one file.
 //
 // The site is one page (index.html) whose state lives in the URL hash, so no other address needs a page of its own
 // and GitHub Pages needs no 404 fallback.
@@ -16,7 +16,7 @@ import { siteEnv } from './site-env.mjs'
 
 const siteDir = fileURLToPath(new URL('..', import.meta.url))
 const { outDir } = siteEnv(siteDir)
-const MAX_TOTAL = 30e6 // bytes, the whole site
+const MAX_TOTAL = 60e6 // bytes, the whole site (fourteen sites of map data: about 42 MB)
 const MAX_FILE = 5e6 // bytes, one file
 
 const rel = (p) => relative(outDir, p).split(sep).join('/')

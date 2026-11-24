@@ -11,8 +11,26 @@ export const SITES_SCHEMA = 'cg26-sites/1'
 /** Where the site list lives, relative to the data folder. */
 export const SITES_INDEX_PATH = 'sites/index.json'
 
-/** The sites the viewer knows, west to east. */
-export const SITE_IDS = ['foz', 'eo', 'villaviciosa', 'mundaka'] as const
+/**
+ * The sites the viewer knows, west to east (scripts/data_layers.py: SITE_ORDER). The site list may hold all of them
+ * or some (data_layers.py: LEFT_OUT), always in this order.
+ */
+export const SITE_IDS = [
+  'corme',
+  'noia',
+  'betanzos',
+  'ferrol',
+  'ortigueira',
+  'foz',
+  'eo',
+  'villaviciosa',
+  'tina_menor',
+  'san_vicente',
+  'mogro',
+  'santander',
+  'santona',
+  'mundaka',
+] as const
 export type SiteId = (typeof SITE_IDS)[number]
 
 export function isSiteId(value: unknown): value is SiteId {

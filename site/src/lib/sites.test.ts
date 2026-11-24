@@ -2,18 +2,29 @@ import { describe, expect, it } from 'vitest'
 import indexJson from '../../public/data/sites/index.json'
 import { SITE_IDS, isSiteId, parseSitesIndex } from './sites'
 
+/** The sites drawn inside a hand-cleaned mask; every other site is drawn inside an automatic one (preliminary). */
+const HAND_CLEANED = ['foz', 'eo', 'villaviciosa', 'mundaka']
+/** The sites without a link to NMMA (their heights would stay on the tide model's mean sea level): none now. */
+const MODEL_DATUM: string[] = []
+
 describe('the site list contract (cg26-sites/1)', () => {
   const index = parseSitesIndex(indexJson)
+  const ids = index.sites.map((s) => s.id)
 
   it('accepts the generated site list', () => {
     expect(index.schema).toBe('cg26-sites/1')
-    expect(index.sites).toHaveLength(4)
+    expect(index.sites.length).toBeGreaterThan(0)
+    expect(index.sites.length).toBeLessThanOrEqual(SITE_IDS.length)
   })
 
-  it('lists the sites west to east', () => {
-    expect(index.sites.map((s) => s.id)).toEqual([...SITE_IDS])
+  it('lists the sites west to east, in the order of SITE_IDS', () => {
+    expect(ids).toEqual(SITE_IDS.filter((id) => ids.includes(id)))
     const lons = index.sites.map((s) => s.centre[0])
     expect([...lons].sort((a, b) => a - b)).toEqual(lons)
+  })
+
+  it('keeps the four sites with a hand-cleaned mask', () => {
+    expect(HAND_CLEANED.every((id) => ids.includes(id as (typeof ids)[number]))).toBe(true)
   })
 
   it('gives NMMA heights with C, or model heights with a note', () => {
@@ -27,7 +38,9 @@ describe('the site list contract (cg26-sites/1)', () => {
         expect(s.heights.note.length).toBeGreaterThan(0)
       }
     }
-    expect(index.sites.filter((s) => s.heights.datum === 'model').map((s) => s.id)).toEqual([])
+    expect(index.sites.filter((s) => s.heights.datum === 'model').map((s) => s.id)).toEqual(
+      ids.filter((id) => MODEL_DATUM.includes(id)),
+    )
   })
 
   it('keeps every path relative to the data folder', () => {
@@ -48,12 +61,13 @@ describe('the site list contract (cg26-sites/1)', () => {
 
   it('recognises site ids', () => {
     expect(isSiteId('villaviciosa')).toBe(true)
+    expect(isSiteId('santander')).toBe(true)
     expect(isSiteId('urdaibai')).toBe(false)
-    expect(isSiteId('santander')).toBe(false)
+    expect(isSiteId('bilbao')).toBe(false)
   })
 
-  it('needs a preliminary flag on every site', () => {
-    expect(index.sites.every((s) => s.preliminary === false)).toBe(true)
+  it('marks preliminary exactly the sites drawn inside an automatic mask', () => {
+    for (const s of index.sites) expect(s.preliminary).toBe(!HAND_CLEANED.includes(s.id))
     const bad = { ...indexJson, sites: [{ ...indexJson.sites[0], preliminary: 'no' }] }
     expect(() => parseSitesIndex(bad)).toThrow(/preliminary/)
   })

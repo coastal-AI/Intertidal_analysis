@@ -5,6 +5,186 @@
  "sites": [
   {
    "bounds": [
+    -9.03008,
+    43.21156,
+    -8.89595,
+    43.30009
+   ],
+   "centre": [
+    -8.96301,
+    43.25584
+   ],
+   "firstImage": "2021-01-02",
+   "heights": {
+    "C": 0.3205,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Ferrol tide gauge (IOC fer2), 106 of 131 images"
+   },
+   "id": "corme",
+   "images": 131,
+   "lastImage": "2026-10-13",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Corme e Laxe",
+   "manifest": "sites/corme/manifest.json",
+   "name": "Corme",
+   "preliminary": true,
+   "region": "Galicia",
+   "thumb": "sites/corme/thumb.webp",
+   "years": "2021–2026"
+  },
+  {
+   "bounds": [
+    -8.9901,
+    42.73743,
+    -8.8497,
+    42.8375
+   ],
+   "centre": [
+    -8.9199,
+    42.78749
+   ],
+   "firstImage": "2021-01-02",
+   "heights": {
+    "C": 0.3112,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Ferrol tide gauge (IOC fer2), 113 of 143 images"
+   },
+   "id": "noia",
+   "images": 143,
+   "lastImage": "2026-11-02",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Noia (inner part)",
+   "manifest": "sites/noia/manifest.json",
+   "name": "Noia",
+   "preliminary": true,
+   "region": "Galicia",
+   "thumb": "sites/noia/thumb.webp",
+   "years": "2021–2026"
+  },
+  {
+   "bounds": [
+    -8.30143,
+    43.27933,
+    -8.19823,
+    43.40096
+   ],
+   "centre": [
+    -8.24983,
+    43.34017
+   ],
+   "firstImage": "2022-01-12",
+   "heights": {
+    "C": 0.3258,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Ferrol tide gauge (IOC fer2), 143 of 189 images"
+   },
+   "id": "betanzos",
+   "images": 189,
+   "lastImage": "2026-11-06",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Betanzos",
+   "manifest": "sites/betanzos/manifest.json",
+   "name": "Betanzos",
+   "preliminary": true,
+   "region": "Galicia",
+   "thumb": "sites/betanzos/thumb.webp",
+   "years": "2022–2026"
+  },
+  {
+   "bounds": [
+    -8.32332,
+    43.43874,
+    -8.14864,
+    43.51941
+   ],
+   "centre": [
+    -8.23598,
+    43.47909
+   ],
+   "firstImage": "2022-01-14",
+   "heights": {
+    "C": 0.3359,
+    "datum": "NMMA",
+    "sigma": 0.047,
+    "source": "Ferrol tide gauge (IOC fer2), 130 of 171 images"
+   },
+   "id": "ferrol",
+   "images": 171,
+   "lastImage": "2026-09-28",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Ferrol",
+   "manifest": "sites/ferrol/manifest.json",
+   "name": "Ferrol",
+   "preliminary": true,
+   "region": "Galicia",
+   "thumb": "sites/ferrol/thumb.webp",
+   "years": "2022–2026"
+  },
+  {
+   "bounds": [
+    -7.90673,
+    43.65946,
+    -7.78769,
+    43.75118
+   ],
+   "centre": [
+    -7.84721,
+    43.70534
+   ],
+   "firstImage": "2022-01-12",
+   "heights": {
+    "C": 0.3436,
+    "datum": "NMMA",
+    "sigma": 0.047,
+    "source": "Ferrol tide gauge (IOC fer2), 92 of 130 images"
+   },
+   "id": "ortigueira",
+   "images": 130,
+   "lastImage": "2026-11-06",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Ortigueira",
+   "manifest": "sites/ortigueira/manifest.json",
+   "name": "Ortigueira",
+   "preliminary": true,
+   "region": "Galicia",
+   "thumb": "sites/ortigueira/thumb.webp",
+   "years": "2022–2026"
+  },
+  {
+   "bounds": [
     -7.30203,
     43.53604,
     -7.21271,
@@ -110,6 +290,186 @@
    "region": "Asturias",
    "thumb": "sites/villaviciosa/thumb.webp",
    "years": "2023–2025"
+  },
+  {
+   "bounds": [
+    -4.49633,
+    43.36455,
+    -4.44596,
+    43.40565
+   ],
+   "centre": [
+    -4.47114,
+    43.38511
+   ],
+   "firstImage": "2021-01-06",
+   "heights": {
+    "C": 0.3739,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Santander tide gauge (IOC san2), 56 of 123 images"
+   },
+   "id": "tina_menor",
+   "images": 123,
+   "lastImage": "2026-11-06",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Tina Menor",
+   "manifest": "sites/tina_menor/manifest.json",
+   "name": "Tina Menor",
+   "preliminary": true,
+   "region": "Cantabria",
+   "thumb": "sites/tina_menor/thumb.webp",
+   "years": "2021–2026"
+  },
+  {
+   "bounds": [
+    -4.44162,
+    43.35214,
+    -4.35875,
+    43.406
+   ],
+   "centre": [
+    -4.40018,
+    43.37908
+   ],
+   "firstImage": "2021-01-06",
+   "heights": {
+    "C": 0.3737,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Santander tide gauge (IOC san2), 51 of 117 images"
+   },
+   "id": "san_vicente",
+   "images": 117,
+   "lastImage": "2026-11-06",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de San Vicente de la Barquera",
+   "manifest": "sites/san_vicente/manifest.json",
+   "name": "San Vicente",
+   "preliminary": true,
+   "region": "Cantabria",
+   "thumb": "sites/san_vicente/thumb.webp",
+   "years": "2021–2026"
+  },
+  {
+   "bounds": [
+    -3.99735,
+    43.40069,
+    -3.94118,
+    43.47053
+   ],
+   "centre": [
+    -3.96927,
+    43.43562
+   ],
+   "firstImage": "2021-01-16",
+   "heights": {
+    "C": 0.3771,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Santander tide gauge (IOC san2), 58 of 111 images"
+   },
+   "id": "mogro",
+   "images": 111,
+   "lastImage": "2026-10-14",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Ría de Mogro",
+   "manifest": "sites/mogro/manifest.json",
+   "name": "Mogro",
+   "preliminary": true,
+   "region": "Cantabria",
+   "thumb": "sites/mogro/thumb.webp",
+   "years": "2021–2026"
+  },
+  {
+   "bounds": [
+    -3.84431,
+    43.38856,
+    -3.67885,
+    43.4814
+   ],
+   "centre": [
+    -3.76158,
+    43.435
+   ],
+   "firstImage": "2021-03-02",
+   "heights": {
+    "C": 0.3689,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Santander tide gauge (IOC san2), 50 of 99 images"
+   },
+   "id": "santander",
+   "images": 99,
+   "lastImage": "2026-10-14",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Bahía de Santander",
+   "manifest": "sites/santander/manifest.json",
+   "name": "Santander",
+   "preliminary": true,
+   "region": "Cantabria",
+   "thumb": "sites/santander/thumb.webp",
+   "years": "2021–2026"
+  },
+  {
+   "bounds": [
+    -3.52319,
+    43.34698,
+    -3.39897,
+    43.48173
+   ],
+   "centre": [
+    -3.46108,
+    43.41439
+   ],
+   "firstImage": "2022-01-06",
+   "heights": {
+    "C": 0.375,
+    "datum": "NMMA",
+    "sigma": 0.055,
+    "source": "Santander tide gauge (IOC san2), 104 of 176 images"
+   },
+   "id": "santona",
+   "images": 176,
+   "lastImage": "2026-10-31",
+   "layers": [
+    "elevation",
+    "sigma",
+    "emersion",
+    "delay",
+    "tide_lines"
+   ],
+   "longName": "Marismas de Santoña",
+   "manifest": "sites/santona/manifest.json",
+   "name": "Santoña",
+   "preliminary": true,
+   "region": "Cantabria",
+   "thumb": "sites/santona/thumb.webp",
+   "years": "2022–2026"
   },
   {
    "bounds": [

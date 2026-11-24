@@ -5,8 +5,10 @@ Run it from the site folder with any Python that has NumPy and Pillow:
 
     python scripts/data_layers.py --layers <folder of the layer files>
 
-The layer folder holds index.json (the sites), heights.json (each site's NMMA constant C) and one sub-folder per site
-(foz, eo, villaviciosa, mundaka). Each sub-folder has a manifest.json and, for every map layer, a value image
+The layer folder holds index.json (the sites), heights.json (each site's NMMA constant C, or a note where the heights
+stay on the tide model's datum) and one sub-folder per site of SITE_ORDER. The layer index must list exactly the sites
+of SITE_ORDER, in that order; a site named in LEFT_OUT is skipped, so leaving a site out of the website is one line.
+Each sub-folder has a manifest.json and, for every map layer, a value image
 (<layer>_values.png) on the site's Web Mercator grid; plus the tide lines (tide_lines.geojson, tide_levels.json) and,
 at Mundaka, the lines of equal delay (cotidal.geojson). Any coloured images of the layer folder are not used: the
 overlays are drawn here, from the values, with the colour scales of src/features/explorer/ramps.json.
@@ -57,11 +59,25 @@ import sys  # exit codes
 import numpy as np  # value images and overlays
 from PIL import Image  # PNG reading and writing, WebP writing
 
-SITE_ORDER = ["foz", "eo", "villaviciosa", "mundaka"]  # west to east: the sites with a hand-cleaned mask
+#: The sites of the layer folder, west to east by the longitude of their box centre. Four have a hand-cleaned mask
+#: (foz, eo, villaviciosa, mundaka); the other ten an automatic one, so the website lists them as preliminary.
+SITE_ORDER = ["corme", "noia", "betanzos", "ferrol", "ortigueira", "foz", "eo", "villaviciosa", "tina_menor",
+              "san_vicente", "mogro", "santander", "santona", "mundaka"]
+LEFT_OUT = ()  # sites of SITE_ORDER not put on the website, e.g. ("mogro",): one line leaves a site out
 REGIONS = {  # the region line of each site card
+    "corme": "Galicia",
+    "noia": "Galicia",
+    "betanzos": "Galicia",
+    "ferrol": "Galicia",
+    "ortigueira": "Galicia",
     "foz": "Galicia",
     "eo": "Galicia–Asturias",
     "villaviciosa": "Asturias",
+    "tina_menor": "Cantabria",
+    "san_vicente": "Cantabria",
+    "mogro": "Cantabria",
+    "santander": "Cantabria",
+    "santona": "Cantabria",
     "mundaka": "Basque Country",
 }
 DOMAINS = {"hand-cleaned": False, "automatic": True}  # the domain kinds a layer folder may name: preliminary or not
@@ -87,7 +103,7 @@ CAPS = {  # largest bytes per output file, by kind, and in all
     "geojson": 300_000,
     "thumb": 120_000,
     "manifest": 60_000,
-    "total": 26_000_000,
+    "total": 50_000_000,  # fourteen sites: about 42 MB; a visitor downloads only the site they open
 }
 THUMB_SIDE = 480  # longest side of the thumbnails (px)
 UPSAMPLE = 2  # overlay pixels per grid pixel, along each axis (the interpolation below is written for 2)
@@ -721,8 +737,11 @@ def main():
     ids = [s["id"] for s in index_in["sites"]]
     if ids != SITE_ORDER:
         fail(f"the layer index lists {ids}, expected {SITE_ORDER}")
+    unknown = sorted(set(LEFT_OUT) - set(SITE_ORDER))
+    if unknown:
+        fail(f"LEFT_OUT names sites that are not in SITE_ORDER: {unknown}")
     sites, report = [], {}
-    for site_id in SITE_ORDER:
+    for site_id in [s for s in SITE_ORDER if s not in LEFT_OUT]:
         if site_id not in heights.get("sites", {}):
             fail(f"heights.json has no entry for {site_id}")
         listed, rep = build_site(site_id, layers_dir, heights["sites"][site_id], ramps, out_dir)

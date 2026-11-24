@@ -1,0 +1,620 @@
+{
+ "attribution": "MAREA maps CC BY 4.0 · modified Copernicus Sentinel-2 data · tide: EOT20",
+ "firstImage": "2021-01-02",
+ "grid": {
+  "bounds": [
+   -9.030082,
+   43.21156,
+   -8.895946,
+   43.300089
+  ],
+  "centre": [
+   -8.963014,
+   43.25584
+  ],
+  "corners": [
+   [
+    -9.0300824,
+    43.3000885
+   ],
+   [
+    -8.8959459,
+    43.3000885
+   ],
+   [
+    -8.8959459,
+    43.2115596
+   ],
+   [
+    -9.0300824,
+    43.2115596
+   ]
+  ],
+  "height": 1971,
+  "res": 6.86529041421207,
+  "width": 2175,
+  "x0": -1005224.173713914,
+  "y0": 5357760.500750823
+ },
+ "heights": {
+  "C": 0.3205,
+  "datum": "NMMA",
+  "gauge": "Ferrol",
+  "sigma": 0.055,
+  "source": "Ferrol tide gauge (IOC fer2), 106 of 131 images"
+ },
+ "id": "corme",
+ "images": 131,
+ "lastImage": "2026-10-13",
+ "layers": [
+  {
+   "about": "Height of the intertidal ground, from the tide level at which each pixel floods.",
+   "decimals": 2,
+   "heights": true,
+   "id": "elevation",
+   "kind": "raster",
+   "overlay": {
+    "height": 3942,
+    "tiles": [
+     {
+      "corners": [
+       [
+        -9.0300824,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ],
+       [
+        -9.0300824,
+        43.2115596
+       ]
+      ],
+      "file": "elevation_0.png",
+      "height": 3942,
+      "width": 254
+     },
+     {
+      "corners": [
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.2115596
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ]
+      ],
+      "file": "elevation_1.png",
+      "height": 3942,
+      "width": 4096
+     }
+    ],
+    "width": 4350
+   },
+   "scale": {
+    "domain": [
+     -2.2,
+     1.2
+    ],
+    "stops": [
+     "#440154",
+     "#472D7B",
+     "#3B528B",
+     "#2C728E",
+     "#21918C",
+     "#28AE80",
+     "#5EC962",
+     "#ADDC30",
+     "#FDE725"
+    ],
+    "ticks": [
+     -2.0,
+     -1.0,
+     0.0,
+     1.0
+    ],
+    "type": "linear"
+   },
+   "title": "Elevation",
+   "units": "m",
+   "values": {
+    "check": [
+     [
+      1913,
+      1,
+      27574
+     ],
+     [
+      1005,
+      844,
+      26958
+     ],
+     [
+      1105,
+      966,
+      0
+     ],
+     [
+      1775,
+      1526,
+      22027
+     ],
+     [
+      1675,
+      1676,
+      34354
+     ],
+     [
+      103,
+      1930,
+      29423
+     ]
+    ],
+    "file": "elevation_values.png",
+    "offset": -3.0001,
+    "scale": 0.0001
+   }
+  },
+  {
+   "about": "How sharply each pixel turns from dry to wet: a larger value is a less certain height.",
+   "decimals": 2,
+   "id": "sigma",
+   "kind": "raster",
+   "overlay": {
+    "height": 3942,
+    "tiles": [
+     {
+      "corners": [
+       [
+        -9.0300824,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ],
+       [
+        -9.0300824,
+        43.2115596
+       ]
+      ],
+      "file": "sigma_0.png",
+      "height": 3942,
+      "width": 254
+     },
+     {
+      "corners": [
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.2115596
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ]
+      ],
+      "file": "sigma_1.png",
+      "height": 3942,
+      "width": 4096
+     }
+    ],
+    "width": 4350
+   },
+   "scale": {
+    "classes": [
+     {
+      "color": "#EFEDF5",
+      "value": 0.03
+     },
+     {
+      "color": "#DADAEB",
+      "value": 0.06
+     },
+     {
+      "color": "#BCBDDC",
+      "value": 0.1
+     },
+     {
+      "color": "#9E9AC8",
+      "value": 0.15
+     },
+     {
+      "color": "#807DBA",
+      "value": 0.22
+     },
+     {
+      "color": "#6A51A3",
+      "value": 0.32
+     },
+     {
+      "color": "#54278F",
+      "value": 0.45
+     },
+     {
+      "color": "#3F007D",
+      "value": 0.65
+     }
+    ],
+    "type": "classes"
+   },
+   "title": "Uncertainty",
+   "units": "m",
+   "values": {
+    "check": [
+     [
+      1913,
+      1,
+      31
+     ],
+     [
+      1005,
+      844,
+      451
+     ],
+     [
+      1105,
+      966,
+      0
+     ],
+     [
+      1775,
+      1526,
+      31
+     ],
+     [
+      1675,
+      1676,
+      221
+     ],
+     [
+      103,
+      1930,
+      101
+     ]
+    ],
+    "file": "sigma_values.png",
+    "offset": -0.001,
+    "scale": 0.001
+   }
+  },
+  {
+   "about": "Share of the time each pixel is out of the water: the darker, the longer.",
+   "decimals": 0,
+   "id": "emersion",
+   "kind": "raster",
+   "legendUnits": "% of hours out of the water",
+   "overlay": {
+    "height": 3942,
+    "tiles": [
+     {
+      "corners": [
+       [
+        -9.0300824,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ],
+       [
+        -9.0300824,
+        43.2115596
+       ]
+      ],
+      "file": "emersion_0.png",
+      "height": 3942,
+      "width": 254
+     },
+     {
+      "corners": [
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.2115596
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ]
+      ],
+      "file": "emersion_1.png",
+      "height": 3942,
+      "width": 4096
+     }
+    ],
+    "width": 4350
+   },
+   "scale": {
+    "domain": [
+     0.0,
+     100.0
+    ],
+    "stops": [
+     "#F7FCF5",
+     "#E5F5E0",
+     "#C7E9C0",
+     "#A1D99B",
+     "#74C476",
+     "#41AB5D",
+     "#238B45",
+     "#006D2C",
+     "#00441B"
+    ],
+    "ticks": [
+     0.0,
+     20.0,
+     40.0,
+     60.0,
+     80.0,
+     100.0
+    ],
+    "type": "linear"
+   },
+   "title": "Emersion time",
+   "units": "%",
+   "values": {
+    "check": [
+     [
+      1913,
+      1,
+      21269
+     ],
+     [
+      1005,
+      844,
+      20289
+     ],
+     [
+      1105,
+      966,
+      0
+     ],
+     [
+      1775,
+      1526,
+      10976
+     ],
+     [
+      1675,
+      1676,
+      31951
+     ],
+     [
+      103,
+      1930,
+      24104
+     ]
+    ],
+    "file": "emersion_values.png",
+    "offset": -0.002,
+    "scale": 0.002
+   }
+  },
+  {
+   "about": "How many minutes after the estuary mouth the tide reaches each pixel.",
+   "decimals": 0,
+   "id": "delay",
+   "kind": "raster",
+   "overlay": {
+    "height": 3942,
+    "tiles": [
+     {
+      "corners": [
+       [
+        -9.0300824,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ],
+       [
+        -9.0300824,
+        43.2115596
+       ]
+      ],
+      "file": "delay_0.png",
+      "height": 3942,
+      "width": 254
+     },
+     {
+      "corners": [
+       [
+        -9.0222501,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.3000885
+       ],
+       [
+        -8.8959459,
+        43.2115596
+       ],
+       [
+        -9.0222501,
+        43.2115596
+       ]
+      ],
+      "file": "delay_1.png",
+      "height": 3942,
+      "width": 4096
+     }
+    ],
+    "width": 4350
+   },
+   "scale": {
+    "domain": [
+     0.0,
+     60.0
+    ],
+    "stops": [
+     "#FEE2C5",
+     "#FDCE9F",
+     "#FDB170",
+     "#FD9547",
+     "#F67723",
+     "#E65A0B",
+     "#C94202",
+     "#9F3303",
+     "#7F2704"
+    ],
+    "ticks": [
+     0.0,
+     10.0,
+     20.0,
+     30.0,
+     40.0,
+     50.0,
+     60.0
+    ],
+    "type": "linear"
+   },
+   "title": "Delay",
+   "units": "min",
+   "values": {
+    "check": [
+     [
+      1913,
+      1,
+      11
+     ],
+     [
+      1005,
+      844,
+      101
+     ],
+     [
+      1105,
+      966,
+      0
+     ],
+     [
+      1775,
+      1526,
+      321
+     ],
+     [
+      1675,
+      1676,
+      291
+     ],
+     [
+      103,
+      1930,
+      11
+     ]
+    ],
+    "file": "delay_values.png",
+    "offset": -0.1,
+    "scale": 0.1
+   }
+  },
+  {
+   "about": "Where the ground meets each tidal level of the site.",
+   "features": 182,
+   "file": "tide_lines.geojson",
+   "heights": true,
+   "id": "tide_lines",
+   "kind": "contours",
+   "levels": [
+    {
+     "drawn": false,
+     "id": "LAT",
+     "level": -2.141,
+     "name": "Lowest astronomical tide",
+     "nmma": -1.821
+    },
+    {
+     "drawn": false,
+     "id": "MLWS",
+     "level": -1.641,
+     "name": "Mean low water springs",
+     "nmma": -1.321
+    },
+    {
+     "drawn": true,
+     "id": "MLWN",
+     "level": -0.737,
+     "name": "Mean low water neaps",
+     "nmma": -0.416
+    },
+    {
+     "drawn": true,
+     "id": "MSL",
+     "level": 0.0,
+     "name": "Mean sea level",
+     "nmma": 0.321
+    },
+    {
+     "drawn": true,
+     "id": "MHWN",
+     "level": 0.73,
+     "name": "Mean high water neaps",
+     "nmma": 1.05
+    },
+    {
+     "drawn": false,
+     "id": "MHWS",
+     "level": 1.632,
+     "name": "Mean high water springs",
+     "nmma": 1.952
+    },
+    {
+     "drawn": false,
+     "id": "HAT",
+     "level": 2.175,
+     "name": "Highest astronomical tide",
+     "nmma": 2.495
+    }
+   ],
+   "title": "Tide lines",
+   "units": "m"
+  }
+ ],
+ "longName": "Ría de Corme e Laxe",
+ "name": "Corme",
+ "schema": "cg26-explorer-site/2",
+ "years": "2021–2026"
+}

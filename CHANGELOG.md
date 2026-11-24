@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased (2026-11-24)
+
+* Map viewer: ten more estuaries of northern Spain, shown as **preliminary** maps: the Ría de Corme e Laxe, the
+  inner part of the Ría de Noia, the Ría de Betanzos, the Ría de Ferrol, the Ría de Ortigueira, the Ría de Tina
+  Menor, the Ría de San Vicente de la Barquera, the Ría de Mogro, the Bahía de Santander and the Marismas de Santoña.
+  Each is drawn only inside an intertidal mask made by a rule (a 3 × 3 median filter, then only the pieces connected
+  to the estuary), not checked by hand, and none has an accuracy assessment. All fourteen maps give heights in NMMA;
+  at the five Cantabrian sites the tie rests on the coast's REDNAP-tied mean sea level of 2011 and the datum sheet of
+  the Santander 2 tide gauge, whose benchmark has only a 1998 tie. The viewer now lists fourteen sites; the four maps
+  drawn inside masks cleaned by hand are unchanged, byte for byte.
+* `site/scripts/data_layers.py`: the fourteen sites in `SITE_ORDER`, and `LEFT_OUT`, which leaves a site out of the
+  website in one line. The front end's site list (`src/lib/sites.ts`) and its tests follow the data.
+* Size caps: the data folder may hold 50 MB (about 42 MB now) and the built site 60 MB (about 44 MB now); a visitor
+  downloads only the site they open.
+
 ## cartograss26 (2026-11-23)
 
 First version of this branch: the companion repository of the poster *MAREA: a method for mapping intertidal
