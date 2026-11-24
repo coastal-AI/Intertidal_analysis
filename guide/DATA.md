@@ -111,7 +111,7 @@ means.
 | layer | units | what it is |
 |---|---|---|
 | Elevation, z | m | The water level at which the pixel turns from dry to wet, read on the tide that reaches it: the tide at the mouth, delayed by the pixel's τ. |
-| Uncertainty, σ | m | The width of the pixel's dry-to-wet transition: one of eight values, 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m. A larger σ is a less sharp transition. It is neither a standard error of z nor an accuracy measured against a survey. |
+| Uncertainty, σ | m | The width of the pixel's dry-to-wet transition: one of eight values, 0.03, 0.06, 0.10, 0.15, 0.22, 0.32, 0.45 and 0.65 m. A larger σ is a less sharp transition: the level at which the pixel floods is less sharply defined, which is why the viewer shows σ as the uncertainty of z. It is neither a standard error of z nor an accuracy measured against a survey. |
 | Emersion time | % of time | The share of the map's period during which the pixel is out of the water: how often its delayed tide, h(t − τ), stays at or below z, with the tide taken every minute. |
 | Delay, τ | min | How much later than at the mouth the tide reaches the pixel: one delay per 3-km section of distance from the mouth along the water, then a smooth curve through the section delays and a point of 0 min at the mouth (Gaussian weights of standard deviation 3 km), never decreasing inland along the water path and rounded to the minute. A pixel without a water path to the mouth keeps 0 min (at Ortigueira, [section 1](#1-the-sites)). Pixels near the mouth already receive about a minute (about 10 min at Mogro); the innermost pixels receive less than the last section's fitted delay ([`METHOD.md`](METHOD.md#5-from-sections-to-every-pixel)). Each site has its own colour scale. At Mundaka the layer also draws lines of equal delay ([section 4](#4-tide-lines)). |
 | Tide lines | m | Contours of the elevation at the tidal datums ([section 4](#4-tide-lines)). |
@@ -339,7 +339,9 @@ inputs) and `duracion_s` (run time).
 
 **Other files.** `figure.png` (the elevation map, the delay against distance and the
 hypsometric curve, with Spanish panel titles) and `overpass_times.json` (the UTC
-acquisition time of every Sentinel-2 scene of the site, 2016–2025).
+acquisition time of every Sentinel-2 scene of the site, 2016–2025, as
+`{"YYYY-MM-DD": "YYYY-MM-DD HH:MM:SS"}`: the format that the `--overpass-times` option
+of `scripts/quickstart.py` reads).
 
 **On the map.** The frame is the grid of
 [`products_villaviciosa/hsr_eot20_2023-2025.tif`](../products_villaviciosa/README.md):

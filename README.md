@@ -8,170 +8,6 @@ pixel's emersion time, the share of time it is out of the water. Elevation and e
 time together are a base layer for the potential habitat of *Nanozostera noltei*.
 (*Marea* is Spanish for tide.)
 
-**Explore the maps: <https://coastal-ai.github.io/Intertidal_analysis/>**. Fourteen
-estuaries of northern Spain, with the elevation in m above NMMA, its uncertainty, the
-emersion time and the delay of the tide. Four are drawn inside masks cleaned by hand; the
-other ten are **preliminary**: drawn inside masks made by a rule, not checked by hand, and
-with no accuracy assessment.
-
-[![The map viewer showing the elevation of the Ría de Mundaka (Urdaibai) over an orthophoto, with the layer panel on the left.](guide/figures/viewer_mundaka.jpg)](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation)
-
-*The map viewer at the Ría de Mundaka (Urdaibai): elevation over the PNOA orthophoto
-(© Instituto Geográfico Nacional, CC BY 4.0 scne.es). Contains modified Copernicus
-Sentinel data.*
-
-| [Ría de Foz](https://coastal-ai.github.io/Intertidal_analysis/#site=foz&layer=elevation) | [Ría del Eo](https://coastal-ai.github.io/Intertidal_analysis/#site=eo&layer=elevation) | [Ría de Villaviciosa](https://coastal-ai.github.io/Intertidal_analysis/#site=villaviciosa&layer=elevation) | [Ría de Mundaka](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation) |
-|:-:|:-:|:-:|:-:|
-| [<img src="site/public/data/sites/foz/thumb.webp" alt="Elevation map of the Ría de Foz" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=foz&layer=elevation) | [<img src="site/public/data/sites/eo/thumb.webp" alt="Elevation map of the Ría del Eo" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=eo&layer=elevation) | [<img src="site/public/data/sites/villaviciosa/thumb.webp" alt="Elevation map of the Ría de Villaviciosa" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=villaviciosa&layer=elevation) | [<img src="site/public/data/sites/mundaka/thumb.webp" alt="Elevation map of the Ría de Mundaka" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation) |
-
-Companion repository of our poster at **CARTOGRASS 2026**, Simposio Ibérico de Cartografía
-y Seguimiento de Praderas Marinas, Cartagena, 24–26 November 2026, by
-**Jorge Alías Álvarez**¹, **Fernando García-González**² and **Pablo González**¹
-(¹ University of Oviedo, Spain; ² Instituto Español de Oceanografía, IEO-CSIC, Spain).
-
-**How to cite:** Alías Álvarez, J., García-González, F., González, P. (2026). MAREA: a
-method for mapping intertidal topography using Sentinel-2 openEO data cubes. Poster,
-CARTOGRASS 2026, Cartagena, Spain. ([BibTeX](#how-to-cite))
-
-**Try it:** [notebook 01 on Binder](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
-(nothing to install) · [quick start](#quick-start) (about 10 minutes with the installation) ·
-[notebooks](#notebooks) ·
-[map your own estuary](guide/NEW_ESTUARY.md) · [how MAREA works](guide/METHOD.md)
-
-[![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
-[![Text, figures and data: CC BY 4.0](https://img.shields.io/badge/text%2C%20figures%20%26%20data-CC%20BY%204.0-lightgrey.svg)](LICENSE-docs.md)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
-[![nbviewer](https://img.shields.io/badge/notebooks-nbviewer-orange.svg)](https://nbviewer.org/github/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26/notebooks/)
-
-## Explore the maps
-
-The map viewer, <https://coastal-ai.github.io/Intertidal_analysis/>, shows MAREA's maps of
-fourteen estuaries of northern Spain.
-
-* **Four maps drawn inside masks cleaned by hand**, from west to east: the Ría de Foz, the
-  Ría del Eo, the Ría de Villaviciosa and the Ría de Mundaka (Urdaibai). Each map is drawn
-  only inside an intertidal mask cleaned by hand, which removes the water-detection noise
-  at sea and along the open coast.
-* **Ten preliminary maps**, marked "preliminary" in the viewer, from west to east: the Ría
-  de Corme e Laxe, the inner part of the Ría de Noia, the Ría de Betanzos, the Ría de
-  Ferrol, the Ría de Ortigueira, the Ría de Tina Menor, the Ría de San Vicente de la
-  Barquera, the Ría de Mogro, the Bahía de Santander and the Marismas de Santoña. Each is
-  drawn only inside an intertidal mask made by a rule, which nobody checked by hand and
-  which keeps some noise; no survey of the ground was compared with them, so their
-  accuracy is not assessed. The maps of Ferrol and Tina Menor are patchy, and at the five
-  Cantabrian sites the heights are tied to NMMA indirectly, through the coast's mean sea
-  level of 2011. What to keep in mind at each site:
-  [`guide/DATA.md`](guide/DATA.md#1-the-sites).
-
-| layer | what it shows |
-|---|---|
-| Elevation | height of the ground, in m above NMMA (mean sea level at Alicante) |
-| Uncertainty | width σ of each pixel's dry-to-wet transition, in m |
-| Emersion time | share of the hours the ground is out of the water, in % |
-| Delay | how many minutes after the mouth the tide reaches each pixel; at Mundaka, with lines of equal delay |
-| Tide lines | elevation contours at the tidal datums (low water of neap tides, mean sea level, …) |
-
-The delay of each pixel comes from a smooth curve through the section delays, which pulls
-the innermost values down: at Mundaka the map's delays reach 80 min, while MAREA estimates
-97 min for the last section. How the heights, layers and files are defined:
-[`guide/DATA.md`](guide/DATA.md). To run the viewer on your own machine:
-[Website](#website).
-
-## Quick start
-
-Python 3.13. Installing takes about 8 minutes and 1 GB of disk (pip's "Installing collected
-packages" step stays silent for about 5 minutes); the first map follows in about a minute.
-
-```bash
-git clone --depth 1 --branch CARTOGRASS26 https://github.com/coastal-AI/Intertidal_analysis.git
-cd Intertidal_analysis
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -X utf8 scripts/reproduce_villaviciosa.py --from-kit replication
-```
-
-**On Windows**, clone into a short folder such as `C:\src\`: some of the installed files have
-long paths, and pip fails when the clone's folder path is longer than about 110 characters
-(or enable long paths in Windows, which needs an administrator). Calling the environment's
-Python directly avoids PowerShell's activation rules:
-
-```powershell
-py -3.13 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -X utf8 scripts\reproduce_villaviciosa.py --from-kit replication
-```
-
-With conda or mamba, create the environment with `mamba env create -f environment.yml` and
-`mamba activate marea-cartograss26` instead of the `venv` and `pip` lines.
-
-Run everything from the repository root: the library is used from the checkout, not
-pip-installed, and `marea.reconstruct` reads `configs/m2.yaml` from the source tree. The
-packages pyTMD, eo-tides and openeo are needed only for a new estuary and for Route B of
-[`guide/REPRODUCE.md`](guide/REPRODUCE.md); `requirements.txt` installs them all the same.
-
-The last command rebuilds the published 10 m map of the Ría de Villaviciosa
-([`products_marea/`](products_marea/README.md)) from the offline kit in
-[`replication/`](replication/README.md): the delay of each section, then the elevation
-and uncertainty of every pixel. It needs no account, no download and no tide model. It
-runs in about a minute (57 s on a Windows 10 laptop) with about 0.6 GB of memory,
-compares its result with the published files array by array, and ends with:
-
-```
-PASS: 41 of 41 checks passed; total ... s
-```
-
-It writes into `runs/villaviciosa_repro/`:
-
-* `figure.png`: open it first. The elevation map, the delay against the distance from the
-  mouth and the hypsometric curve; its labels are in Spanish (*cota* is elevation).
-* `marea.npz` and `result.json`: the product, as described in
-  [`guide/DATA.md`](guide/DATA.md#7-the-villaviciosa-product-files).
-* `record.json` and `provenance.json`: the record dates, the versions and the inputs.
-
-It writes no GeoTIFF and no emersion time. For a GeoTIFF of the elevation, use the snippet
-of [`guide/DATA.md`](guide/DATA.md#7-the-villaviciosa-product-files), pointed at
-`runs/villaviciosa_repro/marea.npz`; notebook 01 maps the emersion time.
-
-The tests, the full route from the Sentinel-2 cube and what each check compares:
-[`guide/REPRODUCE.md`](guide/REPRODUCE.md).
-
-## Notebooks
-
-| notebook | what it does |
-|---|---|
-| [`01_marea_villaviciosa`](notebooks/01_marea_villaviciosa.ipynb) | MAREA step by step on real data. In a 2.7 km block of the Ría de Villaviciosa: one pixel's looks against the tide at the mouth and against the delayed tide, and its elevation. Then the delays of the whole ría from the kit, and the maps of elevation, uncertainty, delay and emersion time. |
-| [`02_tide_per_image`](notebooks/02_tide_per_image.ipynb) | The tide at the moment of each of the 97 images of 2023–2025: flood or ebb, the delayed level of each section, and how much of the tide range the images cover. |
-| [`03_new_ria_openeo`](notebooks/03_new_ria_openeo.ipynb) | How to start a new estuary through openEO, shown for the Marismas de Santoña: the box and its check, a credit estimate and the download call. The download is off by default (`RUN_DOWNLOAD = False`). |
-
-The notebooks are stored with their outputs. Open them on
-[Binder](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
-(nothing to install), read them on
-[nbviewer](https://nbviewer.org/github/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26/notebooks/),
-or run them locally. JupyterLab is not in `requirements.txt`: `pip install jupyterlab`,
-then `jupyter lab`, or run a notebook without opening it:
-
-```bash
-jupyter nbconvert --to notebook --execute notebooks/01_marea_villaviciosa.ipynb
-```
-
-which writes `notebooks/01_marea_villaviciosa.nbconvert.ipynb` (git ignores it). Notebook
-01 runs in about a minute, 02 and 03 in seconds. On Windows, a pyzmq warning about the
-"Proactor event loop" and a numpy warning that "ndarray size changed" may appear; both are
-harmless.
-
-## Map your own estuary
-
-Once you have a Sentinel-2 cube of your estuary (notebook 03 shows the openEO download)
-and a tide series, [`scripts/quickstart.py`](scripts/quickstart.py) makes the maps in one
-call, `map_estuary(cube, tide, out_dir, mouth_side=...)`; its docstring lists every
-argument. [`guide/NEW_ESTUARY.md`](guide/NEW_ESTUARY.md) opens with a
-[short version](guide/NEW_ESTUARY.md#short-version) in three steps (download the cube, get
-the tide model, run `quickstart.py`), then explains the rest: what you need, the rules for
-drawing the box (reach the open sea, keep the head of tide inside, one exit to the sea,
-one estuary per box), a box check that runs offline on the Villaviciosa kit, the functions
-you call, what comes out and how to judge it.
-
 ## MAREA in six steps
 
 Each look at a pixel is a point on its flooding curve:
@@ -217,6 +53,197 @@ processing steps listed in its
 the guides and the code comments of notebook 03 use (the notebooks' headings number
 their own sections).
 
+## Explore the maps
+
+**The map viewer: <https://coastal-ai.github.io/Intertidal_analysis/>**. MAREA's maps of
+fourteen estuaries of northern Spain, with the elevation in m above NMMA, its
+uncertainty, the emersion time and the delay of the tide. Four are drawn inside masks
+cleaned by hand; the other ten are **preliminary**: drawn inside masks made by a rule,
+not checked by hand, and with no accuracy assessment.
+
+[![The map viewer showing the elevation of the Ría de Mundaka (Urdaibai) over an orthophoto, with the layer panel on the left.](guide/figures/viewer_mundaka.jpg)](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation)
+
+*The map viewer at the Ría de Mundaka (Urdaibai): elevation over the PNOA orthophoto
+(© Instituto Geográfico Nacional, CC BY 4.0 scne.es). Contains modified Copernicus
+Sentinel data.*
+
+| [Ría de Foz](https://coastal-ai.github.io/Intertidal_analysis/#site=foz&layer=elevation) | [Ría del Eo](https://coastal-ai.github.io/Intertidal_analysis/#site=eo&layer=elevation) | [Ría de Villaviciosa](https://coastal-ai.github.io/Intertidal_analysis/#site=villaviciosa&layer=elevation) | [Ría de Mundaka](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation) |
+|:-:|:-:|:-:|:-:|
+| [<img src="site/public/data/sites/foz/thumb.webp" alt="Elevation map of the Ría de Foz" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=foz&layer=elevation) | [<img src="site/public/data/sites/eo/thumb.webp" alt="Elevation map of the Ría del Eo" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=eo&layer=elevation) | [<img src="site/public/data/sites/villaviciosa/thumb.webp" alt="Elevation map of the Ría de Villaviciosa" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=villaviciosa&layer=elevation) | [<img src="site/public/data/sites/mundaka/thumb.webp" alt="Elevation map of the Ría de Mundaka" height="110">](https://coastal-ai.github.io/Intertidal_analysis/#site=mundaka&layer=elevation) |
+
+* **Four maps drawn inside masks cleaned by hand**, from west to east: the Ría de Foz, the
+  Ría del Eo, the Ría de Villaviciosa and the Ría de Mundaka (Urdaibai). Each map is drawn
+  only inside an intertidal mask cleaned by hand, which removes the water-detection noise
+  at sea and along the open coast.
+* **Ten preliminary maps**, marked "preliminary" in the viewer, from west to east: the Ría
+  de Corme e Laxe, the inner part of the Ría de Noia, the Ría de Betanzos, the Ría de
+  Ferrol, the Ría de Ortigueira, the Ría de Tina Menor, the Ría de San Vicente de la
+  Barquera, the Ría de Mogro, the Bahía de Santander and the Marismas de Santoña. Each is
+  drawn only inside an intertidal mask made by a rule, which nobody checked by hand and
+  which keeps some noise; no survey of the ground was compared with them, so their
+  accuracy is not assessed. The maps of Ferrol and Tina Menor are patchy, and at the five
+  Cantabrian sites the heights are tied to NMMA indirectly, through the coast's mean sea
+  level of 2011. What to keep in mind at each site:
+  [`guide/DATA.md`](guide/DATA.md#1-the-sites).
+
+| layer | what it shows |
+|---|---|
+| Elevation | height of the ground, in m above NMMA (mean sea level at Alicante) |
+| Uncertainty | width σ of each pixel's dry-to-wet transition, in m: the wider it is, the less sharply the level at which the pixel floods is defined (not a standard error) |
+| Emersion time | share of the hours the ground is out of the water, in % |
+| Delay | how many minutes after the mouth the tide reaches each pixel; at Mundaka, with lines of equal delay |
+| Tide lines | elevation contours at the tidal datums (low water of neap tides, mean sea level, …) |
+
+The delay of each pixel comes from a smooth curve through the section delays, which pulls
+the innermost values down: at Mundaka the map's delays reach 80 min, while MAREA estimates
+97 min for the last section. How the heights, layers and files are defined:
+[`guide/DATA.md`](guide/DATA.md). To run the viewer on your own machine:
+[Website](#website).
+
+## About this repository
+
+Companion repository of our poster at **CARTOGRASS 2026**, Simposio Ibérico de Cartografía
+y Seguimiento de Praderas Marinas, Cartagena, 24–26 November 2026, by
+**Jorge Alías Álvarez**¹, **Fernando García-González**² and **Pablo González**¹
+(¹ University of Oviedo, Spain; ² Instituto Español de Oceanografía, IEO-CSIC, Spain).
+
+**How to cite:** Alías Álvarez, J., García-González, F., González, P. (2026). MAREA: a
+method for mapping intertidal topography using Sentinel-2 openEO data cubes. Poster,
+CARTOGRASS 2026, Cartagena, Spain. ([BibTeX](#how-to-cite))
+
+**Try it:** [notebook 01 on Binder](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
+(nothing to install) ·
+[reproduce the Villaviciosa map](#reproduce-the-villaviciosa-map-offline-about-a-minute)
+(about 10 minutes with the installation) ·
+[notebooks](#notebooks) ·
+[map your own estuary](guide/NEW_ESTUARY.md) · [how MAREA works](guide/METHOD.md)
+
+[![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Text, figures and data: CC BY 4.0](https://img.shields.io/badge/text%2C%20figures%20%26%20data-CC%20BY%204.0-lightgrey.svg)](LICENSE-docs.md)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
+[![nbviewer](https://img.shields.io/badge/notebooks-nbviewer-orange.svg)](https://nbviewer.org/github/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26/notebooks/)
+
+## Reproduce the Villaviciosa map (offline, about a minute)
+
+Python 3.13. Installing takes about 8 minutes and 1 GB of disk (pip's "Installing collected
+packages" step stays silent for about 5 minutes); the first map follows in about a minute.
+
+```bash
+git clone --depth 1 --branch CARTOGRASS26 https://github.com/coastal-AI/Intertidal_analysis.git
+cd Intertidal_analysis
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -X utf8 scripts/reproduce_villaviciosa.py --from-kit replication
+```
+
+**On Windows**, clone into a short folder such as `C:\src\`: some of the installed files have
+long paths, and pip fails when the clone's folder path is longer than about 110 characters
+(or enable long paths in Windows, which needs an administrator). Calling the environment's
+Python directly avoids PowerShell's activation rules:
+
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -X utf8 scripts\reproduce_villaviciosa.py --from-kit replication
+```
+
+With conda or mamba, create the environment with `mamba env create -f environment.yml` and
+`mamba activate marea-cartograss26` instead of the `venv` and `pip` lines.
+
+Run everything from the repository root: the library is used from the checkout, not
+installed with pip. To work from a folder of your own, set `PYTHONPATH` once, in the
+repository root, so that Python finds the library and the helpers of `scripts/` from any
+folder of that shell. A script saved outside the repository needs this even when you
+start it from the root, because Python looks for modules next to the script, not in the
+folder you start it from. On Linux and macOS (and in Git Bash):
+
+```bash
+export PYTHONPATH="$PWD:$PWD/scripts"
+```
+
+In Windows PowerShell:
+
+```powershell
+$env:PYTHONPATH = "$PWD;$PWD\scripts"
+```
+
+`marea.reconstruct` still finds `configs/m2.yaml`, which it reads next to the package. The
+paths in the examples (`replication/...`, `data/...`) are relative to the repository root:
+from another folder, give them in full. The packages pyTMD and eo-tides are needed only
+for a tide model (Route B of [`guide/REPRODUCE.md`](guide/REPRODUCE.md), or a new estuary
+without a tide series of your own), and openeo only for the download; `requirements.txt`
+installs them all the same.
+
+The `reproduce_villaviciosa.py` command rebuilds the published 10 m map of the Ría de
+Villaviciosa ([`products_marea/`](products_marea/README.md)) from the offline kit in
+[`replication/`](replication/README.md): the delay of each section, then the elevation
+and uncertainty of every pixel. It needs no account, no download and no tide model. It
+runs in about a minute (57 s on a Windows 10 laptop) with about 0.6 GB of memory,
+compares its result with the published files array by array, and ends with:
+
+```
+PASS: 41 of 41 checks passed; total ... s
+```
+
+It writes into `runs/villaviciosa_repro/`:
+
+* `figure.png`: open it first. The elevation map, the delay against the distance from the
+  mouth and the hypsometric curve; its labels are in Spanish (*cota* is elevation).
+* `marea.npz` and `result.json`: the product, as described in
+  [`guide/DATA.md`](guide/DATA.md#7-the-villaviciosa-product-files).
+* `record.json` and `provenance.json`: the record dates, the versions and the inputs.
+
+It writes no GeoTIFF and no emersion time. For a GeoTIFF of the elevation, use the snippet
+of [`guide/DATA.md`](guide/DATA.md#7-the-villaviciosa-product-files), pointed at
+`runs/villaviciosa_repro/marea.npz`; notebook 01 maps the emersion time.
+
+The tests, the full route from the Sentinel-2 cube and what each check compares:
+[`guide/REPRODUCE.md`](guide/REPRODUCE.md).
+
+## Notebooks
+
+| notebook | what it does |
+|---|---|
+| [`01_marea_villaviciosa`](notebooks/01_marea_villaviciosa.ipynb) | MAREA step by step on real data. In a 2.7 km block of the Ría de Villaviciosa: one pixel's looks against the tide at the mouth and against the delayed tide, and its elevation. Then the delays of the whole ría from the kit, and the maps of elevation, uncertainty, delay and emersion time. |
+| [`02_tide_per_image`](notebooks/02_tide_per_image.ipynb) | The tide at the moment of each of the 97 images of 2023–2025: flood or ebb, the delayed level of each section, and how much of the tide range the images cover. |
+| [`03_new_ria_openeo`](notebooks/03_new_ria_openeo.ipynb) | How to start a new estuary through openEO, shown for the Marismas de Santoña: the box and its check, a credit estimate and the download call. The download is off by default (`RUN_DOWNLOAD = False`). |
+
+The notebooks are stored with their outputs. Open them on
+[Binder](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb)
+(nothing to install), read them on
+[nbviewer](https://nbviewer.org/github/coastal-AI/Intertidal_analysis/tree/CARTOGRASS26/notebooks/),
+or run them locally. The packages of `requirements.txt` run a notebook from top to bottom,
+from the repository root:
+
+```bash
+jupyter execute notebooks/02_tide_per_image.ipynb
+```
+
+It saves nothing: the stored notebook keeps its outputs (`--inplace` would write the new
+ones into it). On Windows, set `PYTHONUTF8=1` first (`$env:PYTHONUTF8 = "1"` in
+PowerShell): without it Jupyter reads the notebook in the Windows code page, and a saved
+run garbles its accents and dashes. Notebook 01 runs in about a minute, 02 and 03 in
+seconds. JupyterLab is needed only to open the notebooks and work in them: it is not in
+`requirements.txt` (`pip install jupyterlab`, then `jupyter lab`). On Windows, a pyzmq
+warning about the "Proactor event loop" and a numpy warning that "ndarray size changed" may
+appear; both are harmless.
+
+## Map your own estuary
+
+Once you have a Sentinel-2 cube of your estuary (notebook 03 shows the openEO download)
+and a tide series, [`scripts/quickstart.py`](scripts/quickstart.py) makes the maps in one
+call, `map_estuary(cube, tide, out_dir, mouth_side=...)`; its docstring lists every
+argument. [`guide/NEW_ESTUARY.md`](guide/NEW_ESTUARY.md) opens with a
+[short version](guide/NEW_ESTUARY.md#short-version) in four steps (download the cube,
+check the box, get the tide model, run `quickstart.py`), then explains the rest: what you
+need, the five rules for drawing the box (reach the open sea, keep the head of tide
+inside, one exit to the sea, one estuary per box, enough flat), a box check that runs
+offline on the Villaviciosa kit, a rehearsal of the whole chain that runs offline on the
+notebook sample in about 20 seconds, the functions you call, what comes out and how to
+judge it. `quickstart.py` also takes a tide series of your own (`--tide-csv`) and saved
+acquisition times (`--overpass-times`).
+
 ## Limits
 
 * Heights are read on the zero of the tide used; the viewer adds a constant per site to
@@ -243,7 +270,7 @@ products_marea/          the 10 m MAREA product of the Ría de Villaviciosa, 202
 products_villaviciosa/   the reference 10 m grid of Villaviciosa
 notebooks/               three example notebooks, with their outputs
 data/                    a small real sample for notebooks 01 and 02
-tests/                   unit tests and a fast end-to-end reproduction
+tests/                   unit tests, a fast end-to-end reproduction and quickstart.py run offline
 guide/                   how MAREA works, how to reproduce it, a new estuary, the data
 site/                    source of the map viewer (React, Tailwind CSS, MapLibre GL JS)
 docs/                    the built map viewer, served by GitHub Pages

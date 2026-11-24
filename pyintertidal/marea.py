@@ -53,7 +53,8 @@ Words of the code, and the words of METHOD.md
     the width of the flooding curve (m). The maps show it as the uncertainty
     of ``z``, but it is not a standard error (METHOD.md, section 8).
 
-The keys of ``result.json`` are in Spanish and kept for compatibility:
+The keys of ``result.json`` are in Spanish, as in the published product
+(``products_marea/result.json``):
 ``sitio`` site; ``estado`` status (``"ok"``; ``"sin_intermareal"``: fewer
 than 3,000 intertidal pixels; ``"pocas_escenas"``: fewer than ``min_scenes``
 scenes); ``n_escenas`` scenes in the record; ``n_px`` intertidal pixels;
@@ -92,9 +93,9 @@ TAU_DETECT_MIN = 0.0      # no detection threshold: the fitted lag of every
                           # would set small but real delays to 0). Negative
                           # lags are clipped to 0 by causality, band by band.
                           # With 0 the test |tau| > TAU_DETECT_MIN in
-                          # reconstruct changes nothing; the constant and
-                          # reconstruct's tau_detect_min stay so that older
-                          # calls still run.
+                          # reconstruct changes nothing: this constant, the
+                          # default of reconstruct's tau_detect_min, has no
+                          # effect in this edition.
 #: Per-pixel quality rule (2026-10-06): an
 #: elevation is kept only if it is INTERPOLATED from the pixel's own record,
 #: i.e. at least this many clear observations were taken with the (lagged)
@@ -256,9 +257,8 @@ def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
     min_bracket : int
         The quality rule (:data:`QUALITY_MIN_BRACKET` in the products): keep
         ``z`` only with at least this many clear looks whose level ``h`` is
-        below it and as many above it. 0 (the default here) switches it off
-        and leaves the historical behaviour of every older experiment
-        unchanged; :func:`reconstruct` uses 3 by default, and the Villaviciosa
+        below it and as many above it. 0 (the default here) switches it
+        off; :func:`reconstruct` uses 3 by default, and the Villaviciosa
         product was made with 0.
 
     Returns
@@ -299,7 +299,7 @@ def invert_series(Y, C, h, lo=None, hi=None, mu_points=50, chunk=4000,
     return z, sg_out
 
 
-_invert = invert_series          # backward-compatible internal alias
+_invert = invert_series          # the name reconstruct calls below: the same function
 
 
 def build_bank(lat, lon, times, bank_taus=None, model="EOT20",
@@ -397,7 +397,12 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
        and ``build_record``; ``scripts/quickstart.py`` chains them);
     2. the mouth (the permanent sea on the frame's edge ``mouth_side``) and
        the distance ``s`` of every pixel from it, through water and
-       intertidal pixels only;
+       intertidal pixels only (with ``region_mask``, only the region's
+       intertidal pixels). With no permanent sea on that edge there is
+       no mouth, and the run goes on without distances or delays, with
+       ``estado`` ``"ok"``: result.json then shows ``s_max_km`` null,
+       ``centros_km`` [0.0] and ``con_operador`` false (see
+       :func:`pyintertidal.geometry.mouth_seeds`);
     3. the scenes with an overpass time and their mouth level, read from
        ``boundary`` (else from the tide model ``model`` at the centre of the
        frame's box);
@@ -432,25 +437,31 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
         Site name in the messages and in result.json (default: the cube's
         file name).
     n_bands : int
-        Not used: kept only so that older calls still run. The estuary's
-        length sets the number of sections (``band_km``).
+        Has no effect in this edition: the estuary's length sets the number
+        of sections (``band_km``).
     pixel_m : float
         Pixel size (m) of the cube's projected grid, for ``s`` and the areas.
     tau_detect_min : float
-        Kept so that older calls still run; leave it at the default 0 (see
-        :data:`TAU_DETECT_MIN`), with which every fitted section delay is
-        applied. A positive value sets every section delay whose size is at
-        most that many minutes to 0.
+        At the default 0 (:data:`TAU_DETECT_MIN`) it has no effect in this
+        edition: every fitted section delay is applied. Leave it there. A
+        positive value sets every section delay whose size is at most that
+        many minutes to 0.
     model, tide_dir : str
         The pyTMD tide model and the folder of its files, used only when
         ``boundary`` is None.
     region_mask : (H, W) bool array, optional
-        Restricts the INTERTIDAL pixels to one region while the mouth anchor
-        and the geodesic distance still come from the whole frame. This is
-        how a branched system is analysed honestly: bands of ``s`` over a
-        whole ría put different branches — different clocks — into the same
-        band, and their lags average away. Banding one branch at a time
-        removes the cancellation without touching the estimator.
+        Restricts the INTERTIDAL pixels to one region. The mouth anchor still
+        comes from the whole frame's permanent sea, but the geodesic distance
+        ``s`` runs only through the permanent sea and the region's own
+        intertidal pixels: flats outside the mask are not crossed, so a
+        region joined to the mouth only through them gets longer distances,
+        or none (then no delay is fitted, and result.json shows
+        ``s_max_km`` null). Keep in the mask the flats that join the region
+        to the mouth. This is how a branched system is analysed honestly:
+        bands of ``s`` over a whole ría put different branches — different
+        clocks — into the same band, and their lags average away. Banding
+        one branch at a time removes the cancellation without touching the
+        estimator.
     boundary : BoundaryProvider, optional
         The water level at the mouth: anything whose ``levels(times)``
         returns metres for naive-UTC instants — ``PyTMDBoundary`` (a tide
@@ -614,9 +625,9 @@ def reconstruct(cube_path, out_dir, name=None, n_bands=6, pixel_m=10.0,
     # per section (METHOD Eq. 3), fitted only when more than 5,000 pixels
     # have a distance s
     if np.isfinite(s_km).sum() > 5000:
-        # bands of fixed length along the mouth distance (``n_bands`` is
-        # kept in the signature for compatibility; the estuary's length
-        # sets the count), monotone lag profile, scene-bootstrap interval.
+        # bands of fixed length along the mouth distance (``n_bands`` has
+        # no effect in this edition; the estuary's length sets the count),
+        # monotone lag profile, scene-bootstrap interval.
         # The settings come from configs/m2.yaml, read from the source tree:
         # seed, sigma0_m (unused once sigma_perfil_m is given), sigma_perfil_m
         # (six widths profiled per pixel), z_puntos (60 elevations over the

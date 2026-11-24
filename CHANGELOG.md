@@ -22,6 +22,52 @@
 * Size caps: the data folder may hold 50 MB (about 42 MB now) and the built site 60 MB (about 44 MB now); a visitor
   downloads only the site they open.
 
+## Documentation pass and an offline command line (2026-11-24)
+
+The guides were checked against the code, and their offline examples were run again. The products and the
+replication kit are unchanged.
+
+* `scripts/quickstart.py`: two new options let the command line run offline. `--tide-csv` takes the tide at the
+  mouth from a CSV file of your own (the columns `time` and `level_m`), read by the new function `read_tide_csv`
+  into a `marea_tools.TideSeries`, in place of `--lat`, `--lon`, `--model` and `--tide-dir`; before the run starts,
+  the command checks that the series reaches every instant the run reads (the new function `tide_span_needed`).
+  `--overpass-times` reads the acquisition times from a saved `overpass_times.json` instead of the STAC catalogue.
+  The call with `--lat` and `--lon` works as before, except that `--tide`, an abbreviation of `--tide-dir`, is now
+  ambiguous.
+* New test file `tests/test_quickstart_offline.py`: the CSV reader, the span check, the argument checks, and the
+  command line run offline on the notebook sample (marked slow).
+* `pyintertidal/`, `scripts/marea_tools.py` and `tests/conftest.py`: docstrings and comments only, except one
+  printed label: `ElevationResult.summary` prints "transition width σ" instead of "sub-pixel relief σ". Corrected
+  in them: the time zones of the tide providers (`GaugeBoundary` and `PyTMDBoundary` drop an offset, `TideSeries`
+  converts it), the IOC gauge route (it needs a station list that this edition does not ship), the box without a
+  mouth (the run goes on and fits no delay), the distances with `region_mask` (they run only through the permanent
+  sea and the mask's own flats), the SCL classes (ESA's stop at 11), the frame of a study area, the format of
+  `overpass_times.json`, and the parameters that have no effect in this edition.
+* README: the six steps of the method now follow the opening paragraph. The section that rebuilds the published map
+  is called "Reproduce the Villaviciosa map (offline, about a minute)", so that "quick start" now means only
+  `scripts/quickstart.py`, the one-call route for a new estuary.
+  New: how to use the library from a folder of your own (`PYTHONPATH`), and how to run a notebook with the pinned
+  packages (`jupyter execute`, with `PYTHONUTF8=1` on Windows); JupyterLab is needed only to open the notebooks.
+* `guide/NEW_ESTUARY.md`: the short version checks the box before the fit, and section 7 starts with the mouth,
+  which the quality table cannot see. An offline rehearsal of `map_estuary` on the notebook sample, in Python and
+  from a shell, with the box check that shows why its delays are not the product's and its maps are not to be used
+  (the sample reaches no open sea). The two new options of `scripts/quickstart.py`, how to save the acquisition
+  times, and a recipe for the tide coverage of a record. Corrected: `map_estuary` asks the catalogue for the times
+  over the cube's own dates, and only `marea.reconstruct` called on its own is limited to 2016-2025; `map_estuary`
+  runs step 4 before step 2; its `min_scenes` is 40; with `region_mask` the distances run only through the mask's
+  own flats. Added: give every instant in UTC (`GaugeBoundary` drops a time-zone offset without converting it), a
+  series of your own is bridged across its gaps, the IOC gauge route needs a station list this edition does not
+  ship, and a new estuary needs no site file.
+* The width sigma is described one way in the README, `guide/METHOD.md` and `guide/DATA.md`: it is not a standard
+  error of the height, but a wider transition defines the level at which the pixel floods less sharply, which is
+  why the maps show it as the uncertainty.
+* `guide/REPRODUCE.md`: the publication guard is not the last test file (it runs third); the tests now include the
+  offline command line; step 11 of Route A makes the hypsometry only, under the step's full name.
+* `data/README.md`: the notebook sample reaches no open sea, so the new-estuary chain run on it checks the
+  mechanics only; `data/SHA256SUMS.txt` holds the sha256 of the new text.
+* Notebook 03: one comment in the chain cell marks its tide point as the inland placeholder to replace; its outputs
+  are unchanged.
+
 ## cartograss26 (2026-11-23)
 
 First version of this branch: the companion repository of the poster *MAREA: a method for mapping intertidal

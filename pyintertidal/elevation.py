@@ -762,9 +762,7 @@ class ElevationResult:
         if v.any():
             print(f"  elevation [{np.nanmin(self.mu):.2f}, "
                   f"{np.nanmax(self.mu):.2f}] m")
-            # the σ of this line is the transition width, not a measured
-            # relief inside the pixel (see the module docstring)
-            print(f"  sub-pixel relief σ: median "
+            print(f"  transition width σ: median "
                   f"{np.nanmedian(self.sigma[v]) * 100:.0f} cm | "
                   f"saturated {100 * np.nanmean(self.sigma[v] >= 0.60):.0f}%")
             print(f"  uncertainty: median "

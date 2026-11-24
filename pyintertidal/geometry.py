@@ -44,9 +44,22 @@ import numpy as np
 def mouth_seeds(sea, side="any"):
     """The seaward opening: permanent-water pixels touching the image border.
 
-    Every permanent-water pixel on the chosen edge(s) counts as mouth. An
-    estuary clipped away from the sea yields no seeds, which is a loud error
-    and should be (at Villaviciosa the open sea reaches the border).
+    Every permanent-water pixel on the chosen edge(s) counts as mouth. When
+    there is none (an estuary clipped away from the sea, or a ``side`` that
+    the sea does not reach) this function raises ``ValueError``, but MAREA
+    does not stop: :func:`pyintertidal.marea.reconstruct` catches the error
+    and goes on without a mouth. No pixel then gets a distance ``s``, no
+    delay is fitted, every pixel is fitted on the tide at the mouth, and
+    ``estado`` is still ``"ok"``. The signs are in the run's
+    ``result.json``: ``s_max_km`` is null (no pixel has a distance),
+    ``centros_km`` is ``[0.0]``, ``tau_usado_min`` is ``[0.0]`` and
+    ``con_operador`` is false; in ``marea.npz``, ``s_km`` is NaN and
+    ``band`` is 0 everywhere. (A mouth that 5,000 pixels or fewer reach
+    also gives ``centros_km`` ``[0.0]`` and ``con_operador`` false, but
+    ``s_max_km`` is then a number, or null when no pixel reaches the mouth,
+    e.g. a ``region_mask`` cut off from it.) The box check of
+    ``guide/NEW_ESTUARY.md`` (section 3) shows the mouth before any fit. At
+    Villaviciosa the open sea reaches the north and east borders.
 
     Parameters
     ----------

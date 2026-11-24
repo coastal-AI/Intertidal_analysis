@@ -68,7 +68,7 @@ def load_overpass(path, corrections=CORRECTIONS):
     Parameters
     ----------
     path : str
-        A JSON file ``{'YYYY-MM-DD': 'YYYY-MM-DDTHH:MM:SS'}`` (UTC), such as
+        A JSON file ``{'YYYY-MM-DD': 'YYYY-MM-DD HH:MM:SS'}`` (UTC), such as
         ``products_marea/overpass_times.json``.
     corrections : str or None
         The corrections table (default ``configs/overpass_corrections.json``);

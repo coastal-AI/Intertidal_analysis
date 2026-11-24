@@ -40,10 +40,23 @@ MAREA itself only calls ``levels``. Its times are UTC instants in ascending
 order — naive, as MAREA passes them, or tz-aware UTC — and the datum of the
 levels is the datum of every elevation derived from them (EOT20: about mean
 sea level; a gauge: its own zero, unless demeaned as :func:`make_boundary`
-does). The providers used with MAREA are :class:`PyTMDBoundary` (a tide
-model), :class:`GaugeBoundary` (a record), and :func:`make_boundary` (a
-model, the nearest gauges, or their consensus); the replication kit adds
-``TableBoundary`` in ``scripts/marea_tools.py``.
+does). An instant with another offset is NOT converted by the providers of
+this module: it is read at its clock time, as if it were UTC (see
+:meth:`BoundaryProvider.levels`). The providers used with MAREA are
+:class:`PyTMDBoundary` (a tide model), :class:`GaugeBoundary` (a record),
+and :func:`make_boundary` (a model, the nearest IOC gauges, or their
+consensus); ``scripts/marea_tools.py`` adds ``TableBoundary`` (the
+replication kit's table) and ``TideSeries`` (a series of your own, as
+``scripts/quickstart.py --tide-csv`` reads it), which both convert an offset
+to UTC.
+
+The IOC gauge route (:func:`make_boundary` with ``n_gauges``) is not usable
+in this edition as shipped: it reads the list of IOC stations from
+``data_v4/gauges/ioc_stations.json`` (:func:`nearest_gauges`), which the
+repository does not include, and without it the call raises
+``FileNotFoundError`` before any download. With a station list of your own
+in that file, the records are downloaded from the IOC service, which needs
+the network.
 
 What a sun-synchronous archive can and cannot see
 -------------------------------------------------
@@ -103,7 +116,11 @@ def model_tides(**kwargs):
 
 
 def hours_since_epoch(times):
-    """Hours from :data:`EPOCH`, the common phase reference."""
+    """Hours from :data:`EPOCH`, the common phase reference.
+
+    A time zone is dropped, not converted: an instant is counted at its clock
+    time, as if it were UTC, so pass UTC instants.
+    """
     import pandas as pd
 
     idx = pd.DatetimeIndex(pd.to_datetime(times))
@@ -174,10 +191,19 @@ class BoundaryProvider:
 
         Notes
         -----
-        :class:`PyTMDBoundary` and :class:`GaugeBoundary` drop a time zone
-        WITHOUT converting it (``tz_localize(None)``): an instant given as
-        12:04+01:00 is read as 12:04 UTC, one hour off. Convert first, e.g.
-        ``pd.DatetimeIndex(t).tz_convert("UTC").tz_localize(None)``.
+        Time zones: :class:`PyTMDBoundary` and :class:`GaugeBoundary` drop an
+        offset WITHOUT converting it (``tz_localize(None)``), so an instant
+        is read at its clock time, as if it were UTC. Asked for 13:00+01:00
+        (12:00 UTC), they return the level of 13:00 UTC, one hour late. A
+        UTC instant (naive, ``Z`` or ``+00:00``) is read correctly, and a
+        list that mixes offsets, or naive instants and offsets, raises
+        ``ValueError`` (pandas). Convert first, e.g. with
+        ``pd.DatetimeIndex(pd.to_datetime(t, utc=True)).tz_localize(None)``,
+        which takes a list, an array or a pandas Series of instants that all
+        carry an offset, or all carry none (naive ones are then taken as
+        UTC; a mix of the two raises ``ValueError``).
+        ``scripts/marea_tools.TideSeries`` and ``TableBoundary`` convert an
+        offset to UTC themselves.
         """
         raise NotImplementedError
 
@@ -223,7 +249,9 @@ class PyTMDBoundary(BoundaryProvider):
         calls it 16 times for the bank and once per distinct non-zero pixel
         delay.
         The values come back sorted by time, so ``times`` must be in
-        ascending order to line up with them. ``times`` are naive UTC (see
+        ascending order to line up with them. ``times`` are naive UTC: an
+        instant with an offset is predicted at its clock time, as if it were
+        UTC (13:00+01:00 at 13:00 UTC, one hour late; see
         :meth:`BoundaryProvider.levels`).
 
         Examples
@@ -287,6 +315,18 @@ class GaugeBoundary(BoundaryProvider):
         A pandas time offset: an instant farther than this from both of its
         neighbouring samples reads NaN (default ``"1h"``).
 
+    Time zones: the record's ``times`` and the instants asked of
+    :meth:`levels` are both read at their clock time, as if they were UTC:
+    an offset is dropped, not converted. Asked for 13:00+01:00 (12:00 UTC),
+    it returns the record's level at 13:00 UTC, and a record written as
+    13:00+01:00 is stored as 13:00. Give UTC instants (naive, ``Z`` or
+    ``+00:00``), or convert them first with
+    ``pd.DatetimeIndex(pd.to_datetime(t, utc=True)).tz_localize(None)``
+    (for instants that all carry an offset, or all none).
+    ``scripts/marea_tools.TideSeries`` reads the same kind of record and
+    converts an offset to UTC; it also raises outside the record where this
+    class returns NaN.
+
     Examples
     --------
     The EOT20 series every 10 minutes stored in the notebook sample, as a
@@ -325,7 +365,9 @@ class GaugeBoundary(BoundaryProvider):
         """The record at ``times`` (naive UTC), by linear interpolation.
 
         In the order given; NaN outside the record and where both
-        neighbouring samples are farther than ``max_gap``.
+        neighbouring samples are farther than ``max_gap``. An instant with an
+        offset is read at its clock time, as if it were UTC (see the class
+        docstring).
         """
         import pandas as pd
 
@@ -485,7 +527,9 @@ def nearest_gauges(lat, lon, n, stations_path="data_v4/gauges/ioc_stations.json"
     ``stations_path`` is a JSON list of the IOC sea-level stations (keys
     ``Code``, ``Location``, ``Lat``, ``Lon``). This edition of the repository
     does not ship the default file: without it the call raises
-    ``FileNotFoundError``. Only stations within ``max_km`` are returned.
+    ``FileNotFoundError``, and so does the gauge route of
+    :func:`make_boundary`, which calls this function first. Only stations
+    within ``max_km`` are returned.
     """
     import json
 
@@ -515,7 +559,10 @@ def fetch_ioc(code, t0, t1, cache_dir="data_v4/gauges", chunk_days=30):
 
     Cached as ``ioc_{code}_{t0}_{t1}.json`` in ``cache_dir`` so the loader
     :func:`pyintertidal.gauges.load_cached_ioc` finds it; returns its tidy
-    frame (time, level_m) or None when the station has no data.
+    frame (time, level_m) or None when the station has no data. The download
+    needs the network. :func:`make_boundary` calls it for the stations that
+    :func:`nearest_gauges` finds in the IOC station list, which this edition
+    does not ship.
     """
     import json
     import os
@@ -597,8 +644,13 @@ def make_boundary(aoi, tide_model="EOT20", n_gauges=None,
     vertex list or a bbox dict). Each gauge record is despiked and its median
     subtracted, so gauges and model share a datum near mean sea level; a
     gauge with fewer than 1,000 samples in ``period`` is skipped.
-    ``n_gauges`` needs the IOC station list of :func:`nearest_gauges`, which
-    this edition does not ship.
+
+    In this edition only ``tide_model`` works as shipped. ``n_gauges`` needs
+    the IOC station list of :func:`nearest_gauges`
+    (``data_v4/gauges/ioc_stations.json``), which the repository does not
+    include: without it the call raises ``FileNotFoundError`` before any
+    download. With a station list of your own in that file, the records are
+    downloaded from the IOC service (network) into ``cache_dir``.
 
     Examples
     --------

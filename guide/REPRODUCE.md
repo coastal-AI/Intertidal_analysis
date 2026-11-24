@@ -56,9 +56,11 @@ them, but the file installs them all.
 The library is used from the checkout, not installed with pip. Run every command from
 the repository root (the notebooks find it themselves), and keep
 [`configs/`](../configs/) next to `pyintertidal/`: `marea.reconstruct` reads
-`configs/m2.yaml` from there. The scripts write into `runs/`, which git ignores. On
-Windows, run Python with `-X utf8` (or set `PYTHONUTF8=1`), as the commands on this page
-do.
+`configs/m2.yaml` from there. To import the library from a folder of your own, set
+`PYTHONPATH` to the repository root and its `scripts/` folder, as the
+[README](../README.md#reproduce-the-villaviciosa-map-offline-about-a-minute) shows. The
+scripts write into `runs/`, which git ignores. On Windows, run Python with `-X utf8` (or
+set `PYTHONUTF8=1`), as the commands on this page do.
 
 Check the environment before a run:
 
@@ -132,10 +134,14 @@ its last line reads `PASS: 37 of 37 checks passed, 4 skipped (--fast); total 20 
 script exits with code 0 only if every check passes. It has been run on Windows and Linux
 with Python 3.13.3.
 
-Step 11 of Route A writes the product files only: no GeoTIFF and no emersion time, despite
-the step's name. Open `runs/villaviciosa_repro/figure.png` first (its labels are in
-Spanish; [section 8](#8-what-a-run-folder-holds)). For a GeoTIFF of the elevation, use the
-snippet of [`DATA.md`](DATA.md#7-the-villaviciosa-product-files) on
+The line of step 11 gives the step's full name from
+[`METHOD.md`](METHOD.md#10-the-steps-in-the-code), "Make the products: hypsometry,
+GeoTIFFs, emersion time". Route A makes only the first of the three, the hypsometry, and
+writes the files listed on that line; the GeoTIFFs and the emersion time are made by the
+chain for a new estuary ([`NEW_ESTUARY.md`](NEW_ESTUARY.md#5-run-the-chain)). Open
+`runs/villaviciosa_repro/figure.png` first (its labels are in Spanish;
+[section 8](#8-what-a-run-folder-holds)). For a GeoTIFF of the elevation, use the snippet of
+[`DATA.md`](DATA.md#7-the-villaviciosa-product-files) on
 `runs/villaviciosa_repro/marea.npz`: it gives a GeoTIFF in EPSG:32630 with 29,728 values.
 Notebook 01 maps the emersion time.
 
@@ -176,28 +182,36 @@ behaves as it did when the product was made, not how close the map is to the gro
 python -X utf8 -m pytest
 ```
 
-The tests take about a minute (49 s on a Windows 10 laptop). They hold unit tests of the
+The tests take about a minute (64 s on a Windows 10 laptop). They hold unit tests of the
 library, a check of the notebook sample in [`data/`](../data/README.md) against the stored
-elevations, and the `--fast` run of Route A. The last test,
-`tests/test_publication_guard.py`, is for the maintainers: it checks that no file a commit
-would take holds personal paths or credentials, so it fails if you keep in the checkout an
-untracked file that names a folder of your own. Two of its checks need a word list that
-the maintainers keep outside the repository; without it they are reported as skipped.
+elevations, the `--fast` run of Route A, and the command line of `scripts/quickstart.py`
+run offline on the notebook sample with `--tide-csv` and `--overpass-times`, with checks of
+its CSV reader and of its arguments (`tests/test_quickstart_offline.py`). The two offline
+runs are marked `slow`: `python -X utf8 -m pytest -m "not slow"` leaves them out. One test
+file, `tests/test_publication_guard.py`, is for the maintainers: it checks that no file a
+commit would take holds personal paths or credentials, so it fails if you keep in the
+checkout an untracked file that names a folder of your own. Two of its checks need a word
+list that the maintainers keep outside the repository; without it they are reported as
+skipped.
 
 ## 5. Notebooks
 
 The three notebooks in [`notebooks/`](../notebooks/) are stored with their outputs. On a
-Windows 10 laptop, notebook 01 ran in 59 s, 02 in 14 s and 03 in 9 s. To run them
-yourself, install JupyterLab in the same environment (`pip install jupyterlab`; it is not
-in `requirements.txt`) and start `jupyter lab`, or run one without opening it:
+Windows 10 laptop, notebook 01 ran in 59 s, 02 in 14 s and 03 in 9 s. The environment of
+section 1 runs them from top to bottom (nbclient and ipykernel are pinned in
+`requirements.txt`):
 
 ```bash
-jupyter nbconvert --to notebook --execute notebooks/01_marea_villaviciosa.ipynb
+jupyter execute notebooks/02_tide_per_image.ipynb
 ```
 
-It writes `notebooks/01_marea_villaviciosa.nbconvert.ipynb`, which git ignores. On
-Windows, a pyzmq warning about the "Proactor event loop" and a numpy warning that
-"ndarray size changed" may appear; both are harmless. The notebooks also open on
+It saves nothing; `--inplace` would write the new outputs into the stored notebook. On
+Windows, set `PYTHONUTF8=1` first (`$env:PYTHONUTF8 = "1"` in PowerShell): without it
+Jupyter reads the notebook in the Windows code page, and a saved run garbles its accents
+and dashes. A pyzmq warning about the "Proactor event loop" and a numpy warning that
+"ndarray size changed" may appear on Windows; both are harmless. To open the notebooks and
+work in them, install JupyterLab in the same environment (`pip install jupyterlab`; it is
+not in `requirements.txt`) and start `jupyter lab`. The notebooks also open on
 [Binder](https://mybinder.org/v2/gh/coastal-AI/Intertidal_analysis/CARTOGRASS26?labpath=notebooks%2F01_marea_villaviciosa.ipynb).
 
 ## 6. Route B: from the authors' cube
@@ -227,7 +241,7 @@ from pyintertidal.boundary import PyTMDBoundary
 
 lat, lon = sites.get("villaviciosa").centroid             # (43.5090, -5.4161)
 eot20 = PyTMDBoundary("EOT20", lat, lon, directory="tide_models")
-print(eot20.levels(["2023-01-06 11:13:49"]))              # UTC; expected [-0.72246313]
+print(eot20.levels(["2023-01-06T11:13:49Z"]))             # Z: UTC; expected [-0.72246313]
 ```
 
 **Run.**

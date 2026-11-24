@@ -93,7 +93,8 @@ for d in np.unique(delay):
 # z.astype("float32") equals s["z_marea"].values[rows, cols], NaN included
 ```
 
-`notebooks/01_marea_villaviciosa.ipynb` runs this and more. The delay fit of check 4 uses the settings of
+`notebooks/01_marea_villaviciosa.ipynb` runs this and more, and section 5 of `guide/NEW_ESTUARY.md` runs the whole
+new-estuary chain on the sample as an offline rehearsal. The delay fit of check 4 uses the settings of
 `configs/m2.yaml`: sigma0 0.20 m, sigma profile 0.06, 0.10, 0.15, 0.22, 0.32 and 0.45 m, 60 elevation points, at
 most 1200 pixels per section, delays bounded to −45 to 180 min, monotone, and the random generator seeded with
 20260850. The delay fit reads the tide at 16 delays (−45 to 180 min, every 15 min) and interpolates between them;
@@ -105,6 +106,8 @@ those levels are columns of `tide_level_delayed` too.
   levels span −2.17 to +1.15 m, the continuous series −2.40 to +2.41 m. MAREA only searches elevations inside the
   record's range (global attribute `level_range_m`).
 - The block holds part of the ría only. See check 4 before re-estimating the delay from it.
+- The block reaches no open sea. Run through the new-estuary chain, MAREA takes the main channel, where the block's
+  edges cut it, for the mouth, so that rehearsal checks the mechanics only (`guide/NEW_ESTUARY.md`, section 5).
 
 ## Licences and attribution
 

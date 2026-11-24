@@ -18,7 +18,7 @@ What is here, by step
 * (3) :func:`screen` — the reference map and the usable scenes.
 * (5) :func:`build_record` (with :func:`record_rows`) — the record.
 * (6) :func:`site_boundary`, :class:`TableBoundary` (the replication kit's
-  tabulated tide), :class:`TideSeries` (a regular series).
+  tabulated tide), :class:`TideSeries` (a series, regular or not).
 * (11) :func:`emersion_time`, :func:`export_geotiffs`.
 * Checks: :func:`compare_products`, :func:`overlap_summary`,
   :func:`qa_table`, :func:`coverage`; environment and provenance:
@@ -398,7 +398,10 @@ def site_boundary(cfg, out_dir=None, tide_dir=None, verbose=True):
     * ``tide.n_gauges``: the model plus the N nearest IOC gauges
       (``make_boundary``), downloaded into ``tide.cache_dir`` or
       ``<out_dir>/gauges`` so the run folder keeps them; with
-      ``tide.model: null``, the gauges alone.
+      ``tide.model: null``, the gauges alone. Not usable in this edition as
+      shipped: it needs the IOC station list
+      ``data_v4/gauges/ioc_stations.json``, which the repository does not
+      include, and raises ``FileNotFoundError`` without it.
     * otherwise the model at :func:`tide_point` (``PyTMDBoundary``).
 
     ``cfg`` is :func:`load_site`'s dict; ``out_dir`` the run folder (for the
@@ -455,18 +458,32 @@ def site_boundary(cfg, out_dir=None, tide_dir=None, verbose=True):
 
 
 def load_overpass(path):
-    """Acquisition times from an ``overpass_times.json`` file (step 2).
+    """Acquisition times from an ``overpass_times.json`` file (step 2), as written.
 
-    Returns ``{'YYYY-MM-DD': pandas.Timestamp}`` (UTC, the datatake start),
-    sorted by date.
+    ``path`` is a JSON object ``{"YYYY-MM-DD": "YYYY-MM-DD HH:MM:SS"}`` of
+    UTC instants (the datatake start of each scene), as
+    ``products_marea/overpass_times.json``. Returns
+    ``{'YYYY-MM-DD': pandas.Timestamp}``, sorted by date.
 
-    Not the same as ``pyintertidal.overpass.load_overpass``: this reads the
-    file AS IT IS — the corrections of ``configs/overpass_corrections.json``
-    are not applied — and returns only the dict, whereas the library's
-    function applies them and returns ``(times, changed)``. No correction is
-    listed for Villaviciosa, so both give the same times for
-    ``products_marea/overpass_times.json``; for any other site use the
-    library's function.
+    This is the function that reads ``products_marea/overpass_times.json``
+    in this repository: ``scripts/reproduce_villaviciosa.py``,
+    ``replication/build_kit.py``, notebook 01, the example of the package
+    docstring and ``scripts/quickstart.py --overpass-times`` call it.
+    ``pyintertidal.overpass.load_overpass`` reads the same format and
+    differs in three ways:
+
+    * it puts right the known errors listed in
+      ``configs/overpass_corrections.json`` for a file whose path ends with
+      the listed name (one scene of ``products_urdaibai_10m/overpass_times.json``,
+      a file that is not in this repository), and raises ``ValueError`` when
+      that file holds, on the listed date, another instant than the wrong
+      one listed; this function applies no correction;
+    * it returns ``(times, changed)``, with ``changed`` ``{date: (wrong,
+      right)}``; this function returns the dict only;
+    * it keeps the file's order; this function sorts by date.
+
+    No correction is listed for Villaviciosa, so both give the same 1,380
+    times for ``products_marea/overpass_times.json``.
     """
     import pandas as pd
 
@@ -779,14 +796,24 @@ class TableBoundary(_Provider):
 
 
 class TideSeries(_Provider):
-    """A regular tide series read by linear interpolation.
+    """A tide series, regular or not, read by linear interpolation.
 
-    ``levels(times)`` interpolates between samples and raises ``ValueError``
-    for an instant outside the series. Used for emersion time, where the
-    tide is needed every 10 minutes over years.
+    ``levels(times)`` interpolates between samples (across a gap of any
+    length) and raises ``ValueError`` for an instant outside the series.
+    Used for emersion time, where the tide is needed every 10 minutes over
+    years, and as the tide at the mouth of ``scripts/quickstart.py
+    --tide-csv`` (``quickstart.read_tide_csv`` returns one).
 
-    ``times`` (N,) datetime-like (naive = UTC) and ``levels`` (N,) metres,
-    in any order (sorted here); ``name`` labels the series.
+    ``times`` (N,) datetime-like and ``levels`` (N,) metres, in any order
+    (sorted here); ``name`` labels the series. Here and in :meth:`levels` an
+    instant with an offset or a time zone is converted to UTC and a naive
+    one is taken as UTC (a list that mixes offsets raises ``ValueError``).
+
+    ``pyintertidal.boundary.GaugeBoundary`` reads the same kind of record
+    differently: it drops an offset without converting it, returns NaN
+    outside the record instead of raising, and returns NaN at an instant
+    farther than ``max_gap`` from both neighbouring samples instead of
+    bridging the gap.
     """
 
     def __init__(self, times, levels, name="series"):

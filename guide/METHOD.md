@@ -105,8 +105,9 @@ fitted.
 inside a pixel is spread like a bell curve around its mean height, which has not been
 tested directly. In earlier tests, replacing $\Phi$ by a logistic curve or by a curve of
 free shape changed the elevations by millimetres, so $z_p$ does not hinge on it. Reading
-$\sigma_p$ as the relief inside the pixel is not supported: treat it only as the sharpness
-of the fitted transition ([section 8](#8-uncertainty)). Eq. 1 also treats NDWI as varying
+$\sigma_p$ as the relief inside the pixel is not supported: treat it as the sharpness of
+the fitted transition, which the maps show as the uncertainty of the elevation
+([section 8](#8-uncertainty)). Eq. 1 also treats NDWI as varying
 linearly with the flooded fraction of the pixel, which is an approximation.
 
 ![Nine panels, three per section of the ría: the NDWI looks of one pixel against the tide that reaches it, dry looks in sand colour and wet looks in blue, with the fitted S-shaped curve and its midpoint z marked.](figures/pixel_gallery.png)
@@ -140,7 +141,8 @@ $$
 where
 
 * $h_B(t)$ is the tide at the mouth (the *boundary tide*): EOT20, the nearest tide
-  gauge, or the mean of the two (m);
+  gauge, or the mean of the two (m); how to give a gauge record of your own:
+  [`NEW_ESTUARY.md`](NEW_ESTUARY.md#1-what-you-need);
 * $s_p$ is the distance of pixel $p$ from the mouth measured along the water, the path
   the tide travels, not as the crow flies (km);
 * $\tau$ is the delay in minutes, positive when the water inside is later than at the
@@ -306,11 +308,14 @@ A transition sharper than 0.03 m or more gradual than 0.65 m is reported at that
 Villaviciosa, 14 % of the mapped pixels sit at 0.03 m and 12 % at 0.65 m.
 
 How to read it: $\sigma$ says how gradually the pixel turns from dry to wet as the water
-rises: read it only as the sharpness of the fitted transition. Reading it as the relief
-inside the pixel is not supported, because any error in the water level given to each
-look blurs the transition in the same way, and $\sigma$ absorbs it. It is not a standard
-error of $z$: it does not come from the scatter of the fit and does not shrink as more
-looks are added. Nor is it an accuracy measured against an independent survey.
+rises, the sharpness of the fitted transition. It is not a standard error of $z$: it does
+not come from the scatter of the fit and does not shrink as more looks are added. Nor is
+it an accuracy measured against an independent survey. But a wider transition means that
+the level at which the pixel floods is less sharply defined, which is why the maps show
+$\sigma$ as the uncertainty of the elevation (the map viewer's **Uncertainty** layer).
+Reading $\sigma$ as the relief inside the pixel is not supported, because any error in the
+water level given to each look blurs the transition in the same way, and $\sigma$ absorbs
+it.
 
 **Of the hypsometric curve.** The product's area–elevation curve has an envelope
 (`hyp_lo`, `hyp_hi` in `marea.npz`): the curve is recomputed 30 times with every
@@ -372,7 +377,9 @@ The Spanish keys of `result.json` are translated in
 3. Screen the scenes (`stability.reference_and_clouds`, `filter_dates`).
 4. Extract the looks and the intertidal mask (`marea.extract`).
 5. Build the record (`scripts/marea_tools.build_record`).
-6. Read the tide at the mouth (`boundary.PyTMDBoundary` or `make_boundary`).
+6. Read the tide at the mouth (`boundary.PyTMDBoundary`, `GaugeBoundary` or
+   `make_boundary`; the IOC gauges of `make_boundary` need a station list that this
+   edition does not ship: [`NEW_ESTUARY.md`](NEW_ESTUARY.md#1-what-you-need)).
 7. Find the mouth, the distance along the water and the 3-km sections
    (`geometry.mouth_seeds`, `along_distance`, `tide_estimators.make_bands_fixed`).
 8. Fit one delay per section, with its interval (`tide_estimators.m2a_rasch`,

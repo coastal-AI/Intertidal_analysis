@@ -21,7 +21,8 @@ Where to start
       python -X utf8 scripts/reproduce_villaviciosa.py --from-kit replication
 
 * Map a new estuary from a cube and a tide series: ``scripts/quickstart.py``
-  (function ``map_estuary``).
+  (function ``map_estuary``; offline with ``--tide-csv`` and
+  ``--overpass-times``).
 * Download and map a new ría through openEO:
   ``notebooks/03_new_ria_openeo.ipynb``.
 * The method in words: ``guide/METHOD.md``; the products: ``guide/DATA.md``.
@@ -49,14 +50,18 @@ Design principles
    parameters and returns plain arrays, so a notebook shows the whole method.
 2. **One download, then streaming.** Imagery is fetched once per area as a
    cached datacube; every product streams that cube in bounded memory.
-3. **Polygons first.** Study areas are polygons; bounding boxes are an
-   internal download detail.
+3. **Polygons first, but the box decides the mouth.** Study areas are
+   polygons, and the cube is downloaded over the polygon's bounding box.
+   That box is the frame MAREA works in: the permanent sea where it touches
+   the box's edges is the mouth, so the edges decide where the open sea and
+   the mouth are (``guide/NEW_ESTUARY.md``, section 2).
 
 The MAREA path: the 11 steps of ``scripts/marea_tools.STEPS``
 -------------------------------------------------------------
 * (1) download the cube — ``scenes.connect``, ``cube.SentinelCube(...).ensure``
 * (2) acquisition times — ``overpass.get_overpass_times`` (live) or
-  ``overpass.load_overpass`` (a cached file)
+  ``overpass.load_overpass`` (a cached file; ``scripts/marea_tools.load_overpass``
+  reads it without the corrections, as the scripts do)
 * (3) screen the scenes — ``stability.reference_and_clouds``,
   ``stability.filter_dates`` (``scripts/marea_tools.screen`` calls both)
 * (4) the looks and the intertidal mask — ``marea.extract``
@@ -100,10 +105,11 @@ module                                 what it does                             
 
 "tool" = not called by MAREA; there for maps, figures and other methods.
 
-Quick start (offline, from the repository root)
------------------------------------------------
-Steps 6-11 of the published Villaviciosa product from the replication kit:
-no account, no download, no tide model, about 20 seconds::
+Reproduce the published product offline
+---------------------------------------
+From the repository root, steps 6-10 and the hypsometry of step 11 of the
+published Villaviciosa product, from the replication kit: no account, no
+download, no tide model, about 20 seconds::
 
     import sys
     sys.path.insert(0, "scripts")                    # scripts/marea_tools.py
@@ -112,7 +118,7 @@ no account, no download, no tide model, about 20 seconds::
 
     rec = "replication/villaviciosa_record_2023-2025.npz"
     res = marea.reconstruct(
-        rec, "runs/quickstart", name="Villaviciosa",
+        rec, "runs/villaviciosa_kit", name="Villaviciosa",
         extraction=mt.load_extraction(rec),          # the looks of the record
         overpass_times=mt.load_overpass("products_marea/overpass_times.json"),
         boundary=mt.TableBoundary("replication/villaviciosa_eot20_levels.npz"),
@@ -120,9 +126,13 @@ no account, no download, no tide model, about 20 seconds::
         n_boot=0)                                    # skip the 30 bootstrap fits
     print(res["tau_usado_min"])                      # the delay of each section (min)
 
-``runs/quickstart`` then holds marea.npz, result.json and figure.png; the
-arrays equal those of ``products_marea/marea.npz`` (the delay intervals,
-which need the bootstrap, are not computed).
+``runs/villaviciosa_kit`` then holds marea.npz, result.json and figure.png;
+the arrays equal those of ``products_marea/marea.npz`` (the section delays
+to within 1e-10 min; the delay intervals, which need the bootstrap, are not
+computed). A numpy ``RuntimeWarning``,
+"invalid value encountered in cast", is harmless: the pixels without a
+distance are cast before they are set to section -1 (``scripts/quickstart.py``
+and ``scripts/reproduce_villaviciosa.py`` silence it).
 
 Importing the package sets a legacy Windows console to replace the
 characters it cannot print instead of raising (see ``_allow_unicode_output``).

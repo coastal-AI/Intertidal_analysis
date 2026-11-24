@@ -28,9 +28,13 @@ Which detector should I use?
     over-detects turbid water. Consider for heavily vegetated marshes.
 ``awei``  — 4(B03 − B11) − (0.25·B08 + 2.75·B12). Suppresses shadow/built-up
     confusion; 20 m bands. Rarely better than NDWI on open coasts.
-``scl``   — ESA's categorical scene classification (class 6 = water,
-    12 = flooded vegetation). 20 m, binary. Kept for comparison studies and
-    as the CLOUD mask for every detector (that role never changes).
+``scl``   — ESA's categorical scene classification (classes 0 to 11;
+    class 6 = water). This registry also counts a class 12, flooded
+    vegetation, as water, but that class is a project extension that
+    Sentinel-2 never writes and no function of this edition writes either
+    (see :data:`SCL_CLASSES`), so in practice only class 6 is water. 20 m,
+    binary. Kept for comparison studies and as the CLOUD mask for every
+    detector (that role never changes).
 
 All detectors of this registry share the same cloud handling: an
 observation only counts when its SCL class is in ``CLEAR_CLASSES`` — so
@@ -212,8 +216,8 @@ def calibrate_threshold(cube, n_scenes=12, max_pixels=400_000, chunk=None,
 
     ``cube`` is a cached SentinelCube; ``n_scenes`` the number of clearest
     scenes pooled; ``max_pixels`` the size of the pooled sample; ``chunk``
-    is not used (kept for a uniform signature). Not used by MAREA, whose
-    threshold is fixed at NDWI 0.
+    has no effect in this edition (it is there for a uniform signature).
+    Not used by MAREA, whose threshold is fixed at NDWI 0.
     """
     from .cube import open_cube
 

@@ -3,15 +3,19 @@ aoi.py — Areas of interest as POLYGONS (first-class citizens)
 =============================================================
 
 Production runs tile the coast into contiguous cells, each one a polygon.
-The polygon drives everything user-facing; its bounding box is only an
-implementation detail of the satellite download:
+The polygon describes the study area; its bounding box is the frame the
+data are downloaded and analysed in:
 
 * **download** uses ``aoi.bbox`` (satellite cubes are rectangular),
 * **analysis** runs on the full rectangle (download time is flat with area,
-  so this costs nothing extra),
-* **products & figures** are clipped with ``aoi.raster_mask(...)`` so users
-  only ever see their polygon, and neighbouring tiles butt together with no
-  overlap artefacts.
+  so this costs nothing extra). For MAREA the box is more than a detail:
+  the permanent sea where it touches the box's edges is the mouth, so the
+  edges decide where the open sea and the mouth are
+  (``guide/NEW_ESTUARY.md``, section 2),
+* **products & figures** can be clipped with ``aoi.raster_mask(...)`` so
+  users only see their polygon, and neighbouring tiles butt together with
+  no overlap artefacts. MAREA's own outputs (``marea.reconstruct``,
+  ``scripts/quickstart.py``) cover the whole frame, unclipped.
 
 How it fits: every function of the package that takes an area calls
 :func:`as_aoi`, so an :class:`AOI`, a shapely Polygon, a list of
