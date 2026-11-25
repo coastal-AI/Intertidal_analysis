@@ -1,5 +1,9 @@
 # MAREA: a method for mapping intertidal topography using Sentinel-2 openEO data cubes
 
+**[Open the map viewer: fourteen estuaries of northern Spain](https://coastal-ai.github.io/Intertidal_analysis/)**
+· [How the method works](guide/METHOD.md) · [Example notebooks](notebooks/)
+· [Reproduce the published map](guide/REPRODUCE.md) · [Map your own estuary](guide/NEW_ESTUARY.md)
+
 MAREA maps the height of tidal flats at 10 m from years of Sentinel-2 images and a tide
 series: for every pixel it finds the tide level at which the ground turns from dry to wet.
 Inside an estuary the tide arrives late, so MAREA first reads that delay from the same
